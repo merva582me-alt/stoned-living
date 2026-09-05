@@ -16,18 +16,29 @@ import {
   setDoc, 
   onSnapshot 
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigJson from '../../firebase-applet-config.json';
 import { UserProfile, SiteSettings } from '../types';
 import { DEFAULT_USER, saveUserProfile, sanitizeWatchlist } from './storage';
+
+// Prefer VITE_ environment variables (Cloudflare Pages).
+// Fall back to the bundled JSON config for local dev without a .env file.
+const firebaseConfig = {
+  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || firebaseConfigJson.apiKey,
+  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || firebaseConfigJson.authDomain,
+  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID         || firebaseConfigJson.projectId,
+  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET     || firebaseConfigJson.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId,
+  appId:             import.meta.env.VITE_FIREBASE_APP_ID             || firebaseConfigJson.appId
+};
 
 // Initialize Firebase App
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 export const auth = getAuth(app);
 
-// Use custom firestore database ID if specified
-export const db = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+// Use the custom Firestore database ID from the JSON config if present
+export const db = firebaseConfigJson.firestoreDatabaseId
+  ? getFirestore(app, firebaseConfigJson.firestoreDatabaseId)
   : getFirestore(app);
 
 export const googleProvider = new GoogleAuthProvider();
