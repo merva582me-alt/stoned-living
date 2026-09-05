@@ -1,0 +1,24 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Security headers for all Cloudflare Pages responses
+# ─────────────────────────────────────────────────────────────────────────────
+
+/*
+  # Prevent MIME sniffing
+  X-Content-Type-Options: nosniff
+  # Disallow embedding in external iframes
+  X-Frame-Options: DENY
+  # Strict referrer policy
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Enable HSTS
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  # Permissions policy — disable unused browser features
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  # Content-Security-Policy
+  # Allows:
+  #   - Scripts from self (our Vite bundle)
+  #   - Styles from self + inline (Tailwind / Plyr)
+  #   - Media (video, HLS) from any origin (needed for proxied .m3u8 streams)
+  #   - Blobs (Hls.js uses blob: URLs for media segments)
+  #   - Fonts from self
+  #   - Connect to TMDb, Firebase, AniList, and our resolver Worker
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.firebaseio.com https://graphql.anilist.co https://*.workers.dev https://stoned-resolver.workers.dev; font-src 'self' data:; frame-ancestors 'none';

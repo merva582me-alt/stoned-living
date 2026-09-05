@@ -1,0 +1,12 @@
+name = "stoned-resolver"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Allow the worker to be queried from the Pages frontend and external scripts.
+# In production, restrict origins via the CORS logic in src/index.ts.
+# Routes are configured in the Cloudflare dashboard:
+#   stoned.living/api/* → stoned-resolver
+
+[observability]
+enabled = true

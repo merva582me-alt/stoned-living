@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+*, ::before, ::after {
+  box-sizing: border-box;
+}
+
+html {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+body {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background-color: #0d1813;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Custom Floating Overlay Scrollbars */
+html, body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(16, 185, 129, 0.6) transparent;
+}
+
+/* Webkit Scrollbars (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.5);
+  border-radius: 9999px;
+  border: transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.9);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+:fullscreen, :-webkit-full-screen, :-moz-full-screen, :-ms-fullscreen {
+  width: 100vw !important;
+  height: 100vh !important;
+  max-width: none !important;
+  max-height: none !important;
+  background-color: #0d1813 !important;
+}
+
+

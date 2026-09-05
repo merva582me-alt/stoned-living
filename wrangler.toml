@@ -1,0 +1,16 @@
+# Cloudflare Pages — stoned.living
+# https://developers.cloudflare.com/pages/configuration/wrangler-configuration/
+
+name = "stoned-living"
+compatibility_date = "2024-09-23"
+
+[build]
+command = "npm run build"
+destination = "dist"
+
+# The resolver Worker is a separate standalone Worker (see /workers/resolver).
+# To wire it to the Pages project as a service binding, add it here after deploying
+# the Worker and add the service binding to the Pages project in the dashboard.
+# [env.production.services]
+# binding = "RESOLVER"
+# service = "stoned-resolver"
