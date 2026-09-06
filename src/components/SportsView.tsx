@@ -268,14 +268,18 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       setTodayMatches(today);
       setCategories(Array.isArray(cats) ? cats : []);
 
-      // Enrich all matches with TheSportsDB badges + scores in the background
+      // Enrich all matches with TheSportsDB badges + scores — update cards incrementally
       const allMatches = [...live, ...today.filter(m => !liveIds.has(m.id))];
-      buildEnrichmentMap(allMatches).then((enrichMap) => {
-        if (!enrichMap.size) return;
-        const applyEnrich = (list: SportMatch[]) =>
-          list.map(m => enrichMap.has(m.id) ? { ...m, tsdb: enrichMap.get(m.id) } : m);
-        setLiveMatches(prev => applyEnrich(prev));
-        setTodayMatches(prev => applyEnrich(prev));
+      const liveIdSet = liveIds; // capture for closure
+      buildEnrichmentMap(allMatches, (id, enrichment) => {
+        // Called for each match as its enrichment resolves — paint badges immediately
+        const patch = (list: SportMatch[]) =>
+          list.map(m => m.id === id ? { ...m, tsdb: enrichment } : m);
+        if (liveIdSet.has(id)) {
+          setLiveMatches(prev => patch(prev));
+        } else {
+          setTodayMatches(prev => patch(prev));
+        }
       }).catch(() => {});
     } catch {
       setError(true);

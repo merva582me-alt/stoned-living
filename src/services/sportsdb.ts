@@ -136,61 +136,71 @@ async function fetchTeamBadge(teamName: string): Promise<string | null> {
 // ---------------------------------------------------------------------------
 
 /**
- * Build the full enrichment map for a list of matches in one shot.
- * Call once after streamed.pk data arrives — returns a Map<matchId, MatchEnrichment>.
+ * Build enrichment for all matches, calling onUpdate incrementally so the UI
+ * can render badges as they arrive rather than waiting for all requests.
+ *
+ * Strategy:
+ *  1. Fire livescores fetch immediately (one request, covers many matches)
+ *  2. For every team not covered by livescores, fire ALL badge searches in
+ *     parallel — no sequential batching. TSDB free tier handles it fine.
+ *  3. As each per-match pair resolves, call onUpdate so the card re-renders.
  */
 export async function buildEnrichmentMap(
-  matches: Array<{ id: string; title: string; teams?: { home?: { name: string }; away?: { name: string } } }>
+  matches: Array<{ id: string; title: string; teams?: { home?: { name: string }; away?: { name: string } } }>,
+  onUpdate?: (id: string, enrichment: MatchEnrichment) => void
 ): Promise<Map<string, MatchEnrichment>> {
   const result = new Map<string, MatchEnrichment>();
   if (!matches.length) return result;
 
-  // Fetch all livescores once — covers many matches in one request
+  // Step 1 — livescores (one request, instant for covered leagues)
   const live = await fetchLiveScores();
 
-  // Collect unique team names that still need a badge after livescore warm
-  const missingTeams = new Set<string>();
+  // Separate matches into livescore-matched vs needing team search
+  const needsSearch: Array<{ id: string; homeRaw: string; awayRaw: string }> = [];
 
   for (const match of matches) {
     const [homeRaw, awayRaw] = getTeamNames(match);
     if (!homeRaw && !awayRaw) continue;
 
-    // Try to match against live data first (free, fast, has scores)
     const liveMatch = live.find(ev =>
       (nameMatch(ev.strHomeTeam, homeRaw) || nameMatch(ev.strAwayTeam, homeRaw)) &&
       (nameMatch(ev.strHomeTeam, awayRaw) || nameMatch(ev.strAwayTeam, awayRaw))
     );
 
     if (liveMatch) {
-      result.set(match.id, {
+      const enrichment: MatchEnrichment = {
         homeBadge:  liveMatch.strHomeTeamBadge || undefined,
         awayBadge:  liveMatch.strAwayTeamBadge || undefined,
         leagueName: liveMatch.strLeague || undefined,
         homeScore:  liveMatch.intHomeScore != null ? Number(liveMatch.intHomeScore) : undefined,
         awayScore:  liveMatch.intAwayScore != null ? Number(liveMatch.intAwayScore) : undefined,
         progress:   fmtProgress(liveMatch.strProgress),
-      });
+      };
+      result.set(match.id, enrichment);
+      onUpdate?.(match.id, enrichment);
     } else {
-      // Not in livescores — queue team name lookups for badges
-      if (homeRaw && !teamBadgeCache.has(norm(homeRaw))) missingTeams.add(homeRaw);
-      if (awayRaw && !teamBadgeCache.has(norm(awayRaw))) missingTeams.add(awayRaw);
+      needsSearch.push({ id: match.id, homeRaw, awayRaw });
     }
   }
 
-  // Batch-fetch missing team badges (max 6 parallel requests to be polite)
-  const teamArr = Array.from(missingTeams);
-  for (let i = 0; i < teamArr.length; i += 6) {
-    await Promise.allSettled(teamArr.slice(i, i + 6).map(fetchTeamBadge));
+  // Step 2 — collect unique team names not already cached
+  const uniqueTeams = new Set<string>();
+  for (const { homeRaw, awayRaw } of needsSearch) {
+    if (homeRaw && !teamBadgeCache.has(norm(homeRaw))) uniqueTeams.add(homeRaw);
+    if (awayRaw && !teamBadgeCache.has(norm(awayRaw))) uniqueTeams.add(awayRaw);
   }
 
-  // Second pass — fill in badge-only enrichment for non-live matches
-  for (const match of matches) {
-    if (result.has(match.id)) continue;
-    const [homeRaw, awayRaw] = getTeamNames(match);
+  // Step 3 — fire ALL team searches in parallel (no sequential batching)
+  await Promise.allSettled(Array.from(uniqueTeams).map(fetchTeamBadge));
+
+  // Step 4 — second pass: resolve badge-only enrichment and call onUpdate per match
+  for (const { id, homeRaw, awayRaw } of needsSearch) {
     const homeBadge = homeRaw ? (teamBadgeCache.get(norm(homeRaw)) || undefined) : undefined;
     const awayBadge = awayRaw ? (teamBadgeCache.get(norm(awayRaw)) || undefined) : undefined;
     if (homeBadge || awayBadge) {
-      result.set(match.id, { homeBadge, awayBadge });
+      const enrichment: MatchEnrichment = { homeBadge, awayBadge };
+      result.set(id, enrichment);
+      onUpdate?.(id, enrichment);
     }
   }
 
