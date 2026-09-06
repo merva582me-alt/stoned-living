@@ -53,10 +53,7 @@ interface SportsrcEnvelope<T> {
 }
 
 async function sportsrcFetch(params: Record<string, string>): Promise<Response> {
-  return fetch(
-    `${SPORTSRC_BASE}/?${new URLSearchParams(params).toString()}`,
-    { headers: { 'X-API-KEY': SPORTSRC_API_KEY } },
-  );
+  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams({ ...params, api_key: SPORTSRC_API_KEY }).toString()}`);
 }
 
 async function sportsrcJson<T>(params: Record<string, string>): Promise<{ data: T | null; error?: string }> {
