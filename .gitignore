@@ -1,0 +1,18 @@
+﻿# Build output — Cloudflare Pages builds this from source
+dist/
+
+# Local environment variables — never commit secrets
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Wrangler / Cloudflare
+.wrangler/
+workers/resolver/node_modules/
+workers/resolver/.wrangler/
+
+# Editor and OS
+.DS_Store
+Thumbs.db
