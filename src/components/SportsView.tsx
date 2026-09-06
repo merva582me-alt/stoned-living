@@ -140,6 +140,8 @@ export const SportsView: React.FC<SportsViewProps> = () => {
   const [bySport, setBySport]             = useState<Record<string, SportMatch[]>>({});
   const [loading, setLoading]             = useState(true);
   const [loadError, setLoadError]         = useState<string | null>(null);
+  // Progressive enrichment updates: matchId → enrichment (arrives after initial render)
+  const [enrichUpdates, setEnrichUpdates] = useState<Map<string, MatchEnrichment>>(() => new Map());
 
   // Filters
   const [selectedSport, setSelectedSport]   = useState('all');
@@ -183,16 +185,29 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
       setSports(sportsList);
 
-      // ── 2. TSDB enrichment for ALL matches (one cached request) ───────────
+      // ── 2. TSDB enrichment — Phase 1 synchronous, Phase 2 progressive ──────
       const allForEnrich = [...liveRaw, ...allRaw].map(m => ({
         id: m.id, title: m.title,
-        // Pass team names from streamed.pk for TSDB name-matching
         teams: m.teams
           ? { home: m.teams.home ? { name: m.teams.home.name } : undefined,
               away: m.teams.away ? { name: m.teams.away.name } : undefined }
           : undefined,
       }));
-      const enrichMap = await buildEnrichmentMap(allForEnrich);
+
+      // Reset progressive updates on each full reload
+      setEnrichUpdates(new Map());
+
+      const enrichMap = await buildEnrichmentMap(
+        allForEnrich,
+        // onUpdate: called progressively as team-search badges arrive
+        (id, enrichment) => {
+          setEnrichUpdates(prev => {
+            const next = new Map(prev);
+            next.set(id, { ...prev.get(id), ...enrichment });
+            return next;
+          });
+        }
+      );
 
       if (controller.signal.aborted) return;
 
@@ -262,6 +277,13 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     return sections;
   }, [categories]);
 
+  /** Merge a progressive enrichment update into a match's tsdb field */
+  const applyUpdate = useCallback((m: SportMatch): SportMatch => {
+    const upd = enrichUpdates.get(m.id);
+    if (!upd) return m;
+    return { ...m, tsdb: { ...m.tsdb, ...upd } };
+  }, [enrichUpdates]);
+
   const allMatches = useMemo(() => {
     const upcoming = Object.values(bySport).flat();
     const seen = new Set<string>();
@@ -269,10 +291,10 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     for (const m of [...liveMatches, ...upcoming]) {
       if (seen.has(m.id)) continue;
       seen.add(m.id);
-      merged.push(m);
+      merged.push(applyUpdate(m));
     }
     return merged;
-  }, [liveMatches, bySport]);
+  }, [liveMatches, bySport, applyUpdate]);
 
   const filteredMatches = useMemo(() => {
     let list = allMatches;
@@ -343,8 +365,8 @@ export const SportsView: React.FC<SportsViewProps> = () => {
   const closePlayer = () => { setActiveMatch(null); setStreams([]); setStreamError(false); };
 
   const getSectionMatches = (sectionId: string): SportMatch[] => {
-    if (sectionId === 'live') return liveMatches;
-    return bySport[sectionId.toLowerCase()] ?? [];
+    const raw = sectionId === 'live' ? liveMatches : (bySport[sectionId.toLowerCase()] ?? []);
+    return raw.map(applyUpdate);
   };
 
   // ── Player view ──────────────────────────────────────────────────────────

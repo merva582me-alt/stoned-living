@@ -2,8 +2,12 @@
  * TheSportsDB enrichment service  (free tier — no API key required)
  * Endpoint: https://www.thesportsdb.com/api/v1/json/3/
  *
- * Provides real-time livescores, team badges, league info and
- * match progress to enrich streamed.pk cards that have no visuals.
+ * Strategy:
+ *  1. Livescores endpoint — one request, covers everything currently in play.
+ *     Badges + scores arrive immediately for live matches.
+ *  2. Team search endpoint — /searchteams.php?t=Name — used progressively for
+ *     upcoming matches whose teams aren't in livescores.  Requests are queued,
+ *     rate-limited and cached so the page loads instantly and badges pop in.
  */
 
 const TSDB = 'https://www.thesportsdb.com/api/v1/json/3';
@@ -23,10 +27,10 @@ export interface TSDBLiveScore {
   intHomeScore:     string | null;
   intAwayScore:     string | null;
   strProgress:      string | null;  // e.g. "IN9", "45'", "HT", "FT"
-  strStatus?:       string | null;  // e.g. "BT" (before time), "HT", "FT"
-  strTimestamp?:    string | null;  // ISO datetime e.g. "2026-09-06T18:00:00"
-  strEventTime?:    string | null;  // e.g. "18:00"
-  dateEvent?:       string | null;  // e.g. "2026-09-06"
+  strStatus?:       string | null;
+  strTimestamp?:    string | null;
+  strEventTime?:    string | null;
+  dateEvent?:       string | null;
   strHomeTeamBadge: string;
   strAwayTeamBadge: string;
 }
@@ -45,16 +49,18 @@ export interface MatchEnrichment {
   leagueName?: string;
   homeScore?:  number;
   awayScore?:  number;
-  progress?:   string;   // game clock / inning / period
+  progress?:   string;
 }
 
 // ---------------------------------------------------------------------------
-// In-memory session cache
+// In-memory caches
 // ---------------------------------------------------------------------------
 
 let liveScoreCache: TSDBLiveScore[] | null = null;
 let liveScoreFetchedAt = 0;
-const LIVE_TTL = 60_000; // re-fetch livescores at most once per minute
+const LIVE_TTL = 60_000;
+
+// Persistent badge cache: normalised team name → badge URL (or '' = not found)
 const teamBadgeCache = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
@@ -65,28 +71,23 @@ function norm(s: string) {
   return s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
 }
 
-/** True if two team name strings are close enough to be the same team */
 function nameMatch(a: string, b: string): boolean {
   const na = norm(a);
   const nb = norm(b);
   return na === nb || na.includes(nb) || nb.includes(na);
 }
 
-/** Format raw progress string into a readable label */
 export function fmtProgress(p: string | null | undefined): string {
   if (!p) return '';
   if (p === 'FT') return 'Full Time';
   if (p === 'HT') return 'Half Time';
-  // Baseball: IN1 → 1st, IN9 → 9th etc.
   const inn = p.match(/^IN(\d+)$/);
   if (inn) {
     const n = Number(inn[1]);
     const sfx = n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th';
     return `${n}${sfx} Inning`;
   }
-  // Soccer / Hockey minutes: "45'", "67'"
   if (p.endsWith("'")) return p;
-  // Quarter / Period
   const qtr = p.match(/^Q(\d)$/i);
   if (qtr) return `Q${qtr[1]}`;
   const per = p.match(/^P(\d)$/i);
@@ -95,7 +96,7 @@ export function fmtProgress(p: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
-// API fetchers
+// Livescores fetch (cached 60 s)
 // ---------------------------------------------------------------------------
 
 async function fetchLiveScores(): Promise<TSDBLiveScore[]> {
@@ -107,7 +108,6 @@ async function fetchLiveScores(): Promise<TSDBLiveScore[]> {
     const json = await res.json() as { livescore: TSDBLiveScore[] | null };
     liveScoreCache = json.livescore ?? [];
     liveScoreFetchedAt = now;
-    // Warm the badge cache from live data
     for (const ev of liveScoreCache) {
       if (ev.strHomeTeam && ev.strHomeTeamBadge) teamBadgeCache.set(norm(ev.strHomeTeam), ev.strHomeTeamBadge);
       if (ev.strAwayTeam && ev.strAwayTeamBadge) teamBadgeCache.set(norm(ev.strAwayTeam), ev.strAwayTeamBadge);
@@ -119,14 +119,74 @@ async function fetchLiveScores(): Promise<TSDBLiveScore[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Progressive team badge lookup — rate-limited queue
+// ---------------------------------------------------------------------------
+
+// In-flight promise dedup: normalised name → promise resolving to badge URL | ''
+const inFlight = new Map<string, Promise<string>>();
+
+// Simple queue: max 3 concurrent requests, 120 ms gap between dispatches
+let activeRequests = 0;
+const MAX_CONCURRENT = 3;
+const REQUEST_GAP_MS = 120;
+let lastDispatch = 0;
+
+async function fetchTeamBadge(teamName: string): Promise<string> {
+  const key = norm(teamName);
+  if (!key) return '';
+
+  // Already cached (including negative results)
+  if (teamBadgeCache.has(key)) return teamBadgeCache.get(key)!;
+
+  // Deduplicate concurrent requests for the same team
+  if (inFlight.has(key)) return inFlight.get(key)!;
+
+  const promise = (async (): Promise<string> => {
+    // Wait until we're under the concurrency limit and past the rate gap
+    while (activeRequests >= MAX_CONCURRENT) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    const now = Date.now();
+    const wait = lastDispatch + REQUEST_GAP_MS - now;
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+
+    activeRequests++;
+    lastDispatch = Date.now();
+    try {
+      const res = await fetch(`${TSDB}/searchteams.php?t=${encodeURIComponent(teamName)}`);
+      if (!res.ok) { teamBadgeCache.set(key, ''); return ''; }
+      const json = await res.json() as { teams: TSDBTeam[] | null };
+      const teams = json.teams ?? [];
+      // Pick the best match — exact first, then substring
+      const exact = teams.find(t => norm(t.strTeam) === key);
+      const fuzzy = exact ?? teams.find(t => nameMatch(t.strTeam, teamName));
+      const badge = fuzzy?.strBadge ?? '';
+      teamBadgeCache.set(key, badge);
+      return badge;
+    } catch {
+      teamBadgeCache.set(key, '');
+      return '';
+    } finally {
+      activeRequests--;
+      inFlight.delete(key);
+    }
+  })();
+
+  inFlight.set(key, promise);
+  return promise;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Enrich matches using only the livescores endpoint (one fast request).
- * Team name search is intentionally omitted — it fires 200+ requests for
- * college teams that aren't in TSDB anyway, causing the slowness.
- * Matches not found in livescores get the generated VS card instantly.
+ * Build an enrichment map for the given matches.
+ *
+ * Phase 1 (synchronous-ish): match against TSDB livescores — instant for live games.
+ * Phase 2 (progressive): for any match not found in livescores, look up each team
+ *   name via /searchteams.php and call onUpdate as badges arrive, so the UI can
+ *   progressively re-render cards without blocking the initial paint.
  */
 export async function buildEnrichmentMap(
   matches: Array<{ id: string; title: string; teams?: { home?: { name: string }; away?: { name: string } } }>,
@@ -135,8 +195,10 @@ export async function buildEnrichmentMap(
   const result = new Map<string, MatchEnrichment>();
   if (!matches.length) return result;
 
-  // Single request — covers all professional/major-league live matches
+  // ── Phase 1: livescores (one request, covers all in-play matches) ──────────
   const live = await fetchLiveScores();
+
+  const unmatched: typeof matches = [];
 
   for (const match of matches) {
     const [homeRaw, awayRaw] = getTeamNames(match);
@@ -158,15 +220,56 @@ export async function buildEnrichmentMap(
       };
       result.set(match.id, enrichment);
       onUpdate?.(match.id, enrichment);
+    } else {
+      unmatched.push(match);
     }
-    // No match in livescores = college/unknown team → generated VS card, no extra requests
+  }
+
+  // ── Phase 2: progressive team-search for upcoming matches ─────────────────
+  // Fire-and-forget — resolves via onUpdate callbacks so the caller doesn't wait
+  if (onUpdate && unmatched.length > 0) {
+    (async () => {
+      // Check cache first — many teams will already be known from a prior load
+      const needFetch: typeof matches = [];
+      for (const match of unmatched) {
+        const [homeRaw, awayRaw] = getTeamNames(match);
+        const homeCached = teamBadgeCache.get(norm(homeRaw));
+        const awayCached = teamBadgeCache.get(norm(awayRaw));
+        if (homeCached !== undefined && awayCached !== undefined) {
+          // Both already in cache — emit immediately
+          if (homeCached || awayCached) {
+            onUpdate(match.id, {
+              homeBadge: homeCached || undefined,
+              awayBadge: awayCached || undefined,
+            });
+          }
+        } else {
+          needFetch.push(match);
+        }
+      }
+
+      // For the rest, fetch concurrently (rate-limited inside fetchTeamBadge)
+      await Promise.all(needFetch.map(async match => {
+        const [homeRaw, awayRaw] = getTeamNames(match);
+        const [homeBadge, awayBadge] = await Promise.all([
+          fetchTeamBadge(homeRaw),
+          fetchTeamBadge(awayRaw),
+        ]);
+        if (homeBadge || awayBadge) {
+          onUpdate(match.id, {
+            homeBadge: homeBadge || undefined,
+            awayBadge: awayBadge || undefined,
+          });
+        }
+      }));
+    })();
   }
 
   return result;
 }
 
 // ---------------------------------------------------------------------------
-// Helper — extract home/away names from a match (title "X vs Y" or teams obj)
+// Helper — extract home/away names from a match
 // ---------------------------------------------------------------------------
 
 function getTeamNames(match: {
