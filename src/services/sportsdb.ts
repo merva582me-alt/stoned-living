@@ -166,12 +166,13 @@ export async function buildEnrichmentMap(
 // ---------------------------------------------------------------------------
 
 function getTeamNames(match: {
-  title: string;
+  title?: string;
   teams?: { home?: { name: string }; away?: { name: string } }
 }): [string, string] {
   if (match.teams?.home?.name && match.teams?.away?.name) {
     return [match.teams.home.name, match.teams.away.name];
   }
+  if (!match.title) return ['', ''];
   const parts = match.title.split(/\s+vs\.?\s+/i);
   if (parts.length >= 2) return [parts[0].trim(), parts.slice(1).join(' vs ').trim()];
   return [match.title, ''];

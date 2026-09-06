@@ -21,7 +21,8 @@ interface SportMatchCarouselProps {
   loading?: boolean;
 }
 
-function splitVs(title: string): [string, string] {
+function splitVs(title: string | undefined): [string, string] {
+  if (!title) return ['', ''];
   const parts = title.split(/\s+vs\.?\s+/i);
   if (parts.length >= 2) return [parts[0].trim(), parts.slice(1).join(' vs ').trim()];
   return [title, ''];

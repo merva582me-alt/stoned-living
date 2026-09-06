@@ -13,7 +13,7 @@ import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatc
 
 interface APIMatch {
   id:       string;
-  title:    string;
+  title?:   string;
   category: string;
   date:     number;
   poster?:  string;
@@ -53,7 +53,10 @@ interface SportsrcEnvelope<T> {
 }
 
 async function sportsrcFetch(params: Record<string, string>): Promise<Response> {
-  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams({ ...params, api_key: SPORTSRC_API_KEY }).toString()}`);
+  return fetch(
+    `${SPORTSRC_BASE}/?${new URLSearchParams(params).toString()}`,
+    { headers: { 'X-API-KEY': SPORTSRC_API_KEY } },
+  );
 }
 
 async function sportsrcJson<T>(params: Record<string, string>): Promise<{ data: T | null; error?: string }> {
@@ -77,22 +80,29 @@ function extractStreamUrls(detail: Record<string, unknown>): string[] {
   const push = (value: unknown) => {
     if (typeof value === 'string' && value.startsWith('http')) urls.push(value);
   };
+  // Top-level stream URL fields (as documented by sportsrc)
+  push(detail.embedUrl);
+  push(detail.embed_url);
   push(detail.streamUrl);
   push(detail.stream_url);
-  push(detail.embed_url);
   push(detail.url);
   push(detail.watchUrl);
-  for (const key of ['streams', 'sources'] as const) {
+  push(detail.iframeUrl);
+  push(detail.iframe_url);
+  // Array fields
+  for (const key of ['streams', 'sources', 'links'] as const) {
     const list = detail[key];
     if (!Array.isArray(list)) continue;
     for (const item of list) {
       if (typeof item === 'string') push(item);
       else if (item && typeof item === 'object') {
         const obj = item as Record<string, unknown>;
-        push(obj.url);
         push(obj.embedUrl);
         push(obj.embed_url);
+        push(obj.url);
         push(obj.src);
+        push(obj.iframeUrl);
+        push(obj.iframe_url);
       }
     }
   }
@@ -105,7 +115,7 @@ function todayStr(): string {
 }
 
 function normalise(m: APIMatch, isLive: boolean): SportMatch {
-  return { id: m.id, title: m.title, category: m.category, date: m.date, is_live: isLive, teams: m.teams, poster: m.poster };
+  return { id: m.id, title: m.title ?? '', category: m.category, date: m.date, is_live: isLive, teams: m.teams, poster: m.poster };
 }
 
 function sportIcon(category: string): LucideIcon {
@@ -123,7 +133,7 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
   const copy = [...list];
   if (sortBy === 'time.asc')  return copy.sort((a, b) => a.date - b.date);
   if (sortBy === 'time.desc') return copy.sort((a, b) => b.date - a.date);
-  if (sortBy === 'title')     return copy.sort((a, b) => a.title.localeCompare(b.title));
+  if (sortBy === 'title')     return copy.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
   // default: live first, then by time
   return copy.sort((a, b) => {
     if (a.is_live !== b.is_live) return a.is_live ? -1 : 1;
@@ -187,9 +197,11 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       const liveIds = new Set<string>();
 
       await Promise.all(validCats.map(async (cat) => {
+        // API expects the sport name (e.g. "football"), not a numeric id
+        const sportSlug = cat.name.toLowerCase();
         const [liveRes, todayRes] = await Promise.all([
-          sportsrcJson<APIMatch[]>({ type: 'matches', sport: cat.id, status: 'inprogress', date: today }),
-          sportsrcJson<APIMatch[]>({ type: 'matches', sport: cat.id, date: today }),
+          sportsrcJson<APIMatch[]>({ type: 'matches', sport: sportSlug, status: 'inprogress', date: today }),
+          sportsrcJson<APIMatch[]>({ type: 'matches', sport: sportSlug, date: today }),
         ]);
 
         const liveList = Array.isArray(liveRes.data) ? liveRes.data : [];
