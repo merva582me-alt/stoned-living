@@ -44,7 +44,8 @@ interface SportsViewProps {
 }
 
 const SPORTSRC_BASE = 'https://api.sportsrc.org/v2';
-// Env var for local/CI builds; hardcoded fallback for GitHub Pages static deploys
+// Docs: https://sportsrc.org/v2/ — auth via ?api_key= or X-API-KEY header.
+// Browser must use query-param auth; X-API-KEY triggers a CORS preflight (OPTIONS → 404).
 const SPORTSRC_API_KEY = (import.meta.env.VITE_SPORTSRC_API_KEY as string | undefined)?.trim()
   || '0c8457d75effb1169a6da8eddaa58d5c';
 
@@ -371,8 +372,17 @@ export const SportsView: React.FC<SportsViewProps> = () => {
             </div>
           )}
           {!streamLoading && !streamError && cur && (
-            <iframe key={cur.embedUrl} src={cur.embedUrl} className="w-full h-full border-0"
-              scrolling="no" allow="autoplay; fullscreen; encrypted-media" allowFullScreen />
+            <iframe
+              key={cur.embedUrl}
+              src={cur.embedUrl}
+              width="100%"
+              height="100%"
+              frameBorder={0}
+              scrolling="no"
+              allow="autoplay; fullscreen; encrypted-media"
+              allowFullScreen
+              className="w-full h-full"
+            />
           )}
         </div>
       </div>
