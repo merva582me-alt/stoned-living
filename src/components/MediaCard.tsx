@@ -17,10 +17,11 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   const title = item.title || item.name || 'Untitled';
   const releaseDate = item.release_date || item.first_air_date || '';
   const year = releaseDate ? new Date(releaseDate).getFullYear() : '';
+  const isAbsoluteUrl = item.poster_path?.startsWith('http');
   const posterUrl = item.poster_path
-    ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
+    ? (isAbsoluteUrl ? item.poster_path : `https://image.tmdb.org/t/p/w500${item.poster_path}`)
     : 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&auto=format&fit=crop&q=80';
-  const posterSrcSet = item.poster_path
+  const posterSrcSet = item.poster_path && !isAbsoluteUrl
     ? `https://image.tmdb.org/t/p/w300${item.poster_path} 300w, https://image.tmdb.org/t/p/w500${item.poster_path} 500w`
     : undefined;
 
