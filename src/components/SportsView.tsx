@@ -9,21 +9,16 @@ import { buildEnrichmentMap, type MatchEnrichment } from '../services/sportsdb';
 // Types
 // ---------------------------------------------------------------------------
 
-interface MatchSource { source: string; id: string; }
-interface MatchTeam   { name: string; badge: string; }
+interface MatchTeam { name: string; badge: string; }
 
-// sportsrc.org ?type=matches response shape.
-// Field names confirmed from live API — adjust if the API evolves.
+// sportsrc.org ?type=matches response shape
 interface APIMatch {
-  id:        string;
-  title:     string;
-  category:  string;
-  date:      number;
-  poster?:   string;
-  teams?:    { home?: MatchTeam; away?: MatchTeam };
-  // sportsrc.org does not always include streamed.pk-style source mappings.
-  // When present, these are used as fallback stream sources only.
-  sources?:  MatchSource[];
+  id:       string;
+  title:    string;
+  category: string;
+  date:     number;
+  poster?:  string;
+  teams?:   { home?: MatchTeam; away?: MatchTeam };
 }
 
 interface StreamObj {
@@ -39,19 +34,15 @@ interface SportCategory { id: string; name: string; }
 
 // A normalised match used internally — extended with TheSportsDB enrichment
 interface SportMatch {
-  id:              string;
-  title:           string;
-  category:        string;
-  date:            number;
-  is_live:         boolean;
-  teams?:          { home?: MatchTeam; away?: MatchTeam };
-  poster?:         string;
-  // streamed.pk source entries — only populated when the match data includes
-  // explicit streamed.pk-compatible source mappings. Never populated from a
-  // sportsrc.org match ID alone (C3 — no cross-provider ID contamination).
-  streamedSources?: MatchSource[];
+  id:       string;
+  title:    string;
+  category: string;
+  date:     number;
+  is_live:  boolean;
+  teams?:   { home?: MatchTeam; away?: MatchTeam };
+  poster?:  string;
   // TheSportsDB enrichment (populated async after initial load)
-  tsdb?:           MatchEnrichment;
+  tsdb?:    MatchEnrichment;
 }
 
 interface SportsViewProps {
@@ -60,28 +51,16 @@ interface SportsViewProps {
 }
 
 // ---------------------------------------------------------------------------
-// Config
+// Config — call sportsrc.org directly from the browser (no Worker needed).
+// VITE_SPORTSRC_API_KEY is inlined at build time, same pattern as TMDB key.
 // ---------------------------------------------------------------------------
 
-// sportsrc.org is the primary data source. All calls go through the Worker
-// proxy at /api/sportsrc — the Worker injects the X-API-KEY header so the
-// key is never exposed in the browser bundle. The Vite dev server proxies
-// /api/* to localhost:8787 (wrangler dev), so the same path works everywhere.
+const SPORTSRC_BASE = 'https://api.sportsrc.org/v2';
+const SPORTSRC_KEY  = import.meta.env.VITE_SPORTSRC_API_KEY as string;
+
 function sportsrcFetch(params: Record<string, string>) {
-  return fetch(`/api/sportsrc?${new URLSearchParams(params).toString()}`);
-}
-
-// streamed.pk is the backup/fallback source for streams only.
-// Calls are routed through the Worker proxy which adds the required headers.
-const STREAMED_PROXY = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
-
-function streamedBackupFetch(path: string) {
-  if (window.location.hostname === 'localhost') {
-    return fetch(`https://streamed.pk${path}`, {
-      headers: { Referer: 'https://streamed.pk', 'User-Agent': 'Mozilla/5.0' }
-    });
-  }
-  return fetch(`${STREAMED_PROXY}${path}`);
+  const p = new URLSearchParams({ ...params, api_key: SPORTSRC_KEY });
+  return fetch(`${SPORTSRC_BASE}/?${p.toString()}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,25 +75,15 @@ function todayStr(): string {
 
 function normalise(m: APIMatch, isLive: boolean): SportMatch {
   return {
-    id:              m.id,
-    title:           m.title,
-    category:        m.category,
-    date:            m.date,
-    is_live:         isLive,
-    teams:           m.teams,
-    poster:          m.poster,
-    // Only carry forward streamed.pk source entries if they exist on this match
-    streamedSources: m.sources?.length ? m.sources : undefined,
+    id:       m.id,
+    title:    m.title,
+    category: m.category,
+    date:     m.date,
+    is_live:  isLive,
+    teams:    m.teams,
+    poster:   m.poster,
   };
 }
-
-// Route streamed.pk image URLs through the proxy
-const STREAMED_PROXY_IMG = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
-function streamedImg(path: string) {
-  if (window.location.hostname === 'localhost') return `https://streamed.pk${path}`;
-  return `${STREAMED_PROXY_IMG}${path}`;
-}
-function badgeUrl(badge: string) { return streamedImg(`/api/images/badge/${badge}.webp`); }
 
 // ---------------------------------------------------------------------------
 // Icon helper
@@ -147,9 +116,9 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
   const away  = match.teams?.away;
   const tsdb  = match.tsdb;
 
-  // Badge priority: streamed.pk native → TheSportsDB enrichment
-  const homeBadgeSrc = home?.badge ? badgeUrl(home.badge) : tsdb?.homeBadge;
-  const awayBadgeSrc = away?.badge ? badgeUrl(away.badge) : tsdb?.awayBadge;
+  // Badge priority: sportsrc.org native (direct URL) → TheSportsDB enrichment
+  const homeBadgeSrc = home?.badge || tsdb?.homeBadge;
+  const awayBadgeSrc = away?.badge || tsdb?.awayBadge;
   const hasBadges    = !!(homeBadgeSrc && awayBadgeSrc);
 
   const timeStr = match.date
@@ -211,7 +180,7 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
         </div>
       ) : match.poster ? (
         <img
-          src={match.poster.startsWith('http') ? match.poster : streamedImg(`${match.poster}${match.poster.endsWith('.webp') ? '' : '.webp'}`)}
+          src={match.poster}
           alt={match.title}
           className="w-full aspect-video object-cover rounded-xl mb-3 opacity-80 group-hover:opacity-100 transition"
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -359,7 +328,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     }).catch(() => setCategoryMatches([]));
   }, [activeCategory, liveMatches]);
 
-  // ── Open match → sportsrc.org primary embed + streamed.pk fallback ────────
+  // ── Open match → fetch sportsrc.org detail for the embed URL ─────────────
 
   const openMatch = useCallback(async (match: SportMatch) => {
     setActiveMatch(match);
@@ -368,51 +337,20 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     setStreamError(false);
     setStreamLoading(true);
     try {
-      // Always fetch sportsrc.org detail for the primary embed URL.
-      // Only attempt streamed.pk fallback sources if the match has explicit
-      // streamed.pk-compatible source entries (C3 — no cross-provider ID use).
-      const sportsrcDetailPromise = sportsrcFetch({ type: 'detail', id: match.id })
-        .then((r) => r.ok ? r.json() as Promise<Record<string, unknown>> : Promise.resolve(null))
-        .catch(() => null);
+      const res = await sportsrcFetch({ type: 'detail', id: match.id });
+      if (!res.ok) { setStreamError(true); return; }
+      const detail = await res.json() as Record<string, unknown>;
 
-      const streamedPromises = (match.streamedSources ?? []).map((src) =>
-        streamedBackupFetch(`/api/stream/${src.source}/${src.id}`)
-          .then((r) => r.json() as Promise<StreamObj[]>)
-          .catch(() => [] as StreamObj[])
-      );
-
-      const [detailResult, ...streamedResults] = await Promise.all([
-        sportsrcDetailPromise,
-        ...streamedPromises,
-      ]);
-
-      const all: StreamObj[] = [];
-
-      // Primary stream: extract embed URL from sportsrc.org detail response.
-      // The field is named 'streamUrl' per the API — adjust if the live response
-      // uses a different key (e.g. 'url', 'embed_url', 'stream_url').
-      const primaryUrl =
-        (detailResult as any)?.streamUrl ||
-        (detailResult as any)?.url ||
-        (detailResult as any)?.embed_url ||
-        (detailResult as any)?.stream_url ||
+      // Extract the embed URL — try common field names from the API response
+      const embedUrl =
+        (detail?.streamUrl  as string) ||
+        (detail?.stream_url as string) ||
+        (detail?.embed_url  as string) ||
+        (detail?.url        as string) ||
         null;
 
-      if (primaryUrl) {
-        all.push({ id: match.id, streamNo: 1, language: '', hd: true, embedUrl: String(primaryUrl), source: 'primary' });
-      }
-
-      // Fallback streams from streamed.pk — collect valid embed URLs, renumber from 2
-      const backups: StreamObj[] = [];
-      for (const r of streamedResults) {
-        if (Array.isArray(r)) backups.push(...r.filter((s) => s.embedUrl));
-      }
-      backups.sort((a, b) => (b.hd ? 1 : 0) - (a.hd ? 1 : 0) || a.streamNo - b.streamNo);
-      backups.forEach((s, i) => { s.streamNo = all.length + i + 1; });
-      all.push(...backups);
-
-      if (!all.length) { setStreamError(true); return; }
-      setStreams(all);
+      if (!embedUrl) { setStreamError(true); return; }
+      setStreams([{ id: match.id, streamNo: 1, language: '', hd: true, embedUrl, source: 'primary' }]);
     } catch {
       setStreamError(true);
     } finally {
