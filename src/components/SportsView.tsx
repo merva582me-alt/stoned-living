@@ -99,6 +99,23 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
   });
 }
 
+/** Junk entry patterns — schedule pages and broadcast channels that
+ *  streamed.pk lists as "matches" but are not real sporting events. */
+const JUNK_PATTERNS = [
+  /\bschedule\b/i,
+  /\bstreams?\s+schedule\b/i,
+  /\bchannel\b/i,
+  /\bnetwork\b/i,
+  /\bbroadcast\b/i,
+  /^[A-Z]{2,5}\s+TV$/i,        // e.g. "BBC TV", "ESPN TV"
+];
+
+function isJunkEntry(m: StreamedMatch): boolean {
+  const hasOpponent = /\bvs\.?\b/i.test(m.title);
+  if (hasOpponent) return false; // real match
+  return JUNK_PATTERNS.some(p => p.test(m.title));
+}
+
 /** A match is truly live only if its start time is within a reasonable window.
  *  streamed.pk /live sometimes lists matches hours before kick-off. */
 function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
@@ -180,8 +197,8 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       if (controller.signal.aborted) return;
 
       const sportsList: StreamedSport[] = sportsData ?? [];
-      const liveRaw: StreamedMatch[]    = liveData  ?? [];
-      const allRaw:  StreamedMatch[]    = allData   ?? [];
+      const liveRaw: StreamedMatch[]    = (liveData ?? []).filter(m => !isJunkEntry(m));
+      const allRaw:  StreamedMatch[]    = (allData  ?? []).filter(m => !isJunkEntry(m));
 
       setSports(sportsList);
 

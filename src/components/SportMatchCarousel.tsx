@@ -9,7 +9,7 @@ export interface SportMatch {
   is_live:   boolean;
   teams?:    { home?: { name: string; badge: string }; away?: { name: string; badge: string } };
   poster?:   string;
-  tsdb?:     { homeBadge?: string; awayBadge?: string; homeScore?: number; awayScore?: number; leagueName?: string; progress?: string };
+  tsdb?:     { homeBadge?: string; awayBadge?: string; homeScore?: number; awayScore?: number; leagueName?: string; progress?: string; eventPoster?: string };
   /** streamed.pk stream sources — carried to the player to fetch streams on demand */
   _sources?: { source: string; id: string }[];
 }
@@ -32,9 +32,10 @@ function splitVs(title: string | undefined): [string, string] {
 
 export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatch) => void }> = ({ match, onOpen }) => {
   // Badges come exclusively from TSDB — never from streamed.pk's unreliable badge fields
-  const homeBadge = match.tsdb?.homeBadge;
-  const awayBadge = match.tsdb?.awayBadge;
-  const hasBadges = !!(homeBadge && awayBadge);
+  const homeBadge   = match.tsdb?.homeBadge;
+  const awayBadge   = match.tsdb?.awayBadge;
+  const eventPoster = match.tsdb?.eventPoster;
+  const hasBadges   = !!(homeBadge && awayBadge);
   const [teamA, teamB] = splitVs(match.title);
   const timeStr = match.date
     ? new Date(match.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -46,9 +47,9 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
       className="group text-left bg-[#0e1411] hover:bg-[#131d17] border border-emerald-900/40 hover:border-emerald-500/50 rounded-2xl overflow-hidden transition-all duration-200 cursor-pointer w-full h-full flex flex-col"
     >
       <div className="relative w-full aspect-video bg-emerald-950/30">
-        {match.poster ? (
+        {(match.poster || eventPoster) ? (
           <img
-            src={match.poster}
+            src={match.poster || eventPoster}
             alt={match.title}
             className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
