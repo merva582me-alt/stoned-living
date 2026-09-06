@@ -9,8 +9,22 @@
  *   GET /api/health
  *       → { status: "ok", ts: string }
  *
- * Sports are handled entirely client-side by calling streamed.pk directly.
+ *   GET /api/sportsrc?<params>
+ *       → Proxies to https://api.sportsrc.org/v2/?<params> with X-API-KEY injected server-side.
+ *       Key is stored as Worker secret SPORTSRC_API_KEY — never exposed to the browser.
+ *
+ *   GET /api/sports/<path>
+ *       → Proxies to streamed.pk (backup/fallback source for sports streams).
  */
+
+// ---------------------------------------------------------------------------
+// Worker environment bindings
+// ---------------------------------------------------------------------------
+
+interface Env {
+  /** sportsrc.org API key — set via: cd workers/resolver && wrangler secret put SPORTSRC_API_KEY */
+  SPORTSRC_API_KEY: string;
+}
 
 import { resolveVidSrc }  from './resolvers/vidsrc.js';
 import { resolveVidLink } from './resolvers/vidlink.js';
@@ -143,8 +157,50 @@ async function handleSports(req: Request, pathname: string): Promise<Response> {
 // Main fetch handler
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// sportsrc.org proxy — forwards /api/sportsrc?<params> to the sportsrc.org API
+// with the X-API-KEY header injected from the Worker secret.
+// Query string is forwarded verbatim (new URL(req.url).search) to avoid any
+// re-encoding or multi-value parameter mangling.
+// ---------------------------------------------------------------------------
+
+async function handleSportsrc(req: Request, env: Env): Promise<Response> {
+  const origin = req.headers.get('Origin');
+  const { search } = new URL(req.url); // e.g. "?type=matches&sport=football&date=2025-07-09"
+  const target = `https://api.sportsrc.org/v2/${search}`;
+
+  try {
+    const upstream = await fetch(target, {
+      headers: {
+        'X-API-KEY': env.SPORTSRC_API_KEY,
+        'Accept':    'application/json',
+      },
+    });
+
+    if (!upstream.ok) {
+      return jsonResponse({ error: `sportsrc returned ${upstream.status}` }, upstream.status, origin);
+    }
+
+    const body = await upstream.text();
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        ...corsHeaders(origin),
+      },
+    });
+  } catch {
+    return jsonResponse({ error: 'sportsrc proxy fetch failed' }, 502, origin);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Main fetch handler
+// ---------------------------------------------------------------------------
+
 export default {
-  async fetch(req: Request): Promise<Response> {
+  async fetch(req: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(req.url);
     const origin = req.headers.get('Origin');
 
@@ -157,8 +213,9 @@ export default {
 
     if (pathname === '/api/resolve')          return handleResolve(req);
     if (pathname === '/api/health')           return handleHealth(req);
+    if (pathname === '/api/sportsrc')         return handleSportsrc(req, env);
     if (pathname.startsWith('/api/sports/'))  return handleSports(req, pathname);
 
     return jsonResponse({ error: 'Not found' }, 404, origin);
   }
-} satisfies ExportedHandler;
+} satisfies ExportedHandler<Env>;

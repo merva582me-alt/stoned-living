@@ -8,5 +8,10 @@ compatibility_flags = ["nodejs_compat"]
 # Routes are configured in the Cloudflare dashboard:
 #   stoned.living/api/* → stoned-resolver
 
+# Required Worker secret — run once per environment after deployment:
+#   cd workers/resolver && wrangler secret put SPORTSRC_API_KEY
+# For local dev, add to workers/resolver/.dev.vars:
+#   SPORTSRC_API_KEY=<your_key>
+
 [observability]
 enabled = true

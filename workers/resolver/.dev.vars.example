@@ -1,0 +1,5 @@
+# Wrangler local dev secrets — copy to .dev.vars and fill in values.
+# .dev.vars is gitignored and never committed.
+# In production, set secrets via: wrangler secret put SECRET_NAME
+
+SPORTSRC_API_KEY=your_sportsrc_api_key_here

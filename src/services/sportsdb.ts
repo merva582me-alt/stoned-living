@@ -51,6 +51,7 @@ export interface MatchEnrichment {
 let liveScoreCache: TSDBLiveScore[] | null = null;
 let liveScoreFetchedAt = 0;
 const LIVE_TTL = 60_000; // re-fetch livescores at most once per minute
+const teamBadgeCache = new Map<string, string>();
 
 // ---------------------------------------------------------------------------
 // Helpers

@@ -3,24 +3,27 @@ import {
   Trophy, Tv2, Loader2, AlertCircle, RefreshCw, Radio,
   Zap, Target, Dumbbell, CircleDot, ChevronLeft, Calendar, Flame
 } from 'lucide-react';
-import { buildEnrichmentMap } from '../services/sportsdb';
+import { buildEnrichmentMap, type MatchEnrichment } from '../services/sportsdb';
 
 // ---------------------------------------------------------------------------
-// Types — mirror the official streamed.pk API spec
+// Types
 // ---------------------------------------------------------------------------
 
 interface MatchSource { source: string; id: string; }
 interface MatchTeam   { name: string; badge: string; }
 
+// sportsrc.org ?type=matches response shape.
+// Field names confirmed from live API — adjust if the API evolves.
 interface APIMatch {
-  id:       string;
-  title:    string;
-  category: string;
-  date:     number;
-  poster?:  string;
-  popular:  boolean;
-  teams?: { home?: MatchTeam; away?: MatchTeam };
-  sources:  MatchSource[];
+  id:        string;
+  title:     string;
+  category:  string;
+  date:      number;
+  poster?:   string;
+  teams?:    { home?: MatchTeam; away?: MatchTeam };
+  // sportsrc.org does not always include streamed.pk-style source mappings.
+  // When present, these are used as fallback stream sources only.
+  sources?:  MatchSource[];
 }
 
 interface StreamObj {
@@ -36,16 +39,19 @@ interface SportCategory { id: string; name: string; }
 
 // A normalised match used internally — extended with TheSportsDB enrichment
 interface SportMatch {
-  id:         string;
-  title:      string;
-  category:   string;
-  date:       number;
-  is_live:    boolean;
-  teams?:     { home?: MatchTeam; away?: MatchTeam };
-  sources:    MatchSource[];
-  poster?:    string;
+  id:              string;
+  title:           string;
+  category:        string;
+  date:            number;
+  is_live:         boolean;
+  teams?:          { home?: MatchTeam; away?: MatchTeam };
+  poster?:         string;
+  // streamed.pk source entries — only populated when the match data includes
+  // explicit streamed.pk-compatible source mappings. Never populated from a
+  // sportsrc.org match ID alone (C3 — no cross-provider ID contamination).
+  streamedSources?: MatchSource[];
   // TheSportsDB enrichment (populated async after initial load)
-  tsdb?:      MatchEnrichment;
+  tsdb?:           MatchEnrichment;
 }
 
 interface SportsViewProps {
@@ -54,46 +60,59 @@ interface SportsViewProps {
 }
 
 // ---------------------------------------------------------------------------
-// Config — route all streamed.pk API calls through our Worker proxy so that
-// required headers (Referer, User-Agent) are set server-side. This is the
-// only way to make it work on mobile browsers, which block those headers.
+// Config
 // ---------------------------------------------------------------------------
 
-const STREAMED = 'https://streamed.pk';
-// Direct Worker subdomain — always works regardless of Pages routing
-const SPORTS_PROXY = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
+// sportsrc.org is the primary data source. All calls go through the Worker
+// proxy at /api/sportsrc — the Worker injects the X-API-KEY header so the
+// key is never exposed in the browser bundle. The Vite dev server proxies
+// /api/* to localhost:8787 (wrangler dev), so the same path works everywhere.
+function sportsrcFetch(params: Record<string, string>) {
+  return fetch(`/api/sportsrc?${new URLSearchParams(params).toString()}`);
+}
 
-function streamedFetch(path: string) {
-  // Local dev hits streamed.pk directly; production goes via the CF Worker
+// streamed.pk is the backup/fallback source for streams only.
+// Calls are routed through the Worker proxy which adds the required headers.
+const STREAMED_PROXY = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
+
+function streamedBackupFetch(path: string) {
   if (window.location.hostname === 'localhost') {
-    return fetch(`${STREAMED}${path}`, {
-      headers: { Referer: STREAMED, 'User-Agent': 'Mozilla/5.0' }
+    return fetch(`https://streamed.pk${path}`, {
+      headers: { Referer: 'https://streamed.pk', 'User-Agent': 'Mozilla/5.0' }
     });
   }
-  return fetch(`${SPORTS_PROXY}${path}`);
+  return fetch(`${STREAMED_PROXY}${path}`);
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Today's date in YYYY-MM-DD format (local time) — required by sportsrc.org
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function normalise(m: APIMatch, isLive: boolean): SportMatch {
   return {
-    id:       m.id,
-    title:    m.title,
-    category: m.category,
-    date:     m.date,
-    is_live:  isLive,
-    teams:    m.teams,
-    sources:  m.sources,
-    poster:   m.poster
+    id:              m.id,
+    title:           m.title,
+    category:        m.category,
+    date:            m.date,
+    is_live:         isLive,
+    teams:           m.teams,
+    poster:          m.poster,
+    // Only carry forward streamed.pk source entries if they exist on this match
+    streamedSources: m.sources?.length ? m.sources : undefined,
   };
 }
 
-// Route streamed.pk image URLs through the proxy on production too
+// Route streamed.pk image URLs through the proxy
+const STREAMED_PROXY_IMG = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
 function streamedImg(path: string) {
-  if (window.location.hostname === 'localhost') return `${STREAMED}${path}`;
-  return `${SPORTS_PROXY}${path}`;
+  if (window.location.hostname === 'localhost') return `https://streamed.pk${path}`;
+  return `${STREAMED_PROXY_IMG}${path}`;
 }
 function badgeUrl(badge: string) { return streamedImg(`/api/images/badge/${badge}.webp`); }
 
@@ -245,49 +264,65 @@ export const SportsView: React.FC<SportsViewProps> = () => {
   const [streamError,   setStreamError]   = useState(false);
   const [streamIndex,   setStreamIndex]   = useState(0);
 
-  // ── Load live + today + categories in parallel ──────────────────────────
+  // ── Load categories then fetch live + today matches per sport ────────────
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(false);
     try {
-      const [liveRes, todayRes, catsRes] = await Promise.all([
-        streamedFetch('/api/matches/live'),
-        streamedFetch('/api/matches/all-today'),
-        streamedFetch('/api/sports'),
-      ]);
-      if (!liveRes.ok && !todayRes.ok) throw new Error('Failed to fetch');
+      // Step 1: fetch the sports list first so we know which sports to query
+      const catsRes = await sportsrcFetch({ type: 'sports' });
+      const cats: SportCategory[] = catsRes.ok
+        ? (await catsRes.json() as SportCategory[])
+        : [];
+      const validCats = Array.isArray(cats) ? cats : [];
+      setCategories(validCats);
 
-      const [liveRaw, todayRaw, cats] = await Promise.all([
-        liveRes.ok  ? liveRes.json()  as Promise<APIMatch[]> : Promise.resolve([]),
-        todayRes.ok ? todayRes.json() as Promise<APIMatch[]> : Promise.resolve([]),
-        catsRes.ok  ? catsRes.json()  as Promise<SportCategory[]> : Promise.resolve([]),
+      if (!validCats.length) throw new Error('No sports categories returned');
+
+      const today = todayStr();
+
+      // Step 2: for each sport, fetch live (inprogress) + all-today in parallel
+      const fetches = validCats.flatMap((cat) => [
+        sportsrcFetch({ type: 'matches', sport: cat.name, status: 'inprogress', date: today })
+          .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([]))
+          .catch(() => [] as APIMatch[]),
+        sportsrcFetch({ type: 'matches', sport: cat.name, date: today })
+          .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([]))
+          .catch(() => [] as APIMatch[]),
       ]);
 
-      // Live IDs for deduplication
-      const liveIds = new Set<string>();
-      const live = (Array.isArray(liveRaw) ? liveRaw : []).map((m) => {
-        liveIds.add(m.id);
-        return normalise(m, true);
+      const results = await Promise.allSettled(fetches);
+
+      // Step 3: merge all results — even indices = live, odd indices = all-today
+      const liveRaw:  APIMatch[] = [];
+      const todayRaw: APIMatch[] = [];
+      results.forEach((r, i) => {
+        if (r.status !== 'fulfilled' || !Array.isArray(r.value)) return;
+        if (i % 2 === 0) liveRaw.push(...r.value);
+        else              todayRaw.push(...r.value);
       });
 
-      // Today's matches — mark live if also in live list, strip duplicates for "upcoming"
-      const today = (Array.isArray(todayRaw) ? todayRaw : []).map((m) =>
-        normalise(m, liveIds.has(m.id))
-      );
+      // Deduplicate by id
+      const liveIds = new Set<string>();
+      const live = liveRaw
+        .filter((m) => { if (liveIds.has(m.id)) return false; liveIds.add(m.id); return true; })
+        .map((m) => normalise(m, true));
+
+      const seenIds = new Set(liveIds);
+      const allToday = todayRaw
+        .filter((m) => { if (seenIds.has(m.id)) return false; seenIds.add(m.id); return true; })
+        .map((m) => normalise(m, liveIds.has(m.id)));
 
       setLiveMatches(live);
-      setTodayMatches(today);
-      setCategories(Array.isArray(cats) ? cats : []);
+      setTodayMatches(allToday);
 
       // Enrich all matches with TheSportsDB badges + scores — update cards incrementally
-      const allMatches = [...live, ...today.filter(m => !liveIds.has(m.id))];
-      const liveIdSet = liveIds; // capture for closure
+      const allMatches = [...live, ...allToday.filter(m => !liveIds.has(m.id))];
       buildEnrichmentMap(allMatches, (id, enrichment) => {
-        // Called for each match as its enrichment resolves — paint badges immediately
         const patch = (list: SportMatch[]) =>
           list.map(m => m.id === id ? { ...m, tsdb: enrichment } : m);
-        if (liveIdSet.has(id)) {
+        if (liveIds.has(id)) {
           setLiveMatches(prev => patch(prev));
         } else {
           setTodayMatches(prev => patch(prev));
@@ -302,51 +337,81 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Category filter: fetch sport-specific matches ────────────────────────
+  // ── Category filter: re-fetch sport-specific matches on selection ─────────
 
   useEffect(() => {
     if (activeCategory === 'all') { setCategoryMatches([]); return; }
-    streamedFetch(`/api/matches/${activeCategory}`)
-      .then((r) => r.json() as Promise<APIMatch[]>)
-      .then((raw) => {
-        if (!Array.isArray(raw)) { setCategoryMatches([]); return; }
-        const now = Date.now();
-        const liveIds = new Set(liveMatches.map((m) => m.id));
-        // A match from the sport endpoint is "live" if it's in the live list
-        // or started within the last 4 hours and ends within the next hour
-        setCategoryMatches(raw.map((m) =>
-          normalise(m, liveIds.has(m.id) || (m.date >= now - 4 * 3600_000 && m.date <= now + 3600_000))
-        ));
-      })
-      .catch(() => setCategoryMatches([]));
+    const today = todayStr();
+    const liveIds = new Set(liveMatches.map((m) => m.id));
+    Promise.allSettled([
+      sportsrcFetch({ type: 'matches', sport: activeCategory, status: 'inprogress', date: today })
+        .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([])),
+      sportsrcFetch({ type: 'matches', sport: activeCategory, date: today })
+        .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([])),
+    ]).then((results) => {
+      const merged: APIMatch[] = [];
+      const seen = new Set<string>();
+      results.forEach((r) => {
+        if (r.status !== 'fulfilled' || !Array.isArray(r.value)) return;
+        r.value.forEach((m) => { if (!seen.has(m.id)) { seen.add(m.id); merged.push(m); } });
+      });
+      setCategoryMatches(merged.map((m) => normalise(m, liveIds.has(m.id))));
+    }).catch(() => setCategoryMatches([]));
   }, [activeCategory, liveMatches]);
 
-  // ── Open match → fetch streams directly from streamed.pk ────────────────
+  // ── Open match → sportsrc.org primary embed + streamed.pk fallback ────────
 
   const openMatch = useCallback(async (match: SportMatch) => {
     setActiveMatch(match);
     setStreams([]);
     setStreamIndex(0);
     setStreamError(false);
-    if (!match.sources?.length) { setStreamError(true); return; }
     setStreamLoading(true);
     try {
-      // Fetch all sources in parallel
-      const results = await Promise.allSettled(
-        match.sources.map((src) =>
-          streamedFetch(`/api/stream/${src.source}/${src.id}`)
-            .then((r) => r.json() as Promise<StreamObj[]>)
-        )
+      // Always fetch sportsrc.org detail for the primary embed URL.
+      // Only attempt streamed.pk fallback sources if the match has explicit
+      // streamed.pk-compatible source entries (C3 — no cross-provider ID use).
+      const sportsrcDetailPromise = sportsrcFetch({ type: 'detail', id: match.id })
+        .then((r) => r.ok ? r.json() as Promise<Record<string, unknown>> : Promise.resolve(null))
+        .catch(() => null);
+
+      const streamedPromises = (match.streamedSources ?? []).map((src) =>
+        streamedBackupFetch(`/api/stream/${src.source}/${src.id}`)
+          .then((r) => r.json() as Promise<StreamObj[]>)
+          .catch(() => [] as StreamObj[])
       );
+
+      const [detailResult, ...streamedResults] = await Promise.all([
+        sportsrcDetailPromise,
+        ...streamedPromises,
+      ]);
+
       const all: StreamObj[] = [];
-      for (const r of results) {
-        if (r.status === 'fulfilled' && Array.isArray(r.value)) {
-          all.push(...r.value.filter((s) => s.embedUrl));
-        }
+
+      // Primary stream: extract embed URL from sportsrc.org detail response.
+      // The field is named 'streamUrl' per the API — adjust if the live response
+      // uses a different key (e.g. 'url', 'embed_url', 'stream_url').
+      const primaryUrl =
+        (detailResult as any)?.streamUrl ||
+        (detailResult as any)?.url ||
+        (detailResult as any)?.embed_url ||
+        (detailResult as any)?.stream_url ||
+        null;
+
+      if (primaryUrl) {
+        all.push({ id: match.id, streamNo: 1, language: '', hd: true, embedUrl: String(primaryUrl), source: 'primary' });
       }
+
+      // Fallback streams from streamed.pk — collect valid embed URLs, renumber from 2
+      const backups: StreamObj[] = [];
+      for (const r of streamedResults) {
+        if (Array.isArray(r)) backups.push(...r.filter((s) => s.embedUrl));
+      }
+      backups.sort((a, b) => (b.hd ? 1 : 0) - (a.hd ? 1 : 0) || a.streamNo - b.streamNo);
+      backups.forEach((s, i) => { s.streamNo = all.length + i + 1; });
+      all.push(...backups);
+
       if (!all.length) { setStreamError(true); return; }
-      // HD first, then by stream number
-      all.sort((a, b) => (b.hd ? 1 : 0) - (a.hd ? 1 : 0) || a.streamNo - b.streamNo);
       setStreams(all);
     } catch {
       setStreamError(true);
@@ -426,8 +491,9 @@ export const SportsView: React.FC<SportsViewProps> = () => {
               key={cur.embedUrl}
               src={cur.embedUrl}
               className="w-full h-full border-0"
+              scrolling="no"
+              allow="autoplay; fullscreen; encrypted-media"
               allowFullScreen
-              allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
             />
           )}
         </div>
@@ -503,9 +569,9 @@ export const SportsView: React.FC<SportsViewProps> = () => {
           {categories.map((cat) => (
             <button
               key={cat.id}
-              onClick={() => setActiveCategory(cat.id)}
+              onClick={() => setActiveCategory(cat.name)}
               className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border font-bold text-xs transition-all cursor-pointer ${
-                activeCategory === cat.id
+                activeCategory === cat.name
                   ? 'bg-emerald-500 text-black border-emerald-400'
                   : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/50 hover:text-white'
               }`}
