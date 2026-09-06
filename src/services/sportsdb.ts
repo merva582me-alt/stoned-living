@@ -63,6 +63,10 @@ let liveScoreCache: TSDBLiveScore[] | null = null;
 let liveScoreFetchedAt = 0;
 const LIVE_TTL = 60_000;
 
+let finishedPairsCache: Set<string> | null = null;
+let finishedPairsFetchedAt = 0;
+const FINISHED_TTL = 120_000; // re-check every 2 minutes
+
 const teamBadgeCache   = new Map<string, string>(); // norm(name)     → badge URL | ''
 const eventPosterCache = new Map<string, string>(); // norm(title)    → poster URL | ''
 const leagueBannerCache = new Map<string, string>(); // norm(category) → banner URL | ''
@@ -179,6 +183,59 @@ async function fetchLiveScores(): Promise<TSDBLiveScore[]> {
     return liveScoreCache;
   } catch {
     return liveScoreCache ?? [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Today's finished matches — used to drop ended games from the upcoming list
+// ---------------------------------------------------------------------------
+
+interface TSDBDayEvent {
+  strHomeTeam?: string;
+  strAwayTeam?: string;
+  strStatus?:   string; // "Match Finished", "Not Started", "1H", "2H", etc.
+  strProgress?: string; // "FT", "HT", etc.
+}
+
+/**
+ * Returns a Set of normalised "home|away" pair strings for every match that
+ * TSDB reports as finished today.  Also includes the reverse "away|home" pair
+ * so lookups work regardless of which team streamed.pk calls "home".
+ * Cached for FINISHED_TTL (2 min) to avoid hammering the API.
+ */
+export async function fetchTodayFinishedPairs(): Promise<Set<string>> {
+  const now = Date.now();
+  if (finishedPairsCache && now - finishedPairsFetchedAt < FINISHED_TTL) {
+    return finishedPairsCache;
+  }
+
+  const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
+  try {
+    const res = await fetch(`${TSDB}/eventsday.php?d=${today}`);
+    if (!res.ok) return finishedPairsCache ?? new Set();
+    const json = await res.json() as { events: TSDBDayEvent[] | null };
+    const events = json.events ?? [];
+
+    const pairs = new Set<string>();
+    const FINISHED_STATUSES = /finished|ft|full.?time|ended|complete/i;
+
+    for (const ev of events) {
+      const statusFinished =
+        (ev.strStatus   && FINISHED_STATUSES.test(ev.strStatus))  ||
+        (ev.strProgress && FINISHED_STATUSES.test(ev.strProgress));
+      if (!statusFinished) continue;
+      if (!ev.strHomeTeam || !ev.strAwayTeam) continue;
+      const h = norm(ev.strHomeTeam);
+      const a = norm(ev.strAwayTeam);
+      pairs.add(`${h}|${a}`);
+      pairs.add(`${a}|${h}`); // streamed.pk may swap home/away
+    }
+
+    finishedPairsCache = pairs;
+    finishedPairsFetchedAt = now;
+    return pairs;
+  } catch {
+    return finishedPairsCache ?? new Set();
   }
 }
 

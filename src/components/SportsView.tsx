@@ -5,7 +5,7 @@ import {
   ChevronLeft, Play, SlidersHorizontal, Grid, Layers, Clock, CircleDot,
   Zap, Target, Dumbbell, Tv2, LucideIcon,
 } from 'lucide-react';
-import { buildEnrichmentMap, type MatchEnrichment } from '../services/sportsdb';
+import { buildEnrichmentMap, fetchTodayFinishedPairs, type MatchEnrichment } from '../services/sportsdb';
 import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatchCarousel';
 
 // ---------------------------------------------------------------------------
@@ -259,11 +259,12 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     abortRef.current = controller;
 
     try {
-      // ── 1. Fetch sports categories & all matches in parallel ──────────────
-      const [sportsData, liveData, allData] = await Promise.all([
+      // ── 1. Fetch sports categories, all matches & TSDB finished pairs ─────
+      const [sportsData, liveData, allData, finishedPairs] = await Promise.all([
         streamedFetch<StreamedSport[]>('/api/sports'),
         streamedFetch<StreamedMatch[]>('/api/matches/live'),
         streamedFetch<StreamedMatch[]>('/api/matches/all'),
+        fetchTodayFinishedPairs(),
       ]);
 
       if (controller.signal.aborted) return;
@@ -327,14 +328,24 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       setLiveMatches(liveMapped);
 
       // ── 4. Build per-sport upcoming map ───────────────────────────────────
-      // Any match already in liveIds is genuinely active (confirmed by the
-      // /live endpoint + stream probe above). A match NOT in liveIds whose
-      // scheduled date has already passed is definitively over — skip it.
+      // Drop matches that are confirmed finished by TSDB or whose scheduled
+      // time is in the past and weren't picked up by the live endpoint.
       const now = Date.now();
       const sportMap: Record<string, SportMatch[]> = {};
       for (const m of allRaw) {
         if (liveIds.has(m.id)) continue;
-        if (m.date && m.date < now) continue; // past and not live → ended
+        if (m.date && m.date < now) continue; // past kick-off and not live → ended
+
+        // Secondary check: TSDB says this specific match is finished today
+        if (m.title && /\bvs\.?\b/i.test(m.title)) {
+          const parts = m.title.split(/\s+vs\.?\s+/i);
+          if (parts.length >= 2) {
+            const h = parts[0].trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+            const a = parts.slice(1).join(' vs ').trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+            if (finishedPairs.has(`${h}|${a}`)) continue; // confirmed finished
+          }
+        }
+
         const cat = m.category?.toLowerCase() || 'other';
         if (!sportMap[cat]) sportMap[cat] = [];
         sportMap[cat].push(toSportMatch(m, false, enrichMap.get(m.id)));
