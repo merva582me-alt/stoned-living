@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import Hls from 'hls.js';
 import {
   Trophy, Loader2, AlertCircle, RefreshCw, Radio, Flame, Calendar,
   ChevronLeft, Play, SlidersHorizontal, Grid, Layers, Clock, CircleDot,
@@ -145,6 +146,70 @@ function toSportMatch(m: StreamedMatch, fromLiveEndpoint: boolean, enrich?: Matc
     _sources: m.sources,
   } as SportMatch;
 }
+
+// ---------------------------------------------------------------------------
+// StreamPlayer — handles HLS (.m3u8), direct video, and embed iframe URLs
+// ---------------------------------------------------------------------------
+
+function isHlsUrl(url: string): boolean {
+  return url.includes('.m3u8');
+}
+function isDirectVideo(url: string): boolean {
+  return /\.(mp4|webm|ogg|ts)(\?|$)/i.test(url);
+}
+
+const StreamPlayer: React.FC<{ url: string }> = ({ url }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isHlsUrl(url)) {
+      if (Hls.isSupported()) {
+        const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+        hls.loadSource(url);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => { video.play().catch(() => {}); });
+        return () => { hls.destroy(); };
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Safari native HLS
+        video.src = url;
+        video.play().catch(() => {});
+      }
+    } else if (isDirectVideo(url)) {
+      video.src = url;
+      video.play().catch(() => {});
+    }
+  }, [url]);
+
+  if (isHlsUrl(url) || isDirectVideo(url)) {
+    return (
+      <video
+        ref={videoRef}
+        className="w-full h-full bg-black"
+        controls
+        autoPlay
+        playsInline
+        style={{ display: 'block' }}
+      />
+    );
+  }
+
+  // Regular embed page — use iframe
+  return (
+    <iframe
+      src={url}
+      width="100%"
+      height="100%"
+      frameBorder={0}
+      scrolling="no"
+      allow="autoplay; fullscreen; encrypted-media"
+      allowFullScreen
+      className="w-full h-full"
+    />
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -441,17 +506,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
             </div>
           )}
           {!streamLoading && !streamError && cur && (
-            <iframe
-              key={cur.embedUrl}
-              src={cur.embedUrl}
-              width="100%"
-              height="100%"
-              frameBorder={0}
-              scrolling="no"
-              allow="autoplay; fullscreen; encrypted-media"
-              allowFullScreen
-              className="w-full h-full"
-            />
+            <StreamPlayer key={cur.embedUrl} url={cur.embedUrl} />
           )}
         </div>
 
