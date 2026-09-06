@@ -104,7 +104,6 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
 const JUNK_PATTERNS = [
   /\bschedule\b/i,
   /\bstreams?\s+schedule\b/i,
-  /\bchannel\b/i,
   /\bnetwork\b/i,
   /\bbroadcast\b/i,
   /^[A-Z]{2,5}\s+TV$/i,        // e.g. "BBC TV", "ESPN TV"
