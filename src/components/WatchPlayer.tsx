@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Plyr from 'plyr';
 import Hls from 'hls.js';
 import 'plyr/dist/plyr.css';
@@ -14,9 +14,7 @@ import { StrainDatabase } from '../data/strainDatabase';
 // Stream resolver helper
 // ---------------------------------------------------------------------------
 
-// In production on Cloudflare Pages the Worker handles /api/* via routing.
-// Set VITE_RESOLVER_URL=http://localhost:8787 for local dev with `wrangler dev`.
-const RESOLVER_BASE = (import.meta.env.VITE_RESOLVER_URL || '').replace(/\/$/, '');
+const RESOLVER_BASE = (import.meta.env.VITE_RESOLVER_URL || 'https://stoned-resolver.stonedliving.workers.dev').replace(/\/$/, '');
 
 async function resolveStream(
   type: 'movie' | 'tv' | 'anime' | 'sports',
@@ -77,16 +75,19 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   const isTv = media.media_type === 'tv' || Boolean(media.number_of_seasons) || Boolean(media.first_air_date) || (Boolean(media.name) && !media.title);
   const effectiveMediaType: 'movie' | 'tv' = isTv ? 'tv' : 'movie';
 
-  // ── Plyr + Hls.js refs ────────────────────────────────────────────────────
+  // ── HLS refs (sports only) ────────────────────────────────────────────────
   const videoRef  = useRef<HTMLVideoElement>(null);
   const plyrRef   = useRef<Plyr | null>(null);
   const hlsRef    = useRef<Hls | null>(null);
 
-  // ── Stream resolver state ─────────────────────────────────────────────────
-  const [streamUrl, setStreamUrl]       = useState<string | null>(null);
-  const [streamLoading, setStreamLoading] = useState(true);
-  const [streamError, setStreamError]   = useState(false);
-  const [retryCount, setRetryCount]     = useState(0);
+  // ── Stream state ──────────────────────────────────────────────────────────
+  const [streamUrl, setStreamUrl]         = useState<string | null>(null);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamError, setStreamError]     = useState(false);
+  const [retryCount, setRetryCount]       = useState(0);
+
+  // ── Embed server selection (movies/tv/anime) ──────────────────────────────
+  const [serverIndex, setServerIndex] = useState(0);
 
   const [seasonNum, setSeasonNum] = useState(initialSeason);
   const [episodeNum, setEpisodeNum] = useState(initialEpisode);
@@ -199,106 +200,91 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     }
   }, [media, activeMedia, seasonNum, episodeNum, isTv, effectiveMediaType, seasonData, onUpdateUser]);
 
-  // ── Resolve stream from Worker ────────────────────────────────────────────
-  const isSports = (media as any).media_type === 'sports';
+  // ── Detect media kind ─────────────────────────────────────────────────────
+  const isSports = Boolean((media as any).is_live);
+  const isAnime  = Boolean((media as any).is_anime);
 
+  // ── Build embed server list (movies / TV / anime) — official embed URLs ───
+  const embedServers = useMemo(() => {
+    if (isSports) return [];
+    const id = media.id;
+    if (effectiveMediaType === 'movie') {
+      return [
+        `https://vidsrcme.ru/embed/movie/${id}`,
+        `https://vidlink.pro/movie/${id}`,
+        `https://vidcore.org/embed/movie/${id}?autoplay=true&theme=10b981`,
+        `https://vidup.to/e/${id}`,
+      ];
+    }
+    // TV or Anime
+    return [
+      `https://vidsrcme.ru/embed/tv/${id}/${seasonNum}/${episodeNum}`,
+      `https://vidlink.pro/tv/${id}/${seasonNum}/${episodeNum}`,
+      `https://vidcore.org/embed/tv/${id}/${seasonNum}/${episodeNum}?autoplay=true&theme=10b981`,
+      `https://vidup.to/e/${id}?s=${seasonNum}&e=${episodeNum}`,
+    ];
+  }, [media.id, effectiveMediaType, seasonNum, episodeNum, isSports]);
+
+  // Reset server when title/episode changes
+  useEffect(() => { setServerIndex(0); }, [media.id, seasonNum, episodeNum]);
+
+  // ── Sports: resolve HLS stream from worker ────────────────────────────────
   const loadStream = useCallback(async () => {
+    if (!isSports) return;
     setStreamLoading(true);
     setStreamError(false);
     setStreamUrl(null);
-
-    const type = isSports ? 'sports'
-               : (media as any).is_anime ? 'anime'
-               : effectiveMediaType;
-    const anilistId = (media as any).anilist_id ? String((media as any).anilist_id) : undefined;
-
     const url = await resolveStream(
-      type,
-      isSports ? (media as any).channel_id || media.id : media.id,
-      isTv && !isSports ? seasonNum : undefined,
-      isTv && !isSports ? episodeNum : undefined,
-      {
-        provider: isSports ? (media as any).sports_provider : undefined,
-        anilistId
-      }
+      'sports',
+      (media as any).channel_id || media.id,
+      undefined, undefined,
+      { provider: (media as any).sports_provider }
     );
-
-    if (url) {
-      setStreamUrl(url);
-    } else {
-      setStreamError(true);
-    }
+    if (url) { setStreamUrl(url); } else { setStreamError(true); }
     setStreamLoading(false);
-  }, [media, effectiveMediaType, isTv, isSports, seasonNum, episodeNum]);
+  }, [media, isSports]);
 
-  // Resolve on mount and whenever episode/season changes
-  useEffect(() => { loadStream(); }, [loadStream]);
+  useEffect(() => { if (isSports) loadStream(); }, [isSports, loadStream]);
 
-  // ── Initialise Plyr + Hls.js when stream URL arrives ─────────────────────
+  // ── HLS/Plyr — sports only ────────────────────────────────────────────────
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !streamUrl) return;
-
-    // Tear down previous instances
-    if (hlsRef.current) { hlsRef.current.destroy(); hlsRef.current = null; }
+    if (!video || !streamUrl || !isSports) return;
+    if (hlsRef.current)  { hlsRef.current.destroy();  hlsRef.current = null; }
     if (plyrRef.current) { plyrRef.current.destroy(); plyrRef.current = null; }
-
     if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
       hlsRef.current = hls;
-
       hls.loadSource(streamUrl);
       hls.attachMedia(video);
-
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        // Initialise Plyr after Hls has attached
         plyrRef.current = new Plyr(video, {
           controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
           hideControls: true,
-          resetOnEnd: false,
-          keyboard: { focused: true, global: false }
         });
+        plyrRef.current.play().catch(() => {});
       });
-
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) {
-          if (retryCount < 1) {
-            setRetryCount((c) => c + 1);
-            loadStream();
-          } else {
-            setStreamError(true);
-          }
-        }
-      });
+      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) setStreamError(true); });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS
       video.src = streamUrl;
       plyrRef.current = new Plyr(video, {
         controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
-        hideControls: true
+        hideControls: true,
       });
     } else {
       setStreamError(true);
     }
-
     return () => {
-      if (hlsRef.current)  { hlsRef.current.destroy();  hlsRef.current = null; }
-      if (plyrRef.current) { plyrRef.current.destroy(); plyrRef.current = null; }
+      hlsRef.current?.destroy();
+      plyrRef.current?.destroy();
+      hlsRef.current = null;
+      plyrRef.current = null;
     };
-  }, [streamUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [streamUrl, isSports]);
 
-  // Apply emerald theme to Plyr via CSS custom property on the container
-  useEffect(() => {
-    const container = videoRef.current?.closest('.plyr') as HTMLElement | null;
-    if (container) container.style.setProperty('--plyr-color-main', '#10b981');
-  });
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (hlsRef.current)  hlsRef.current.destroy();
-      if (plyrRef.current) plyrRef.current.destroy();
-    };
+  useEffect(() => () => {
+    hlsRef.current?.destroy();
+    plyrRef.current?.destroy();
   }, []);
 
   const handleNextEpisode = () => {
@@ -504,32 +490,66 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 
           {/* LEFT MAIN STREAM COLUMN (Full width on Mobile/Tablet, 8/12 on Desktop PC) */}
           <div className="lg:col-span-8 space-y-4 min-w-0">
-            {/* Video Player Container */}
-            <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl overflow-hidden border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]" style={{ '--plyr-color-main': '#10b981' } as React.CSSProperties}>
 
-              {/* Native <video> — controlled by Plyr + Hls.js */}
-              <video
-                ref={videoRef}
-                id="stoned-player"
-                className="w-full h-full"
-                playsInline
-                crossOrigin="anonymous"
-              />
+            {/* ── Server switcher bar ─────────────────────────────────────── */}
+            {!isSports && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Server:</span>
+                {embedServers.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setServerIndex(i)}
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                      serverIndex === i
+                        ? 'bg-emerald-500 text-black border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                        : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/60 hover:text-emerald-300'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
 
-              {/* Loading overlay */}
-              {streamLoading && (
+            {/* ── Video Player Container ──────────────────────────────────── */}
+            <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl overflow-hidden border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+
+              {/* ── iframe embed — movies / TV / anime ── */}
+              {!isSports && embedServers[serverIndex] && (
+                <iframe
+                  key={embedServers[serverIndex]}
+                  src={embedServers[serverIndex]}
+                  className="w-full h-full border-0"
+                  allowFullScreen
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  referrerPolicy="no-referrer"
+                />
+              )}
+
+              {/* ── HLS video — sports ── */}
+              {isSports && (
+                <video
+                  ref={videoRef}
+                  id="stoned-player"
+                  className="w-full h-full"
+                  playsInline
+                />
+              )}
+
+              {/* Sports loading overlay */}
+              {isSports && streamLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10">
                   <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-3" />
-                  <span className="text-xs font-bold text-emerald-300 tracking-widest uppercase">Resolving Stream…</span>
+                  <span className="text-xs font-bold text-emerald-300 tracking-widest uppercase">Connecting to stream…</span>
                 </div>
               )}
 
-              {/* Error overlay */}
-              {streamError && !streamLoading && (
+              {/* Sports error overlay */}
+              {isSports && streamError && !streamLoading && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10 gap-4">
                   <AlertCircle className="w-10 h-10 text-rose-400" />
                   <p className="text-sm font-bold text-white">Stream unavailable right now</p>
-                  <p className="text-xs text-zinc-400">All sources exhausted — please try again shortly</p>
+                  <p className="text-xs text-zinc-400">This event may not be live yet — try refreshing</p>
                   <button
                     onClick={() => { setRetryCount(0); loadStream(); }}
                     className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer"
@@ -539,32 +559,25 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
                 </div>
               )}
 
-              {/* Computer/Desktop Mode Side Episode Navigation Overlay Buttons */}
-              {isTv && (
+              {/* Episode nav overlay buttons (desktop) */}
+              {isTv && !isSports && (
                 <>
                   <button
                     onClick={handlePrevEpisode}
                     disabled={seasonNum === 1 && episodeNum === 1}
                     className="hidden md:flex absolute left-3 top-1/2 -translate-y-1/2 z-50 items-center justify-center p-3 rounded-2xl bg-black/80 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/50 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_30px_rgba(0,0,0,0.9)] backdrop-blur-md opacity-75 hover:opacity-100 group-hover:opacity-100 disabled:opacity-20 disabled:pointer-events-none cursor-pointer group/prev"
                     title="Previous Episode"
-                    aria-label="Previous Episode"
                   >
                     <ChevronLeft className="w-7 h-7 stroke-[2.5]" />
-                    <span className="absolute left-full ml-3 px-3 py-1.5 rounded-xl bg-black/95 text-emerald-300 border border-emerald-500/40 text-xs font-bold whitespace-nowrap opacity-0 group-hover/prev:opacity-100 transition-opacity pointer-events-none shadow-2xl">
-                      Previous Episode
-                    </span>
+                    <span className="absolute left-full ml-3 px-3 py-1.5 rounded-xl bg-black/95 text-emerald-300 border border-emerald-500/40 text-xs font-bold whitespace-nowrap opacity-0 group-hover/prev:opacity-100 transition-opacity pointer-events-none shadow-2xl">Previous Episode</span>
                   </button>
-
                   <button
                     onClick={handleNextEpisode}
                     className="hidden md:flex absolute right-3 top-1/2 -translate-y-1/2 z-50 items-center justify-center p-3 rounded-2xl bg-black/80 hover:bg-emerald-500 text-emerald-400 hover:text-black border border-emerald-500/50 hover:border-emerald-400 transition-all duration-200 shadow-[0_0_30px_rgba(0,0,0,0.9)] backdrop-blur-md opacity-75 hover:opacity-100 group-hover:opacity-100 cursor-pointer group/next"
                     title="Next Episode"
-                    aria-label="Next Episode"
                   >
                     <ChevronRight className="w-7 h-7 stroke-[2.5]" />
-                    <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-black/95 text-emerald-300 border border-emerald-500/40 text-xs font-bold whitespace-nowrap opacity-0 group-hover/next:opacity-100 transition-opacity pointer-events-none shadow-2xl">
-                      Next Episode
-                    </span>
+                    <span className="absolute right-full mr-3 px-3 py-1.5 rounded-xl bg-black/95 text-emerald-300 border border-emerald-500/40 text-xs font-bold whitespace-nowrap opacity-0 group-hover/next:opacity-100 transition-opacity pointer-events-none shadow-2xl">Next Episode</span>
                   </button>
                 </>
               )}
