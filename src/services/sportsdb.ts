@@ -4,10 +4,11 @@
  *
  * Strategy:
  *  1. Livescores endpoint — one request, covers everything currently in play.
- *     Badges + scores arrive immediately for live matches.
- *  2. Team search endpoint — /searchteams.php?t=Name — used progressively for
- *     upcoming matches whose teams aren't in livescores.  Requests are queued,
- *     rate-limited and cached so the page loads instantly and badges pop in.
+ *  2. Team search — /searchteams.php?t=Name — for "A vs B" matches not in livescores.
+ *  3. Event search — /searchevents.php?e=Title — for single-name events (UFC, NASCAR).
+ *     Tries multiple cleaned-up title variants to maximise hit rate.
+ *  4. League banner fallback — /search_all_leagues.php?s=LeagueName — last resort,
+ *     gives every card at least the league logo.
  */
 
 const TSDB = 'https://www.thesportsdb.com/api/v1/json/3';
@@ -26,7 +27,7 @@ export interface TSDBLiveScore {
   strLeague:        string;
   intHomeScore:     string | null;
   intAwayScore:     string | null;
-  strProgress:      string | null;  // e.g. "IN9", "45'", "HT", "FT"
+  strProgress:      string | null;
   strStatus?:       string | null;
   strTimestamp?:    string | null;
   strEventTime?:    string | null;
@@ -36,21 +37,22 @@ export interface TSDBLiveScore {
 }
 
 export interface TSDBTeam {
-  idTeam:   string;
-  strTeam:  string;
-  strBadge: string;
+  idTeam:    string;
+  strTeam:   string;
+  strBadge:  string;
   strLeague: string;
   strSport:  string;
 }
 
 export interface MatchEnrichment {
-  homeBadge?:   string;
-  awayBadge?:   string;
-  leagueName?:  string;
-  homeScore?:   number;
-  awayScore?:   number;
-  progress?:    string;
-  eventPoster?: string;  // TSDB event thumbnail — used for single-name events (UFC, NASCAR)
+  homeBadge?:    string;
+  awayBadge?:    string;
+  leagueName?:   string;
+  leagueBanner?: string; // league logo/banner used as last-resort card image
+  homeScore?:    number;
+  awayScore?:    number;
+  progress?:     string;
+  eventPoster?:  string; // TSDB event thumbnail for single-name events
 }
 
 // ---------------------------------------------------------------------------
@@ -61,8 +63,9 @@ let liveScoreCache: TSDBLiveScore[] | null = null;
 let liveScoreFetchedAt = 0;
 const LIVE_TTL = 60_000;
 
-// Persistent badge cache: normalised team name → badge URL (or '' = not found)
-const teamBadgeCache = new Map<string, string>();
+const teamBadgeCache   = new Map<string, string>(); // norm(name)     → badge URL | ''
+const eventPosterCache = new Map<string, string>(); // norm(title)    → poster URL | ''
+const leagueBannerCache = new Map<string, string>(); // norm(category) → banner URL | ''
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -96,6 +99,66 @@ export function fmtProgress(p: string | null | undefined): string {
   return p;
 }
 
+/**
+ * Generate search query variants for a single-name event title.
+ * streamed.pk uses patterns like:
+ *   "IndyCar 2026 - IndyCar Grand Prix of Monterey"
+ *   "Nascar Cup Series 2026 - Coke Zero Sugar 400"
+ *   "LFC 63: Legacy Fighting Championship 63"
+ *   "Dana White's Contender Series: Season 10, Week 5"
+ * We strip years, league prefixes and generate multiple shorter forms.
+ */
+function eventSearchVariants(title: string): string[] {
+  const variants = new Set<string>();
+  variants.add(title);
+
+  // Strip year (standalone 4-digit year like 2026)
+  const noYear = title.replace(/\b20\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim();
+  if (noYear !== title) variants.add(noYear);
+
+  // If title contains " - " take the part after the dash (the actual event name)
+  const dashIdx = title.indexOf(' - ');
+  if (dashIdx !== -1) {
+    const afterDash = title.slice(dashIdx + 3).trim();
+    variants.add(afterDash);
+    // Also strip year from that
+    const afterDashNoYear = afterDash.replace(/\b20\d{2}\b/g, '').replace(/\s{2,}/g, ' ').trim();
+    if (afterDashNoYear !== afterDash) variants.add(afterDashNoYear);
+  }
+
+  // If title contains ": " take the part after the colon
+  const colonIdx = title.indexOf(': ');
+  if (colonIdx !== -1) {
+    const afterColon = title.slice(colonIdx + 2).trim();
+    variants.add(afterColon);
+  }
+
+  // Strip season/week suffixes for series events
+  const noSeason = title.replace(/:\s*season\s+\d+.*$/i, '').trim();
+  if (noSeason !== title) variants.add(noSeason);
+
+  return [...variants].filter(v => v.length > 2);
+}
+
+// ---------------------------------------------------------------------------
+// Rate-limited queue (shared by all TSDB requests)
+// ---------------------------------------------------------------------------
+
+let activeRequests = 0;
+const MAX_CONCURRENT = 3;
+const REQUEST_GAP_MS = 120;
+let lastDispatch = 0;
+
+async function throttle(): Promise<void> {
+  while (activeRequests >= MAX_CONCURRENT) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  const wait = lastDispatch + REQUEST_GAP_MS - Date.now();
+  if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  activeRequests++;
+  lastDispatch = Date.now();
+}
+
 // ---------------------------------------------------------------------------
 // Livescores fetch (cached 60 s)
 // ---------------------------------------------------------------------------
@@ -120,39 +183,19 @@ async function fetchLiveScores(): Promise<TSDBLiveScore[]> {
 }
 
 // ---------------------------------------------------------------------------
-// Rate-limited fetch queue (shared by team search + event search)
+// Team badge lookup
 // ---------------------------------------------------------------------------
 
-// In-flight promise dedup: normalised name → promise resolving to badge URL | ''
 const inFlight = new Map<string, Promise<string>>();
-
-// Simple queue: max 3 concurrent requests, 120 ms gap between dispatches
-let activeRequests = 0;
-const MAX_CONCURRENT = 3;
-const REQUEST_GAP_MS = 120;
-let lastDispatch = 0;
 
 async function fetchTeamBadge(teamName: string): Promise<string> {
   const key = norm(teamName);
   if (!key) return '';
-
-  // Already cached (including negative results)
   if (teamBadgeCache.has(key)) return teamBadgeCache.get(key)!;
-
-  // Deduplicate concurrent requests for the same team
   if (inFlight.has(key)) return inFlight.get(key)!;
 
   const promise = (async (): Promise<string> => {
-    // Wait until we're under the concurrency limit and past the rate gap
-    while (activeRequests >= MAX_CONCURRENT) {
-      await new Promise(r => setTimeout(r, 50));
-    }
-    const now = Date.now();
-    const wait = lastDispatch + REQUEST_GAP_MS - now;
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-
-    activeRequests++;
-    lastDispatch = Date.now();
+    await throttle();
     try {
       const res = await fetch(`${TSDB}/searchteams.php?t=${encodeURIComponent(teamName)}`);
       if (!res.ok) { teamBadgeCache.set(key, ''); return ''; }
@@ -177,7 +220,7 @@ async function fetchTeamBadge(teamName: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Event poster lookup — for single-name events (UFC cards, NASCAR races etc.)
+// Event poster lookup — tries multiple title variants
 // ---------------------------------------------------------------------------
 
 interface TSDBEvent {
@@ -188,67 +231,97 @@ interface TSDBEvent {
   strPoster?: string;
 }
 
-const eventPosterCache = new Map<string, string>(); // normalised title → poster URL | ''
-
 async function fetchEventPoster(title: string): Promise<string> {
   const key = norm(title);
   if (!key) return '';
   if (eventPosterCache.has(key)) return eventPosterCache.get(key)!;
 
-  const promise = (async (): Promise<string> => {
-    while (activeRequests >= MAX_CONCURRENT) {
-      await new Promise(r => setTimeout(r, 50));
-    }
-    const now = Date.now();
-    const wait = lastDispatch + REQUEST_GAP_MS - now;
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+  const variants = eventSearchVariants(title);
 
-    activeRequests++;
-    lastDispatch = Date.now();
+  for (const variant of variants) {
+    const vkey = norm(variant);
+    if (eventPosterCache.has(vkey)) {
+      const cached = eventPosterCache.get(vkey)!;
+      eventPosterCache.set(key, cached);
+      return cached;
+    }
+
+    await throttle();
     try {
-      const res = await fetch(`${TSDB}/searchevents.php?e=${encodeURIComponent(title)}`);
-      if (!res.ok) { eventPosterCache.set(key, ''); return ''; }
+      const res = await fetch(`${TSDB}/searchevents.php?e=${encodeURIComponent(variant)}`);
+      activeRequests--;
+      if (!res.ok) continue;
       const json = await res.json() as { event: TSDBEvent[] | null };
       const events = json.event ?? [];
-      const exact  = events.find(e => norm(e.strEvent) === key);
-      const fuzzy  = exact ?? events.find(e => nameMatch(e.strEvent, title));
+      const exact = events.find(e => norm(e.strEvent) === vkey);
+      const fuzzy = exact ?? events.find(e => nameMatch(e.strEvent, variant));
       const poster = fuzzy?.strThumb || fuzzy?.strBanner || fuzzy?.strPoster || '';
-      eventPosterCache.set(key, poster);
-      return poster;
+      eventPosterCache.set(vkey, poster);
+      if (poster) {
+        eventPosterCache.set(key, poster);
+        return poster;
+      }
     } catch {
-      eventPosterCache.set(key, '');
-      return '';
-    } finally {
       activeRequests--;
     }
-  })();
+  }
 
-  // Don't use inFlight for events — keys are long and rarely duplicated
-  return promise;
+  eventPosterCache.set(key, '');
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// League banner fallback
+// ---------------------------------------------------------------------------
+
+interface TSDBLeague {
+  idLeague:     string;
+  strLeague:    string;
+  strBadge?:    string;
+  strBanner?:   string;
+  strLogo?:     string;
+  strPoster?:   string;
+  strFanart1?:  string;
+}
+
+async function fetchLeagueBanner(category: string): Promise<string> {
+  const key = norm(category);
+  if (!key) return '';
+  if (leagueBannerCache.has(key)) return leagueBannerCache.get(key)!;
+
+  await throttle();
+  try {
+    const res = await fetch(`${TSDB}/search_all_leagues.php?s=${encodeURIComponent(category)}`);
+    activeRequests--;
+    if (!res.ok) { leagueBannerCache.set(key, ''); return ''; }
+    const json = await res.json() as { countrys: TSDBLeague[] | null };
+    const leagues = json.countrys ?? [];
+    // Prefer exact sport match, then any
+    const exact = leagues.find(l => norm(l.strLeague) === key);
+    const pick  = exact ?? leagues[0];
+    const banner = pick?.strBanner || pick?.strBadge || pick?.strLogo || pick?.strPoster || pick?.strFanart1 || '';
+    leagueBannerCache.set(key, banner);
+    return banner;
+  } catch {
+    activeRequests--;
+    leagueBannerCache.set(key, '');
+    return '';
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Build an enrichment map for the given matches.
- *
- * Phase 1 (synchronous-ish): match against TSDB livescores — instant for live games.
- * Phase 2 (progressive): for any match not found in livescores, look up each team
- *   name via /searchteams.php and call onUpdate as badges arrive, so the UI can
- *   progressively re-render cards without blocking the initial paint.
- */
 export async function buildEnrichmentMap(
-  matches: Array<{ id: string; title: string; teams?: { home?: { name: string }; away?: { name: string } } }>,
+  matches: Array<{ id: string; title: string; category?: string; teams?: { home?: { name: string }; away?: { name: string } } }>,
   onUpdate?: (id: string, enrichment: MatchEnrichment) => void
 ): Promise<Map<string, MatchEnrichment>> {
   const result = new Map<string, MatchEnrichment>();
   if (!matches.length) return result;
 
-  // ── Phase 1: livescores (one request, covers all in-play matches) ──────────
+  // ── Phase 1: livescores ───────────────────────────────────────────────────
   const live = await fetchLiveScores();
-
   const unmatched: typeof matches = [];
 
   for (const match of matches) {
@@ -276,51 +349,52 @@ export async function buildEnrichmentMap(
     }
   }
 
-  // ── Phase 2: progressive team-search for upcoming matches ─────────────────
-  // Fire-and-forget — resolves via onUpdate callbacks so the caller doesn't wait
+  // ── Phase 2: progressive lookups (fire-and-forget) ────────────────────────
   if (onUpdate && unmatched.length > 0) {
     (async () => {
-      // Check cache first — many teams will already be known from a prior load
+      // Emit from cache immediately for known teams
       const needFetch: typeof matches = [];
       for (const match of unmatched) {
         const [homeRaw, awayRaw] = getTeamNames(match);
-        const homeCached = teamBadgeCache.get(norm(homeRaw));
-        const awayCached = teamBadgeCache.get(norm(awayRaw));
-        if (homeCached !== undefined && awayCached !== undefined) {
-          // Both already in cache — emit immediately
-          if (homeCached || awayCached) {
-            onUpdate(match.id, {
-              homeBadge: homeCached || undefined,
-              awayBadge: awayCached || undefined,
-            });
+        const isVs = !!awayRaw;
+        if (isVs) {
+          const hc = teamBadgeCache.get(norm(homeRaw));
+          const ac = teamBadgeCache.get(norm(awayRaw));
+          if (hc !== undefined && ac !== undefined) {
+            if (hc || ac) onUpdate(match.id, { homeBadge: hc || undefined, awayBadge: ac || undefined });
+            continue;
           }
-        } else {
-          needFetch.push(match);
         }
+        needFetch.push(match);
       }
 
-      // For the rest, fetch concurrently (rate-limited inside fetchTeamBadge)
+      // Fetch remaining concurrently (rate-limited)
       await Promise.all(needFetch.map(async match => {
         const [homeRaw, awayRaw] = getTeamNames(match);
-        const isVsMatch = !!awayRaw; // has an opponent
+        const isVs = !!awayRaw;
 
-        if (isVsMatch) {
-          // Normal team vs team — search both sides
+        if (isVs) {
+          // Team vs team — badge search
           const [homeBadge, awayBadge] = await Promise.all([
             fetchTeamBadge(homeRaw),
             fetchTeamBadge(awayRaw),
           ]);
           if (homeBadge || awayBadge) {
-            onUpdate(match.id, {
-              homeBadge: homeBadge || undefined,
-              awayBadge: awayBadge || undefined,
-            });
+            onUpdate(match.id, { homeBadge: homeBadge || undefined, awayBadge: awayBadge || undefined });
+          } else if (match.category) {
+            // Badge search failed — fall back to league banner
+            const leagueBanner = await fetchLeagueBanner(match.category);
+            if (leagueBanner) onUpdate(match.id, { leagueBanner });
           }
         } else if (match.title) {
-          // Single-name event (UFC card, NASCAR race, etc.) — search by event title
+          // Single-name event — event poster search
           const poster = await fetchEventPoster(match.title);
           if (poster) {
             onUpdate(match.id, { eventPoster: poster });
+          } else if (match.category) {
+            // Event poster failed — fall back to league banner
+            const leagueBanner = await fetchLeagueBanner(match.category);
+            if (leagueBanner) onUpdate(match.id, { leagueBanner });
           }
         }
       }));
@@ -331,7 +405,7 @@ export async function buildEnrichmentMap(
 }
 
 // ---------------------------------------------------------------------------
-// Helper — extract home/away names from a match
+// Helper — extract home/away names
 // ---------------------------------------------------------------------------
 
 function getTeamNames(match: {

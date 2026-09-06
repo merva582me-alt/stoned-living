@@ -203,7 +203,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
       // ── 2. TSDB enrichment — Phase 1 synchronous, Phase 2 progressive ──────
       const allForEnrich = [...liveRaw, ...allRaw].map(m => ({
-        id: m.id, title: m.title,
+        id: m.id, title: m.title, category: m.category,
         teams: m.teams
           ? { home: m.teams.home ? { name: m.teams.home.name } : undefined,
               away: m.teams.away ? { name: m.teams.away.name } : undefined }

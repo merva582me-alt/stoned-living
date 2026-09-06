@@ -9,7 +9,7 @@ export interface SportMatch {
   is_live:   boolean;
   teams?:    { home?: { name: string; badge: string }; away?: { name: string; badge: string } };
   poster?:   string;
-  tsdb?:     { homeBadge?: string; awayBadge?: string; homeScore?: number; awayScore?: number; leagueName?: string; progress?: string; eventPoster?: string };
+  tsdb?:     { homeBadge?: string; awayBadge?: string; homeScore?: number; awayScore?: number; leagueName?: string; progress?: string; eventPoster?: string; leagueBanner?: string };
   /** streamed.pk stream sources — carried to the player to fetch streams on demand */
   _sources?: { source: string; id: string }[];
 }
@@ -30,16 +30,33 @@ function splitVs(title: string | undefined): [string, string] {
   return [title, ''];
 }
 
+function formatMatchDate(ts: number): { dateStr: string | null; timeStr: string } {
+  const d = new Date(ts);
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const tomorrowStart = todayStart + 86_400_000;
+  const matchDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+  const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  if (matchDay === todayStart) return { dateStr: null, timeStr };
+  if (matchDay === tomorrowStart) return { dateStr: 'Tomorrow', timeStr };
+  return {
+    dateStr: d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
+    timeStr,
+  };
+}
+
 export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatch) => void }> = ({ match, onOpen }) => {
-  // Badges come exclusively from TSDB — never from streamed.pk's unreliable badge fields
-  const homeBadge   = match.tsdb?.homeBadge;
-  const awayBadge   = match.tsdb?.awayBadge;
-  const eventPoster = match.tsdb?.eventPoster;
-  const hasBadges   = !!(homeBadge && awayBadge);
+  const homeBadge    = match.tsdb?.homeBadge;
+  const awayBadge    = match.tsdb?.awayBadge;
+  const eventPoster  = match.tsdb?.eventPoster;
+  const leagueBanner = match.tsdb?.leagueBanner;
+  const hasBadges    = !!(homeBadge && awayBadge);
+  // Anything that gives us a full-card image
+  const cardImage    = match.poster || eventPoster || leagueBanner;
   const [teamA, teamB] = splitVs(match.title);
-  const timeStr = match.date
-    ? new Date(match.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : null;
+  const { dateStr, timeStr } = match.date ? formatMatchDate(match.date) : { dateStr: null, timeStr: null };
 
   return (
     <button
@@ -47,9 +64,9 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
       className="group text-left bg-[#0e1411] hover:bg-[#131d17] border border-emerald-900/40 hover:border-emerald-500/50 rounded-2xl overflow-hidden transition-all duration-200 cursor-pointer w-full h-full flex flex-col"
     >
       <div className="relative w-full aspect-video bg-emerald-950/30">
-        {(match.poster || eventPoster) ? (
+        {cardImage ? (
           <img
-            src={match.poster || eventPoster}
+            src={cardImage}
             alt={match.title}
             className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -84,7 +101,9 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
         </p>
         <div className="flex items-center gap-2 flex-wrap">
           {!match.is_live && timeStr && (
-            <span className="text-[9px] font-mono text-zinc-400 bg-zinc-800/60 px-1.5 py-0.5 rounded-full">{timeStr}</span>
+            <span className="text-[9px] font-mono text-zinc-400 bg-zinc-800/60 px-1.5 py-0.5 rounded-full">
+              {dateStr ? `${dateStr} · ${timeStr}` : timeStr}
+            </span>
           )}
           {match.tsdb?.leagueName && (
             <span className="text-[9px] text-zinc-500 truncate">{match.tsdb.leagueName}</span>
