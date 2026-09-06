@@ -116,12 +116,9 @@ function isJunkEntry(m: StreamedMatch): boolean {
   return JUNK_PATTERNS.some(p => p.test(m.title));
 }
 
-/** A match is truly live only if its start time is within a reasonable window.
- *  streamed.pk /live sometimes lists matches hours before kick-off. */
-function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
-  if (!fromLiveEndpoint) return false;
-  const diff = Date.now() - m.date; // positive = started in the past
-  return diff >= -15 * 60 * 1000 && diff <= 6 * 60 * 60 * 1000;
+/** Trust streamed.pk — if it came from the /live endpoint, it's live. */
+function isActuallyLive(_m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
+  return fromLiveEndpoint;
 }
 
 /** Convert a StreamedMatch to a SportMatch.
@@ -261,33 +258,34 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       if (controller.signal.aborted) return;
 
       const sportsList: StreamedSport[] = sportsData ?? [];
-      const hasSources = (m: StreamedMatch) => m.sources && m.sources.length > 0;
-      const liveRaw: StreamedMatch[]    = (liveData ?? []).filter(m => !isJunkEntry(m) && hasSources(m));
-      const allRaw:  StreamedMatch[]    = (allData  ?? []).filter(m => !isJunkEntry(m) && hasSources(m));
+      // Upcoming: show everything streamed.pk provides, untouched
+      const allRaw: StreamedMatch[] = (allData ?? []).filter(m => !isJunkEntry(m));
+      // Live: only keep matches that have at least one source listed
+      const liveRaw: StreamedMatch[] = (liveData ?? []).filter(m => !isJunkEntry(m) && m.sources?.length > 0);
 
       setSports(sportsList);
 
-      // ── 1b. Probe live matches — drop any whose streams have no embedUrl ──────
-      // streamed.pk lists matches as live even when no embed links exist yet.
-      // We fetch streams for every live match in parallel and only keep the ones
-      // that return at least one stream with a non-empty embedUrl.
-      const liveStreamResults = await Promise.all(
+      // ── 1b. Probe live matches — drop any with no working stream feed ─────────
+      // For each live match fetch every source's stream list and only keep the
+      // match if at least one stream comes back with a non-empty embedUrl.
+      const probeResults = await Promise.all(
         liveRaw.map(async m => {
-          const results = await Promise.all(
+          const streams = await Promise.all(
             m.sources.map(s =>
               streamedFetch<StreamedStream[]>(`/api/stream/${s.source}/${s.id}`)
-                .then(arr => (arr ?? []).filter(st => !!st.embedUrl))
+                .then(arr => arr ?? [])
             )
           );
-          return { m, hasStream: results.flat().length > 0 };
+          const hasFeed = streams.flat().some(st => !!st.embedUrl);
+          return { m, hasFeed };
         })
       );
-      const liveFiltered = liveStreamResults.filter(r => r.hasStream).map(r => r.m);
+      const liveFiltered = probeResults.filter(r => r.hasFeed).map(r => r.m);
 
       if (controller.signal.aborted) return;
 
       // ── 2. TSDB enrichment — Phase 1 synchronous, Phase 2 progressive ──────
-      const allForEnrich = [...liveRaw, ...allRaw].map(m => ({
+      const allForEnrich = [...liveFiltered, ...allRaw].map(m => ({
         id: m.id, title: m.title, category: m.category,
         teams: m.teams
           ? { home: m.teams.home ? { name: m.teams.home.name } : undefined,
@@ -317,7 +315,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       );
       setLiveMatches(liveMapped);
 
-      // ── 4. Build per-sport upcoming map ───────────────────────────────────
+      // ── 4. Build per-sport upcoming map (all matches, untouched) ──────────
       const sportMap: Record<string, SportMatch[]> = {};
       for (const m of allRaw) {
         if (liveIds.has(m.id)) continue;
@@ -465,7 +463,17 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
   const getSectionMatches = (sectionId: string): SportMatch[] => {
     const raw = sectionId === 'live' ? liveMatches : (bySport[sectionId.toLowerCase()] ?? []);
-    return raw.map(applyUpdate);
+    return raw.map(applyUpdate).filter(m => {
+      // Drop cards that would render completely blank — no poster, no team badges, no league banner
+      const hasVisual =
+        m.poster ||
+        m.tsdb?.homeBadge ||
+        m.tsdb?.awayBadge ||
+        m.tsdb?.leagueBanner ||
+        m.teams?.home?.badge ||
+        m.teams?.away?.badge;
+      return !!hasVisual;
+    });
   };
 
   // ── Player view ──────────────────────────────────────────────────────────
