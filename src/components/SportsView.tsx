@@ -11,13 +11,22 @@ import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatc
 // Types & API
 // ---------------------------------------------------------------------------
 
+// Actual sportsrc v2 response: data is an array of league groups
+interface APILeagueGroup {
+  league: { name: string; country?: string; flag?: string; logo?: string };
+  matches: APIMatch[];
+}
+
 interface APIMatch {
-  id:       string;
-  title?:   string;
-  category: string;
-  date:     number;
-  poster?:  string;
-  teams?:   { home?: { name: string; badge: string }; away?: { name: string; badge: string } };
+  id:           string;
+  title?:       string;
+  timestamp?:   number;   // ms epoch  (API field name)
+  date?:        number;   // fallback
+  status?:      string;   // "inprogress" | "notstarted" | "finished" | "postponed"
+  category?:    string;   // not returned by API; injected during normalise
+  poster?:      string;
+  teams?:       { home?: { name: string; badge: string; code?: string; color?: string }; away?: { name: string; badge: string; code?: string; color?: string } };
+  score?:       { current?: { home: number; away: number }; display?: string };
 }
 
 interface StreamObj {
@@ -124,7 +133,36 @@ function todayStr(): string {
 }
 
 function normalise(m: APIMatch, isLive: boolean): SportMatch {
-  return { id: m.id, title: m.title ?? '', category: m.category, date: m.date, is_live: isLive, teams: m.teams, poster: m.poster };
+  const ts = m.timestamp ?? m.date ?? 0;
+  return {
+    id:       m.id,
+    title:    m.title ?? '',
+    category: m.category ?? '',
+    date:     ts,
+    is_live:  isLive,
+    teams:    m.teams,
+    poster:   m.poster,
+  };
+}
+
+/** Flatten a league-grouped response into a flat APIMatch array, injecting category */
+function flattenLeagueGroups(raw: unknown, sportName: string): APIMatch[] {
+  if (!Array.isArray(raw)) return [];
+  const out: APIMatch[] = [];
+  for (const item of raw) {
+    if (item && typeof item === 'object') {
+      // League-group shape: { league, matches }
+      if ('matches' in item && Array.isArray((item as APILeagueGroup).matches)) {
+        for (const m of (item as APILeagueGroup).matches) {
+          out.push({ ...m, category: sportName });
+        }
+      } else if ('id' in item) {
+        // Direct match object (flat array fallback)
+        out.push({ ...(item as APIMatch), category: sportName });
+      }
+    }
+  }
+  return out;
 }
 
 function sportIcon(category: string): LucideIcon {
@@ -216,12 +254,12 @@ export const SportsView: React.FC<SportsViewProps> = () => {
         // API expects the sport name (e.g. "football"), not a numeric id
         const sportSlug = cat.name.toLowerCase();
         const [liveRes, todayRes] = await Promise.all([
-          sportsrcJson<APIMatch[]>({ type: 'matches', sport: sportSlug, status: 'inprogress', date: today }),
-          sportsrcJson<APIMatch[]>({ type: 'matches', sport: sportSlug, date: today }),
+          sportsrcJson<unknown>({ type: 'matches', sport: sportSlug, status: 'inprogress', date: today }),
+          sportsrcJson<unknown>({ type: 'matches', sport: sportSlug, date: today }),
         ]);
 
-        const liveList = Array.isArray(liveRes.data) ? liveRes.data : [];
-        const todayList = Array.isArray(todayRes.data) ? todayRes.data : [];
+        const liveList  = flattenLeagueGroups(liveRes.data,  cat.name);
+        const todayList = flattenLeagueGroups(todayRes.data, cat.name);
 
         for (const m of liveList) {
           if (!liveIds.has(m.id)) { liveIds.add(m.id); liveRaw.push(m); }
