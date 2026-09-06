@@ -60,8 +60,8 @@ interface SportsViewProps {
 // ---------------------------------------------------------------------------
 
 const STREAMED = 'https://streamed.pk';
-// Worker route on the main domain (stoned.living/api/* → stoned-resolver Worker)
-const SPORTS_PROXY = '/api/sports';
+// Direct Worker subdomain — always works regardless of Pages routing
+const SPORTS_PROXY = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
 
 function streamedFetch(path: string) {
   // Local dev hits streamed.pk directly; production goes via the CF Worker
