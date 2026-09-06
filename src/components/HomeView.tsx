@@ -388,12 +388,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
   useEffect(() => {
     isMountedRef.current = true;
 
-    // First 4 sections load immediately (above the fold)
-    sections.slice(0, 4).forEach(fetchSection);
+    // First 6 sections load immediately (covers above the fold + one scroll)
+    sections.slice(0, 6).forEach(fetchSection);
 
     // Remaining sections use IntersectionObserver — fetch when near viewport
     const observers: IntersectionObserver[] = [];
-    sections.slice(4).forEach((sec) => {
+    sections.slice(6).forEach((sec) => {
       const el = sectionRefs.current[sec.id];
       if (!el) return;
       const obs = new IntersectionObserver(

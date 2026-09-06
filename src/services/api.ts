@@ -93,15 +93,20 @@ async function fetchTmdb<T>(url: string): Promise<T> {
   }
 }
 
+const TMDB_FRESH_TTL = 3_600_000; // 1 hour — only background-revalidate after this
+
 async function cachedFetch<T>(url: string): Promise<T> {
   if (syncCache.has(url)) return syncCache.get(url) as T;
 
   const local = getLocalStorageCache(url);
   if (local) {
-    syncCache.set(url, local);
-    // Background revalidate
-    fetchTmdb<T>(url).catch(() => {});
-    return local as T;
+    syncCache.set(url, local.data ?? local);
+    // Only background-revalidate if the cached data is older than 1 hour
+    const age = local.timestamp ? Date.now() - local.timestamp : Infinity;
+    if (age > TMDB_FRESH_TTL) {
+      fetchTmdb<T>(url).catch(() => {});
+    }
+    return (local.data ?? local) as T;
   }
 
   if (apiCache.has(url)) return apiCache.get(url)!;

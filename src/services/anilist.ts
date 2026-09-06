@@ -12,6 +12,37 @@ import type { MediaItem } from '../types';
 const ANILIST_ENDPOINT = 'https://graphql.anilist.co';
 
 // ---------------------------------------------------------------------------
+// localStorage cache — same stale-while-revalidate pattern as TMDb
+// ---------------------------------------------------------------------------
+
+const anilistSyncCache = new Map<string, any>();
+const CACHE_TTL = 3600_000; // 1 hour fresh window
+const CACHE_MAX_AGE = 86_400_000; // 24 hours max
+
+function anilistCacheGet(key: string): any {
+  if (anilistSyncCache.has(key)) return anilistSyncCache.get(key);
+  try {
+    const raw = localStorage.getItem(`stoned_anilist_v1_${key}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.data && parsed?.timestamp && Date.now() - parsed.timestamp < CACHE_MAX_AGE) {
+        anilistSyncCache.set(key, parsed);
+        return parsed;
+      }
+    }
+  } catch (_) { /* quota / SSR */ }
+  return null;
+}
+
+function anilistCacheSet(key: string, data: any) {
+  const entry = { timestamp: Date.now(), data };
+  anilistSyncCache.set(key, entry);
+  try {
+    localStorage.setItem(`stoned_anilist_v1_${key}`, JSON.stringify(entry));
+  } catch (_) { /* quota */ }
+}
+
+// ---------------------------------------------------------------------------
 // GQL query helper
 // ---------------------------------------------------------------------------
 
@@ -25,6 +56,20 @@ async function gqlFetch<T>(query: string, variables: Record<string, unknown> = {
   const json = await res.json() as { data: T; errors?: unknown[] };
   if (json.errors?.length) throw new Error('AniList GraphQL error');
   return json.data;
+}
+
+async function cachedGqlFetch<T>(cacheKey: string, query: string, variables: Record<string, unknown> = {}): Promise<T> {
+  const cached = anilistCacheGet(cacheKey);
+  if (cached) {
+    // Background revalidate only if data is older than 1 hour
+    if (Date.now() - cached.timestamp > CACHE_TTL) {
+      gqlFetch<T>(query, variables).then((data) => anilistCacheSet(cacheKey, data)).catch(() => {});
+    }
+    return cached.data as T;
+  }
+  const data = await gqlFetch<T>(query, variables);
+  anilistCacheSet(cacheKey, data);
+  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +153,7 @@ export function anilistToMediaItem(m: AniListMedia): MediaItem {
 
 export async function fetchAniListTrending(): Promise<MediaItem[]> {
   try {
-    const data = await gqlFetch<{ Page: { media: AniListMedia[] } }>(`
+    const query = `
       query {
         Page(page: 1, perPage: 24) {
           media(sort: TRENDING_DESC, type: ANIME, isAdult: false) {
@@ -116,7 +161,8 @@ export async function fetchAniListTrending(): Promise<MediaItem[]> {
           }
         }
       }
-    `);
+    `;
+    const data = await cachedGqlFetch<{ Page: { media: AniListMedia[] } }>('trending', query);
     return data.Page.media.map(anilistToMediaItem);
   } catch {
     return [];
@@ -128,7 +174,7 @@ export async function fetchAniListSeasonal(
   year: number = new Date().getFullYear()
 ): Promise<MediaItem[]> {
   try {
-    const data = await gqlFetch<{ Page: { media: AniListMedia[] } }>(`
+    const query = `
       query($season: MediaSeason, $year: Int) {
         Page(page: 1, perPage: 24) {
           media(season: $season, seasonYear: $year, type: ANIME, isAdult: false, sort: POPULARITY_DESC) {
@@ -136,7 +182,8 @@ export async function fetchAniListSeasonal(
           }
         }
       }
-    `, { season, year });
+    `;
+    const data = await cachedGqlFetch<{ Page: { media: AniListMedia[] } }>(`seasonal_${season}_${year}`, query, { season, year });
     return data.Page.media.map(anilistToMediaItem);
   } catch {
     return [];
@@ -146,7 +193,7 @@ export async function fetchAniListSeasonal(
 export async function fetchAniListSearch(query: string): Promise<MediaItem[]> {
   if (!query.trim()) return [];
   try {
-    const data = await gqlFetch<{ Page: { media: AniListMedia[] } }>(`
+    const gql = `
       query($search: String) {
         Page(page: 1, perPage: 20) {
           media(search: $search, type: ANIME, isAdult: false) {
@@ -154,7 +201,9 @@ export async function fetchAniListSearch(query: string): Promise<MediaItem[]> {
           }
         }
       }
-    `, { search: query });
+    `;
+    // Search results are not cached (user-specific and short-lived)
+    const data = await gqlFetch<{ Page: { media: AniListMedia[] } }>(gql, { search: query });
     return data.Page.media.map(anilistToMediaItem);
   } catch {
     return [];
@@ -163,13 +212,14 @@ export async function fetchAniListSearch(query: string): Promise<MediaItem[]> {
 
 export async function fetchAniListDetails(id: number): Promise<MediaItem | null> {
   try {
-    const data = await gqlFetch<{ Media: AniListMedia }>(`
+    const query = `
       query($id: Int) {
         Media(id: $id, type: ANIME) {
           ${MEDIA_FIELDS}
         }
       }
-    `, { id });
+    `;
+    const data = await cachedGqlFetch<{ Media: AniListMedia }>(`details_${id}`, query, { id });
     return anilistToMediaItem(data.Media);
   } catch {
     return null;

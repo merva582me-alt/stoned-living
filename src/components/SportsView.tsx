@@ -101,6 +101,16 @@ function SportIcon({ category, className = 'w-4 h-4' }: { category: string; clas
 // Match card
 // ---------------------------------------------------------------------------
 
+// Split "Team A vs Team B" into two halves
+function splitVs(title: string): [string, string] {
+  const sep = /\s+vs\.?\s+/i;
+  const parts = title.split(sep);
+  if (parts.length >= 2) {
+    return [parts[0].trim(), parts.slice(1).join(' vs ').trim()];
+  }
+  return [title, ''];
+}
+
 function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatch) => void }) {
   const home = match.teams?.home;
   const away = match.teams?.away;
@@ -110,12 +120,25 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
     ? new Date(match.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
+  // Generated "VS" card used when no badges/poster exist
+  const [teamA, teamB] = splitVs(match.title);
+  const generatedCard = (
+    <div className="w-full aspect-video bg-gradient-to-br from-emerald-950/60 to-[#0a100d] rounded-xl mb-3 flex flex-col items-center justify-center gap-2 px-4 border border-emerald-900/30">
+      <SportIcon category={match.category} className="w-5 h-5 text-emerald-500/50 mb-1" />
+      <div className="flex items-center gap-3 w-full justify-center">
+        <span className="text-white font-black text-[11px] text-center leading-tight line-clamp-2 flex-1">{teamA}</span>
+        <span className="text-emerald-400 font-black text-xs shrink-0 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md">VS</span>
+        <span className="text-white font-black text-[11px] text-center leading-tight line-clamp-2 flex-1">{teamB || match.category}</span>
+      </div>
+    </div>
+  );
+
   return (
     <button
       onClick={() => onOpen(match)}
       className="group text-left bg-[#0e1411] hover:bg-[#131d17] border border-emerald-900/40 hover:border-emerald-500/50 rounded-2xl p-4 transition-all duration-200 cursor-pointer w-full"
     >
-      {/* Art: team badges, poster, or icon fallback */}
+      {/* Art: team badges, poster, or generated VS card */}
       {hasBadges ? (
         <div className="w-full aspect-video bg-emerald-950/30 rounded-xl mb-3 flex items-center justify-center gap-4 px-4">
           <img src={badgeUrl(home!.badge)} alt={home!.name} className="w-12 h-12 object-contain"
@@ -129,13 +152,11 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
           src={match.poster.startsWith('http') ? match.poster : `${STREAMED}${match.poster}${match.poster.endsWith('.webp') ? '' : '.webp'}`}
           alt={match.title}
           className="w-full aspect-video object-cover rounded-xl mb-3 opacity-80 group-hover:opacity-100 transition"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          onError={(e) => {
+            (e.target as HTMLImageElement).style.display = 'none';
+          }}
         />
-      ) : (
-        <div className="w-full aspect-video bg-emerald-950/30 rounded-xl mb-3 flex items-center justify-center">
-          <SportIcon category={match.category} className="w-10 h-10 text-emerald-500/30" />
-        </div>
-      )}
+      ) : generatedCard}
 
       <div className="space-y-1.5">
         <p className="text-xs font-extrabold text-white line-clamp-2 group-hover:text-emerald-300 transition leading-tight">
