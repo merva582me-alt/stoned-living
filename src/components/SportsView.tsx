@@ -4,7 +4,7 @@ import {
   ChevronLeft, Play, SlidersHorizontal, Grid, Layers, Clock, CircleDot,
   Zap, Target, Dumbbell, Tv2, LucideIcon,
 } from 'lucide-react';
-import { buildEnrichmentMap } from '../services/sportsdb';
+import { type TSDBLiveScore } from '../services/sportsdb';
 import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatchCarousel';
 
 // ---------------------------------------------------------------------------
@@ -27,6 +27,35 @@ interface APIMatch {
   poster?:      string;
   teams?:       { home?: { name: string; badge: string; code?: string; color?: string }; away?: { name: string; badge: string; code?: string; color?: string } };
   score?:       { current?: { home: number; away: number }; display?: string };
+}
+
+// TheSportsDB livescore → SportMatch conversion
+function tsdbToMatch(e: TSDBLiveScore): SportMatch {
+  const sportName = e.strSport || 'Sport';
+  // TSDB livescore only returns in-progress or very-recently-finished events.
+  // BT = before time (kick-off imminent), anything else = actively in play.
+  const notLive = ['FT', 'Finished', 'AOT', 'PEN'].includes(e.strProgress ?? '');
+  const isLive = !notLive;
+  // Parse timestamp: "2026-09-06T18:00:00" (local time from TSDB, treat as UTC)
+  const ts = e.strTimestamp ? new Date(e.strTimestamp + 'Z').getTime() : Date.now();
+  return {
+    id:       e.idEvent,
+    title:    `${e.strHomeTeam} vs ${e.strAwayTeam}`,
+    category: sportName,
+    date:     ts,
+    is_live:  isLive,
+    teams: {
+      home: { name: e.strHomeTeam, badge: e.strHomeTeamBadge },
+      away: { name: e.strAwayTeam, badge: e.strAwayTeamBadge },
+    },
+    tsdb: {
+      homeBadge:  e.strHomeTeamBadge  || undefined,
+      awayBadge:  e.strAwayTeamBadge  || undefined,
+      leagueName: e.strLeague         || undefined,
+      homeScore:  e.intHomeScore != null ? Number(e.intHomeScore) : undefined,
+      awayScore:  e.intAwayScore != null ? Number(e.intAwayScore) : undefined,
+    },
+  };
 }
 
 interface StreamObj {
@@ -215,81 +244,77 @@ export const SportsView: React.FC<SportsViewProps> = () => {
   const [streamError, setStreamError]     = useState(false);
   const [streamIndex, setStreamIndex]     = useState(0);
 
-  const patchEnrichment = useCallback((id: string, enrichment: SportMatch['tsdb']) => {
-    const patch = (list: SportMatch[]) => list.map(m => m.id === id ? { ...m, tsdb: enrichment } : m);
-    setLiveMatches(prev => patch(prev));
-    setBySport(prev => {
-      const next = { ...prev };
-      for (const key of Object.keys(next)) next[key] = patch(next[key]);
-      return next;
-    });
-  }, []);
-
-  // Fallback sport slugs used when the categories endpoint returns nothing
-  const FALLBACK_SPORTS: SportCategory[] = [
-    { id: 'football',   name: 'Football' },
-    { id: 'basketball', name: 'Basketball' },
-    { id: 'baseball',   name: 'Baseball' },
-    { id: 'hockey',     name: 'Hockey' },
-    { id: 'tennis',     name: 'Tennis' },
-    { id: 'mma',        name: 'MMA' },
-    { id: 'boxing',     name: 'Boxing' },
-    { id: 'cricket',    name: 'Cricket' },
-  ];
-
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const { data: cats } = await sportsrcJson<SportCategory[]>({ type: 'sports' });
-      const validCats = Array.isArray(cats) && cats.length > 0 ? cats : FALLBACK_SPORTS;
-      setCategories(validCats);
-
       const today = todayStr();
-      const liveRaw: APIMatch[] = [];
+
+      // ── 1. TheSportsDB livescores (multi-sport: Soccer, Basketball, Baseball, Hockey…)
+      const tsdbRes = await fetch('https://www.thesportsdb.com/api/v1/json/3/livescore.php');
+      const tsdbJson = tsdbRes.ok ? await tsdbRes.json() : { livescore: [] };
+      const tsdbEvents: TSDBLiveScore[] = Array.isArray(tsdbJson.livescore) ? tsdbJson.livescore : [];
+
+      // ── 2. sportsrc football (today's full schedule including upcoming)
+      const [srcLiveRes, srcTodayRes] = await Promise.all([
+        sportsrcJson<unknown>({ type: 'matches', sport: 'football', status: 'inprogress', date: today }),
+        sportsrcJson<unknown>({ type: 'matches', sport: 'football', date: today }),
+      ]);
+      const srcLive    = flattenLeagueGroups(srcLiveRes.data,  'Football');
+      const srcToday   = flattenLeagueGroups(srcTodayRes.data, 'Football');
+
+      // ── Merge: build deduped live list ────────────────────────────────────
+      const liveById = new Map<string, SportMatch>();
+
+      // TSDB live events (all sports)
+      for (const e of tsdbEvents) {
+        const m = tsdbToMatch(e);
+        liveById.set(m.id, m);
+      }
+
+      // sportsrc inprogress football (may overlap with TSDB Soccer by title, keep both — different IDs)
+      for (const m of srcLive) {
+        const sm = normalise(m, true);
+        if (!liveById.has(sm.id)) liveById.set(sm.id, sm);
+      }
+
+      const live = [...liveById.values()];
+
+      // ── Build per-sport upcoming map from sportsrc today schedule ─────────
+      const liveIds = new Set(live.map(m => m.id));
       const sportMap: Record<string, SportMatch[]> = {};
-      const liveIds = new Set<string>();
 
-      await Promise.all(validCats.map(async (cat) => {
-        // API expects the sport name (e.g. "football"), not a numeric id
-        const sportSlug = cat.name.toLowerCase();
-        const [liveRes, todayRes] = await Promise.all([
-          sportsrcJson<unknown>({ type: 'matches', sport: sportSlug, status: 'inprogress', date: today }),
-          sportsrcJson<unknown>({ type: 'matches', sport: sportSlug, date: today }),
-        ]);
+      const seen = new Set<string>();
+      const footballUpcoming: SportMatch[] = [];
+      for (const m of srcToday) {
+        if (seen.has(m.id)) continue;
+        seen.add(m.id);
+        const sm = normalise(m, liveIds.has(m.id));
+        if (!sm.is_live) footballUpcoming.push(sm);
+      }
+      if (footballUpcoming.length > 0) {
+        sportMap['football'] = footballUpcoming;
+      }
 
-        const liveList  = flattenLeagueGroups(liveRes.data,  cat.name);
-        const todayList = flattenLeagueGroups(todayRes.data, cat.name);
+      // ── Build category list from actual data ─────────────────────────────
+      const sportNames = new Set<string>();
+      for (const m of live) sportNames.add(m.category);
+      if (footballUpcoming.length > 0) sportNames.add('Football');
 
-        for (const m of liveList) {
-          if (!liveIds.has(m.id)) { liveIds.add(m.id); liveRaw.push(m); }
-        }
-
-        const seen = new Set<string>();
-        const upcoming: SportMatch[] = [];
-        for (const m of todayList) {
-          if (seen.has(m.id)) continue;
-          seen.add(m.id);
-          upcoming.push(normalise(m, liveIds.has(m.id)));
-        }
-        sportMap[cat.id] = upcoming.filter(m => !m.is_live);
+      const cats: SportCategory[] = [...sportNames].sort().map(name => ({
+        id:   name.toLowerCase().replace(/\s+/g, '-'),
+        name,
       }));
+      setCategories(cats);
 
-      const live = liveRaw.map(m => normalise(m, true));
       setLiveMatches(live);
       setBySport(sportMap);
-
-      const allForEnrich = [
-        ...live,
-        ...Object.values(sportMap).flat(),
-      ];
-      buildEnrichmentMap(allForEnrich, patchEnrichment).catch(() => {});
     } catch {
-      setLoadError('Could not load sports events. Check your API key and try again.');
+      setLoadError('Could not load sports events. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [patchEnrichment]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -466,16 +491,31 @@ export const SportsView: React.FC<SportsViewProps> = () => {
           </div>
         </section>
       ) : featuredMatch ? (
-        <section className="relative w-full rounded-3xl overflow-hidden bg-black border border-emerald-950 shadow-[0_0_50px_rgba(16,185,129,0.1)] min-h-[440px] sm:min-h-[520px] flex items-end">
+        <section className="relative w-full rounded-3xl overflow-hidden bg-[#060e09] border border-emerald-950 shadow-[0_0_50px_rgba(16,185,129,0.1)] min-h-[440px] sm:min-h-[520px] flex items-end">
           <div className="absolute inset-0">
             {featuredMatch.poster ? (
               <img src={featuredMatch.poster} alt={featuredMatch.title}
                 className="w-full h-full object-cover object-center scale-105 transition-all duration-1000" />
-            ) : (
-              <div className="w-full h-full bg-gradient-to-br from-emerald-950/80 via-[#0a100d] to-black" />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-[#0d1813] via-[#0d1813]/70 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-[#0d1813] via-[#0d1813]/80 to-transparent w-full md:w-3/4" />
+            ) : (() => {
+              const hBadge = featuredMatch.teams?.home?.badge || featuredMatch.tsdb?.homeBadge;
+              const aBadge = featuredMatch.teams?.away?.badge || featuredMatch.tsdb?.awayBadge;
+              return (
+                <>
+                  {/* Badge glow blobs */}
+                  {hBadge && <img src={hBadge} alt="" aria-hidden className="absolute left-[5%] top-1/2 -translate-y-1/2 w-[38%] max-w-[320px] opacity-10 blur-2xl scale-150 pointer-events-none" />}
+                  {aBadge && <img src={aBadge} alt="" aria-hidden className="absolute right-[5%] top-1/2 -translate-y-1/2 w-[38%] max-w-[320px] opacity-10 blur-2xl scale-150 pointer-events-none" />}
+                  {/* Crisp badge pair centred-right */}
+                  <div className="absolute right-0 top-0 bottom-0 w-1/2 hidden md:flex items-center justify-center gap-6 pr-12">
+                    {hBadge && <img src={hBadge} alt={featuredMatch.teams?.home?.name ?? ''} className="w-28 h-28 lg:w-36 lg:h-36 object-contain drop-shadow-[0_0_24px_rgba(16,185,129,0.3)]" />}
+                    <span className="text-3xl font-black text-emerald-400/60">VS</span>
+                    {aBadge && <img src={aBadge} alt={featuredMatch.teams?.away?.name ?? ''} className="w-28 h-28 lg:w-36 lg:h-36 object-contain drop-shadow-[0_0_24px_rgba(16,185,129,0.3)]" />}
+                  </div>
+                  <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/60 via-[#060e09]/80 to-[#060e09]" />
+                </>
+              );
+            })()}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#060e09] via-[#060e09]/60 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#060e09] via-[#060e09]/70 to-transparent w-full md:w-2/3" />
           </div>
           <div className="relative z-10 p-6 sm:p-10 md:p-14 max-w-3xl space-y-4">
             <div className="flex items-center gap-3 flex-wrap">

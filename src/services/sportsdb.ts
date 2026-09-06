@@ -23,6 +23,10 @@ export interface TSDBLiveScore {
   intHomeScore:     string | null;
   intAwayScore:     string | null;
   strProgress:      string | null;  // e.g. "IN9", "45'", "HT", "FT"
+  strStatus?:       string | null;  // e.g. "BT" (before time), "HT", "FT"
+  strTimestamp?:    string | null;  // ISO datetime e.g. "2026-09-06T18:00:00"
+  strEventTime?:    string | null;  // e.g. "18:00"
+  dateEvent?:       string | null;  // e.g. "2026-09-06"
   strHomeTeamBadge: string;
   strAwayTeamBadge: string;
 }
