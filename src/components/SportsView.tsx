@@ -56,25 +56,25 @@ interface SportsrcEnvelope<T> {
 
 async function sportsrcFetch(params: Record<string, string>): Promise<Response> {
   const query = { ...params };
+  // Use query-param auth only — the X-API-KEY header triggers a CORS preflight
+  // that sportsrc.org does not handle (OPTIONS → 404), breaking browser fetches.
   if (SPORTSRC_API_KEY) query.api_key = SPORTSRC_API_KEY;
-  const headers: HeadersInit = { Accept: 'application/json' };
-  if (SPORTSRC_API_KEY) headers['X-API-KEY'] = SPORTSRC_API_KEY;
-  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams(query).toString()}`, { headers });
+  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams(query).toString()}`);
 }
 
-async function sportsrcJson<T>(params: Record<string, string>): Promise<T | null> {
+async function sportsrcJson<T>(params: Record<string, string>): Promise<{ data: T | null; error?: string }> {
   try {
     const res = await sportsrcFetch(params);
-    if (!res.ok) return null;
+    if (!res.ok) return { data: null, error: `HTTP ${res.status}` };
     const body = await res.json() as SportsrcEnvelope<T> | T;
     if (body && typeof body === 'object' && 'success' in body) {
       const envelope = body as SportsrcEnvelope<T>;
-      if (envelope.success === false) return null;
-      return envelope.data ?? null;
+      if (envelope.success === false) return { data: null, error: envelope.message || 'API error' };
+      return { data: envelope.data ?? null };
     }
-    return body as T;
-  } catch {
-    return null;
+    return { data: body as T };
+  } catch (err) {
+    return { data: null, error: err instanceof Error ? err.message : 'Network error' };
   }
 }
 
@@ -178,12 +178,12 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const cats = await sportsrcJson<SportCategory[]>({ type: 'sports' });
+      const { data: cats, error: catsError } = await sportsrcJson<SportCategory[]>({ type: 'sports' });
       const validCats = Array.isArray(cats) ? cats : [];
       setCategories(validCats);
 
       if (!validCats.length) {
-        setLoadError('No sports categories returned from the API.');
+        setLoadError(catsError ? `Sports API error: ${catsError}` : 'No sports categories returned from the API.');
         return;
       }
 
@@ -193,13 +193,13 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       const liveIds = new Set<string>();
 
       await Promise.all(validCats.map(async (cat) => {
-        const [liveRows, todayRows] = await Promise.all([
+        const [liveRes, todayRes] = await Promise.all([
           sportsrcJson<APIMatch[]>({ type: 'matches', sport: cat.id, status: 'inprogress', date: today }),
           sportsrcJson<APIMatch[]>({ type: 'matches', sport: cat.id, date: today }),
         ]);
 
-        const liveList = Array.isArray(liveRows) ? liveRows : [];
-        const todayList = Array.isArray(todayRows) ? todayRows : [];
+        const liveList = Array.isArray(liveRes.data) ? liveRes.data : [];
+        const todayList = Array.isArray(todayRes.data) ? todayRes.data : [];
 
         for (const m of liveList) {
           if (!liveIds.has(m.id)) { liveIds.add(m.id); liveRaw.push(m); }
@@ -295,7 +295,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     setStreamError(false);
     setStreamLoading(true);
     try {
-      const detail = await sportsrcJson<Record<string, unknown>>({ type: 'detail', id: match.id });
+      const { data: detail } = await sportsrcJson<Record<string, unknown>>({ type: 'detail', id: match.id });
       if (!detail) { setStreamError(true); return; }
       const embedUrls = extractStreamUrls(detail);
       if (!embedUrls.length) { setStreamError(true); return; }
