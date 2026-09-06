@@ -52,8 +52,6 @@ let liveScoreCache: TSDBLiveScore[] | null = null;
 let liveScoreFetchedAt = 0;
 const LIVE_TTL = 60_000; // re-fetch livescores at most once per minute
 
-const teamBadgeCache = new Map<string, string>(); // normalised name → badge URL
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -115,35 +113,15 @@ async function fetchLiveScores(): Promise<TSDBLiveScore[]> {
   }
 }
 
-async function fetchTeamBadge(teamName: string): Promise<string | null> {
-  const key = norm(teamName);
-  if (teamBadgeCache.has(key)) return teamBadgeCache.get(key) ?? null;
-  try {
-    const res = await fetch(`${TSDB}/searchteams.php?t=${encodeURIComponent(teamName)}`);
-    if (!res.ok) return null;
-    const json = await res.json() as { teams: TSDBTeam[] | null };
-    const team = (json.teams ?? []).find(t => nameMatch(t.strTeam, teamName)) ?? json.teams?.[0];
-    const badge = team?.strBadge ?? null;
-    teamBadgeCache.set(key, badge ?? '');
-    return badge;
-  } catch {
-    return null;
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Build enrichment for all matches, calling onUpdate incrementally so the UI
- * can render badges as they arrive rather than waiting for all requests.
- *
- * Strategy:
- *  1. Fire livescores fetch immediately (one request, covers many matches)
- *  2. For every team not covered by livescores, fire ALL badge searches in
- *     parallel — no sequential batching. TSDB free tier handles it fine.
- *  3. As each per-match pair resolves, call onUpdate so the card re-renders.
+ * Enrich matches using only the livescores endpoint (one fast request).
+ * Team name search is intentionally omitted — it fires 200+ requests for
+ * college teams that aren't in TSDB anyway, causing the slowness.
+ * Matches not found in livescores get the generated VS card instantly.
  */
 export async function buildEnrichmentMap(
   matches: Array<{ id: string; title: string; teams?: { home?: { name: string }; away?: { name: string } } }>,
@@ -152,11 +130,8 @@ export async function buildEnrichmentMap(
   const result = new Map<string, MatchEnrichment>();
   if (!matches.length) return result;
 
-  // Step 1 — livescores (one request, instant for covered leagues)
+  // Single request — covers all professional/major-league live matches
   const live = await fetchLiveScores();
-
-  // Separate matches into livescore-matched vs needing team search
-  const needsSearch: Array<{ id: string; homeRaw: string; awayRaw: string }> = [];
 
   for (const match of matches) {
     const [homeRaw, awayRaw] = getTeamNames(match);
@@ -178,30 +153,8 @@ export async function buildEnrichmentMap(
       };
       result.set(match.id, enrichment);
       onUpdate?.(match.id, enrichment);
-    } else {
-      needsSearch.push({ id: match.id, homeRaw, awayRaw });
     }
-  }
-
-  // Step 2 — collect unique team names not already cached
-  const uniqueTeams = new Set<string>();
-  for (const { homeRaw, awayRaw } of needsSearch) {
-    if (homeRaw && !teamBadgeCache.has(norm(homeRaw))) uniqueTeams.add(homeRaw);
-    if (awayRaw && !teamBadgeCache.has(norm(awayRaw))) uniqueTeams.add(awayRaw);
-  }
-
-  // Step 3 — fire ALL team searches in parallel (no sequential batching)
-  await Promise.allSettled(Array.from(uniqueTeams).map(fetchTeamBadge));
-
-  // Step 4 — second pass: resolve badge-only enrichment and call onUpdate per match
-  for (const { id, homeRaw, awayRaw } of needsSearch) {
-    const homeBadge = homeRaw ? (teamBadgeCache.get(norm(homeRaw)) || undefined) : undefined;
-    const awayBadge = awayRaw ? (teamBadgeCache.get(norm(awayRaw)) || undefined) : undefined;
-    if (homeBadge || awayBadge) {
-      const enrichment: MatchEnrichment = { homeBadge, awayBadge };
-      result.set(id, enrichment);
-      onUpdate?.(id, enrichment);
-    }
+    // No match in livescores = college/unknown team → generated VS card, no extra requests
   }
 
   return result;

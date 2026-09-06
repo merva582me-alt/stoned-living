@@ -60,8 +60,8 @@ interface SportsViewProps {
 // ---------------------------------------------------------------------------
 
 const STREAMED = 'https://streamed.pk';
-// Worker subdomain — bypasses Cloudflare Pages SPA routing, sets Referer server-side
-const SPORTS_PROXY = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
+// Worker route on the main domain (stoned.living/api/* → stoned-resolver Worker)
+const SPORTS_PROXY = '/api/sports';
 
 function streamedFetch(path: string) {
   // Local dev hits streamed.pk directly; production goes via the CF Worker
