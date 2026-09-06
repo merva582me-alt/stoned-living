@@ -54,15 +54,22 @@ interface SportsViewProps {
 }
 
 // ---------------------------------------------------------------------------
-// Config — call streamed.pk directly, no resolver needed
+// Config — route all streamed.pk API calls through our Worker proxy so that
+// required headers (Referer, User-Agent) are set server-side. This is the
+// only way to make it work on mobile browsers, which block those headers.
 // ---------------------------------------------------------------------------
 
 const STREAMED = 'https://streamed.pk';
+const SPORTS_PROXY = '/api/sports';
 
 function streamedFetch(path: string) {
-  return fetch(`${STREAMED}${path}`, {
-    headers: { Referer: STREAMED, 'User-Agent': 'Mozilla/5.0' }
-  });
+  // Use the Worker proxy in production; fall back to direct for local dev
+  const base = window.location.hostname === 'localhost' ? STREAMED : SPORTS_PROXY;
+  const url  = base === SPORTS_PROXY ? `${SPORTS_PROXY}${path}` : `${STREAMED}${path}`;
+  return fetch(url, base === STREAMED
+    ? { headers: { Referer: STREAMED, 'User-Agent': 'Mozilla/5.0' } }
+    : undefined
+  );
 }
 
 // ---------------------------------------------------------------------------

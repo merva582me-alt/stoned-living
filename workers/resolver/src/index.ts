@@ -100,6 +100,46 @@ async function handleHealth(req: Request): Promise<Response> {
 }
 
 // ---------------------------------------------------------------------------
+// Sports proxy — forwards /api/sports/<path> to streamed.pk with required
+// headers that browsers are not allowed to set (Referer, User-Agent).
+// This fixes mobile browsers where direct fetch to streamed.pk fails.
+// ---------------------------------------------------------------------------
+
+async function handleSports(req: Request, pathname: string): Promise<Response> {
+  const origin = req.headers.get('Origin');
+  // Strip /api/sports prefix to get the streamed.pk path
+  const streamedPath = pathname.replace(/^\/api\/sports/, '');
+  const target = `https://streamed.pk${streamedPath}`;
+
+  try {
+    const upstream = await fetch(target, {
+      headers: {
+        'Referer':    'https://streamed.pk',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        'Accept':     'application/json, */*',
+      },
+      cf: { cacheTtl: 30, cacheEverything: false } as RequestInitCfProperties,
+    });
+
+    if (!upstream.ok) {
+      return jsonResponse({ error: `streamed.pk returned ${upstream.status}` }, upstream.status, origin);
+    }
+
+    const body = await upstream.text();
+    return new Response(body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+        ...corsHeaders(origin),
+      },
+    });
+  } catch (err) {
+    return jsonResponse({ error: 'Sports proxy fetch failed' }, 502, origin);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main fetch handler
 // ---------------------------------------------------------------------------
 
@@ -115,8 +155,9 @@ export default {
       return jsonResponse({ error: 'Method not allowed' }, 405, origin);
     }
 
-    if (pathname === '/api/resolve') return handleResolve(req);
-    if (pathname === '/api/health')  return handleHealth(req);
+    if (pathname === '/api/resolve')          return handleResolve(req);
+    if (pathname === '/api/health')           return handleHealth(req);
+    if (pathname.startsWith('/api/sports/'))  return handleSports(req, pathname);
 
     return jsonResponse({ error: 'Not found' }, 404, origin);
   }
