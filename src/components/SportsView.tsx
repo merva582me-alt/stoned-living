@@ -60,16 +60,17 @@ interface SportsViewProps {
 // ---------------------------------------------------------------------------
 
 const STREAMED = 'https://streamed.pk';
-const SPORTS_PROXY = '/api/sports';
+// Worker subdomain — bypasses Cloudflare Pages SPA routing, sets Referer server-side
+const SPORTS_PROXY = 'https://stoned-resolver.stonedliving.workers.dev/api/sports';
 
 function streamedFetch(path: string) {
-  // Use the Worker proxy in production; fall back to direct for local dev
-  const base = window.location.hostname === 'localhost' ? STREAMED : SPORTS_PROXY;
-  const url  = base === SPORTS_PROXY ? `${SPORTS_PROXY}${path}` : `${STREAMED}${path}`;
-  return fetch(url, base === STREAMED
-    ? { headers: { Referer: STREAMED, 'User-Agent': 'Mozilla/5.0' } }
-    : undefined
-  );
+  // Local dev hits streamed.pk directly; production goes via the CF Worker
+  if (window.location.hostname === 'localhost') {
+    return fetch(`${STREAMED}${path}`, {
+      headers: { Referer: STREAMED, 'User-Agent': 'Mozilla/5.0' }
+    });
+  }
+  return fetch(`${SPORTS_PROXY}${path}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -89,8 +90,12 @@ function normalise(m: APIMatch, isLive: boolean): SportMatch {
   };
 }
 
-function badgeUrl(badge: string)  { return `${STREAMED}/api/images/badge/${badge}.webp`; }
-function posterUrl(home: string, away: string) { return `${STREAMED}/api/images/poster/${home}/${away}.webp`; }
+// Route streamed.pk image URLs through the proxy on production too
+function streamedImg(path: string) {
+  if (window.location.hostname === 'localhost') return `${STREAMED}${path}`;
+  return `${SPORTS_PROXY}${path}`;
+}
+function badgeUrl(badge: string) { return streamedImg(`/api/images/badge/${badge}.webp`); }
 
 // ---------------------------------------------------------------------------
 // Icon helper
@@ -187,7 +192,7 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
         </div>
       ) : match.poster ? (
         <img
-          src={match.poster.startsWith('http') ? match.poster : `${STREAMED}${match.poster}${match.poster.endsWith('.webp') ? '' : '.webp'}`}
+          src={match.poster.startsWith('http') ? match.poster : streamedImg(`${match.poster}${match.poster.endsWith('.webp') ? '' : '.webp'}`)}
           alt={match.title}
           className="w-full aspect-video object-cover rounded-xl mb-3 opacity-80 group-hover:opacity-100 transition"
           onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
