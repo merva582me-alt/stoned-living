@@ -60,13 +60,25 @@ async function sportsrcJson<T>(params: Record<string, string>): Promise<{ data: 
   try {
     const res = await sportsrcFetch(params);
     if (!res.ok) return { data: null, error: `HTTP ${res.status}` };
-    const body = await res.json() as SportsrcEnvelope<T> | T;
-    if (body && typeof body === 'object' && 'success' in body) {
-      const envelope = body as SportsrcEnvelope<T>;
-      if (envelope.success === false) return { data: null, error: envelope.message || 'API error' };
-      return { data: envelope.data ?? null };
+    const body = await res.json() as Record<string, unknown>;
+    if (body && typeof body === 'object') {
+      // Explicit failure
+      if ('success' in body && (body as SportsrcEnvelope<T>).success === false) {
+        return { data: null, error: (body as SportsrcEnvelope<T>).message || 'API error' };
+      }
+      // Envelope with `data` key
+      if ('data' in body && body.data !== undefined) return { data: body.data as T };
+      // Common sportsrc envelope keys: sports, matches, events, results
+      for (const key of ['sports', 'matches', 'events', 'results', 'items']) {
+        if (key in body && body[key] !== undefined) return { data: body[key] as T };
+      }
+      // Response is the payload itself (array or plain object)
+      if (Array.isArray(body)) return { data: body as unknown as T };
+      // If the object has a single array-valued key, unwrap it
+      const vals = Object.values(body);
+      if (vals.length === 1 && Array.isArray(vals[0])) return { data: vals[0] as unknown as T };
     }
-    return { data: body as T };
+    return { data: body as unknown as T };
   } catch (err) {
     return { data: null, error: err instanceof Error ? err.message : 'Network error' };
   }
@@ -175,18 +187,25 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     });
   }, []);
 
+  // Fallback sport slugs used when the categories endpoint returns nothing
+  const FALLBACK_SPORTS: SportCategory[] = [
+    { id: 'football',   name: 'Football' },
+    { id: 'basketball', name: 'Basketball' },
+    { id: 'baseball',   name: 'Baseball' },
+    { id: 'hockey',     name: 'Hockey' },
+    { id: 'tennis',     name: 'Tennis' },
+    { id: 'mma',        name: 'MMA' },
+    { id: 'boxing',     name: 'Boxing' },
+    { id: 'cricket',    name: 'Cricket' },
+  ];
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const { data: cats, error: catsError } = await sportsrcJson<SportCategory[]>({ type: 'sports' });
-      const validCats = Array.isArray(cats) ? cats : [];
+      const { data: cats } = await sportsrcJson<SportCategory[]>({ type: 'sports' });
+      const validCats = Array.isArray(cats) && cats.length > 0 ? cats : FALLBACK_SPORTS;
       setCategories(validCats);
-
-      if (!validCats.length) {
-        setLoadError(catsError ? `Sports API error: ${catsError}` : 'No sports categories returned from the API.');
-        return;
-      }
 
       const today = todayStr();
       const liveRaw: APIMatch[] = [];
