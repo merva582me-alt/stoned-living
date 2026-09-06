@@ -19,13 +19,18 @@
  *       → { status: "ok", resolver?: string, ts: string }
  */
 
-import { resolveVidSrc }     from './resolvers/vidsrc.js';
-import { resolveVidLink }    from './resolvers/vidlink.js';
-import { resolveVidCore }    from './resolvers/vidcore.js';
-import { resolveVidUp }      from './resolvers/vidup.js';
-import { resolveStreamed, fetchStreamedEvents }     from './resolvers/streamed.js';
-import { resolveDaddyLive, fetchDaddyLiveEvents }   from './resolvers/daddylive.js';
-import type { ResolveParams, SportResolveParams, ResolveResult, SportEvent } from './resolvers/types.js';
+import { resolveVidSrc }  from './resolvers/vidsrc.js';
+import { resolveVidLink } from './resolvers/vidlink.js';
+import { resolveVidCore } from './resolvers/vidcore.js';
+import { resolveVidUp }   from './resolvers/vidup.js';
+import {
+  fetchStreamedEvents,
+  fetchStreamedToday,
+  fetchStreamedBySport,
+  fetchStreamedSports,
+  fetchStreamedStreams
+} from './resolvers/streamed.js';
+import type { ResolveParams, ResolveResult, SportEvent } from './resolvers/types.js';
 
 // ---------------------------------------------------------------------------
 // CORS
@@ -110,64 +115,18 @@ async function setCached(cacheReq: Request, url: string, ttl: number): Promise<v
 // ---------------------------------------------------------------------------
 
 async function resolveMedia(params: ResolveParams): Promise<ResolveResult | null> {
-  // Check edge cache first
-  const cacheReq = mediaCacheKey(params);
-  const cached = await getCached(cacheReq);
-  if (cached) return { url: cached, provider: 'cache' };
-
+  // Media embeds are handled client-side via iframes — worker only needed for legacy HLS
   const resolvers: Array<{ name: string; fn: (p: ResolveParams) => Promise<string | null> }> = [
     { name: 'vidsrc',  fn: resolveVidSrc  },
     { name: 'vidlink', fn: resolveVidLink },
     { name: 'vidcore', fn: resolveVidCore },
     { name: 'vidup',   fn: resolveVidUp   }
   ];
-
   for (const { name, fn } of resolvers) {
     try {
       const url = await fn(params);
-      if (url) {
-        // Store in edge cache before returning
-        await setCached(cacheReq, url, CACHE_TTL_MEDIA);
-        return { url, provider: name };
-      }
-    } catch {
-      // Silent — try next provider
-    }
-  }
-  return null;
-}
-
-// ---------------------------------------------------------------------------
-// Fallback chain — sports
-// ---------------------------------------------------------------------------
-
-async function resolveSports(params: SportResolveParams): Promise<ResolveResult | null> {
-  // Check edge cache (short TTL for live streams)
-  const cacheReq = sportsCacheKey(params);
-  const cached = await getCached(cacheReq);
-  if (cached) return { url: cached, provider: 'cache' };
-
-  const ordered =
-    params.provider === 'daddylive'
-      ? [
-          { name: 'daddylive', fn: resolveDaddyLive },
-          { name: 'streamed',  fn: resolveStreamed  }
-        ]
-      : [
-          { name: 'streamed',  fn: resolveStreamed  },
-          { name: 'daddylive', fn: resolveDaddyLive }
-        ];
-
-  for (const { name, fn } of ordered) {
-    try {
-      const url = await fn(params);
-      if (url) {
-        await setCached(cacheReq, url, CACHE_TTL_SPORTS);
-        return { url, provider: name };
-      }
-    } catch {
-      // Silent — try next
-    }
+      if (url) return { url, provider: name };
+    } catch { /* try next */ }
   }
   return null;
 }
@@ -178,24 +137,7 @@ async function resolveSports(params: SportResolveParams): Promise<ResolveResult 
 
 async function handleResolve(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
-  const origin = req.headers.get('Origin');
-
-  const source = searchParams.get('source');
-
-  // ── Sports resolve ────────────────────────────────────────────────────────
-  if (source === 'sports') {
-    const provider = searchParams.get('provider') || 'streamed';
-    const channelId = searchParams.get('id');
-    if (!channelId) {
-      return jsonResponse({ error: 'Missing required param: id' }, 400, origin);
-    }
-
-    const result = await resolveSports({ provider, channelId });
-    if (!result) return jsonResponse({ error: 'No live stream found' }, 502, origin);
-    return jsonResponse(result, 200, origin);
-  }
-
-  // ── Media resolve ─────────────────────────────────────────────────────────
+  const origin  = req.headers.get('Origin');
   const rawType = searchParams.get('type');
   const id      = searchParams.get('id');
   const anilistId = searchParams.get('anilist_id') ?? undefined;
@@ -207,34 +149,58 @@ async function handleResolve(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Invalid type — must be movie, tv, or anime' }, 400, origin);
   }
 
-  const type = rawType as 'movie' | 'tv' | 'anime';
+  const type    = rawType as 'movie' | 'tv' | 'anime';
   const season  = parseInt(searchParams.get('season')  ?? '1', 10) || 1;
   const episode = parseInt(searchParams.get('episode') ?? '1', 10) || 1;
 
-  const params: ResolveParams = { type, id, season, episode, anilistId };
-
-  const result = await resolveMedia(params);
+  const result = await resolveMedia({ type, id, season, episode, anilistId });
   if (!result) return jsonResponse({ error: 'No stream found for this title' }, 502, origin);
   return jsonResponse(result, 200, origin);
 }
 
+// GET /api/sports/events          — live matches
+// GET /api/sports/today           — all today's matches
+// GET /api/sports/categories      — list of sport categories
+// GET /api/sports/by-sport?sport= — matches for a sport
 async function handleSportsEvents(req: Request): Promise<Response> {
+  const { pathname, searchParams } = new URL(req.url);
+  const origin = req.headers.get('Origin');
+
+  if (pathname === '/api/sports/today') {
+    const events = await fetchStreamedToday().catch(() => []);
+    return jsonResponse(events, 200, origin);
+  }
+  if (pathname === '/api/sports/categories') {
+    const sports = await fetchStreamedSports().catch(() => []);
+    return jsonResponse(sports, 200, origin);
+  }
+  if (pathname === '/api/sports/by-sport') {
+    const sport = searchParams.get('sport') || 'football';
+    const events = await fetchStreamedBySport(sport).catch(() => []);
+    return jsonResponse(events, 200, origin);
+  }
+  // Default: live
+  const events = await fetchStreamedEvents().catch(() => [] as SportEvent[]);
+  return jsonResponse(events, 200, origin);
+}
+
+// GET /api/sports/streams?sources=alpha:id1,bravo:id2
+async function handleSportsStreams(req: Request): Promise<Response> {
   const { searchParams } = new URL(req.url);
   const origin = req.headers.get('Origin');
-  const provider = searchParams.get('provider') || 'all';
+  const rawSources = searchParams.get('sources') || '';
 
-  let events: SportEvent[] = [];
+  const sources = rawSources
+    .split(',')
+    .map((s) => { const [source, id] = s.split(':'); return { source, id }; })
+    .filter((s) => s.source && s.id);
 
-  if (provider === 'streamed' || provider === 'all') {
-    const ev = await fetchStreamedEvents().catch(() => []);
-    events = events.concat(ev);
-  }
-  if (provider === 'daddylive' || provider === 'all') {
-    const ev = await fetchDaddyLiveEvents().catch(() => []);
-    events = events.concat(ev);
+  if (sources.length === 0) {
+    return jsonResponse({ error: 'Missing required param: sources' }, 400, origin);
   }
 
-  return jsonResponse(events, 200, origin);
+  const streams = await fetchStreamedStreams(sources).catch(() => []);
+  return jsonResponse(streams, 200, origin);
 }
 
 async function handleHealth(req: Request): Promise<Response> {
@@ -261,9 +227,10 @@ export default {
       return jsonResponse({ error: 'Method not allowed' }, 405, origin);
     }
 
-    if (pathname === '/api/resolve')        return handleResolve(req);
-    if (pathname === '/api/sports/events')  return handleSportsEvents(req);
-    if (pathname === '/api/health')         return handleHealth(req);
+    if (pathname === '/api/resolve')          return handleResolve(req);
+    if (pathname === '/api/sports/streams')   return handleSportsStreams(req);
+    if (pathname.startsWith('/api/sports/'))  return handleSportsEvents(req);
+    if (pathname === '/api/health')           return handleHealth(req);
 
     return jsonResponse({ error: 'Not found' }, 404, origin);
   }
