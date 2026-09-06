@@ -3,6 +3,7 @@ import {
   Trophy, Tv2, Loader2, AlertCircle, RefreshCw, Radio,
   Zap, Target, Dumbbell, CircleDot, ChevronLeft, Calendar, Flame
 } from 'lucide-react';
+import { buildEnrichmentMap } from '../services/sportsdb';
 
 // ---------------------------------------------------------------------------
 // Types — mirror the official streamed.pk API spec
@@ -33,16 +34,18 @@ interface StreamObj {
 
 interface SportCategory { id: string; name: string; }
 
-// A normalised match used internally
+// A normalised match used internally — extended with TheSportsDB enrichment
 interface SportMatch {
-  id:       string;
-  title:    string;
-  category: string;
-  date:     number;
-  is_live:  boolean;
-  teams?:   { home?: MatchTeam; away?: MatchTeam };
-  sources:  MatchSource[];
-  poster?:  string;
+  id:         string;
+  title:      string;
+  category:   string;
+  date:       number;
+  is_live:    boolean;
+  teams?:     { home?: MatchTeam; away?: MatchTeam };
+  sources:    MatchSource[];
+  poster?:    string;
+  // TheSportsDB enrichment (populated async after initial load)
+  tsdb?:      MatchEnrichment;
 }
 
 interface SportsViewProps {
@@ -103,24 +106,29 @@ function SportIcon({ category, className = 'w-4 h-4' }: { category: string; clas
 
 // Split "Team A vs Team B" into two halves
 function splitVs(title: string): [string, string] {
-  const sep = /\s+vs\.?\s+/i;
-  const parts = title.split(sep);
-  if (parts.length >= 2) {
-    return [parts[0].trim(), parts.slice(1).join(' vs ').trim()];
-  }
+  const parts = title.split(/\s+vs\.?\s+/i);
+  if (parts.length >= 2) return [parts[0].trim(), parts.slice(1).join(' vs ').trim()];
   return [title, ''];
 }
 
 function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatch) => void }) {
-  const home = match.teams?.home;
-  const away = match.teams?.away;
-  const hasBadges = home?.badge && away?.badge;
+  const home  = match.teams?.home;
+  const away  = match.teams?.away;
+  const tsdb  = match.tsdb;
+
+  // Badge priority: streamed.pk native → TheSportsDB enrichment
+  const homeBadgeSrc = home?.badge ? badgeUrl(home.badge) : tsdb?.homeBadge;
+  const awayBadgeSrc = away?.badge ? badgeUrl(away.badge) : tsdb?.awayBadge;
+  const hasBadges    = !!(homeBadgeSrc && awayBadgeSrc);
 
   const timeStr = match.date
     ? new Date(match.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  // Generated "VS" card used when no badges/poster exist
+  // Score display from TSDB (live matches)
+  const hasScore = tsdb?.homeScore != null && tsdb?.awayScore != null;
+
+  // Generated VS card — used when no badges/poster at all
   const [teamA, teamB] = splitVs(match.title);
   const generatedCard = (
     <div className="w-full aspect-video bg-gradient-to-br from-emerald-950/60 to-[#0a100d] rounded-xl mb-3 flex flex-col items-center justify-center gap-2 px-4 border border-emerald-900/30">
@@ -138,23 +146,44 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
       onClick={() => onOpen(match)}
       className="group text-left bg-[#0e1411] hover:bg-[#131d17] border border-emerald-900/40 hover:border-emerald-500/50 rounded-2xl p-4 transition-all duration-200 cursor-pointer w-full"
     >
-      {/* Art: team badges, poster, or generated VS card */}
+      {/* Art: team badges (native or TSDB), poster, or generated VS card */}
       {hasBadges ? (
-        <div className="w-full aspect-video bg-emerald-950/30 rounded-xl mb-3 flex items-center justify-center gap-4 px-4">
-          <img src={badgeUrl(home!.badge)} alt={home!.name} className="w-12 h-12 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          <span className="text-zinc-400 font-black text-xs">VS</span>
-          <img src={badgeUrl(away!.badge)} alt={away!.name} className="w-12 h-12 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+        <div className="w-full aspect-video bg-emerald-950/30 rounded-xl mb-3 flex flex-col items-center justify-center gap-2 px-4">
+          {/* Score row — shown when TSDB has live score data */}
+          {hasScore ? (
+            <div className="flex items-center gap-3">
+              <img src={homeBadgeSrc} alt={home?.name ?? teamA} className="w-10 h-10 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <div className="flex items-center gap-2 bg-black/50 border border-emerald-900/40 rounded-lg px-3 py-1">
+                <span className="text-white font-black text-lg tabular-nums">{tsdb!.homeScore}</span>
+                <span className="text-zinc-500 font-black text-xs">–</span>
+                <span className="text-white font-black text-lg tabular-nums">{tsdb!.awayScore}</span>
+              </div>
+              <img src={awayBadgeSrc} alt={away?.name ?? teamB} className="w-10 h-10 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <img src={homeBadgeSrc} alt={home?.name ?? teamA} className="w-12 h-12 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <span className="text-zinc-400 font-black text-xs">VS</span>
+              <img src={awayBadgeSrc} alt={away?.name ?? teamB} className="w-12 h-12 object-contain"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            </div>
+          )}
+          {/* Progress label (inning / minute / period) */}
+          {tsdb?.progress && (
+            <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">
+              {tsdb.progress}
+            </span>
+          )}
         </div>
       ) : match.poster ? (
         <img
           src={match.poster.startsWith('http') ? match.poster : `${STREAMED}${match.poster}${match.poster.endsWith('.webp') ? '' : '.webp'}`}
           alt={match.title}
           className="w-full aspect-video object-cover rounded-xl mb-3 opacity-80 group-hover:opacity-100 transition"
-          onError={(e) => {
-            (e.target as HTMLImageElement).style.display = 'none';
-          }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
         />
       ) : generatedCard}
 
@@ -172,6 +201,9 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
               {timeStr}
             </span>
           ) : null}
+          {tsdb?.leagueName && (
+            <span className="text-[9px] text-zinc-500 truncate max-w-[120px]">{tsdb.leagueName}</span>
+          )}
         </div>
       </div>
     </button>
@@ -235,6 +267,16 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       setLiveMatches(live);
       setTodayMatches(today);
       setCategories(Array.isArray(cats) ? cats : []);
+
+      // Enrich all matches with TheSportsDB badges + scores in the background
+      const allMatches = [...live, ...today.filter(m => !liveIds.has(m.id))];
+      buildEnrichmentMap(allMatches).then((enrichMap) => {
+        if (!enrichMap.size) return;
+        const applyEnrich = (list: SportMatch[]) =>
+          list.map(m => enrichMap.has(m.id) ? { ...m, tsdb: enrichMap.get(m.id) } : m);
+        setLiveMatches(prev => applyEnrich(prev));
+        setTodayMatches(prev => applyEnrich(prev));
+      }).catch(() => {});
     } catch {
       setError(true);
     } finally {
