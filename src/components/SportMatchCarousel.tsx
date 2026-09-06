@@ -2,14 +2,16 @@ import React, { useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, LucideIcon, Radio, Tv2 } from 'lucide-react';
 
 export interface SportMatch {
-  id:       string;
-  title:    string;
-  category: string;
-  date:     number;
-  is_live:  boolean;
-  teams?:   { home?: { name: string; badge: string }; away?: { name: string; badge: string } };
-  poster?:  string;
-  tsdb?:    { homeBadge?: string; awayBadge?: string; homeScore?: number; awayScore?: number; leagueName?: string; progress?: string };
+  id:        string;
+  title:     string;
+  category:  string;
+  date:      number;
+  is_live:   boolean;
+  teams?:    { home?: { name: string; badge: string }; away?: { name: string; badge: string } };
+  poster?:   string;
+  tsdb?:     { homeBadge?: string; awayBadge?: string; homeScore?: number; awayScore?: number; leagueName?: string; progress?: string };
+  /** streamed.pk stream sources — carried to the player to fetch streams on demand */
+  _sources?: { source: string; id: string }[];
 }
 
 interface SportMatchCarouselProps {

@@ -1,64 +1,38 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Trophy, Loader2, AlertCircle, RefreshCw, Radio, Flame, Calendar,
   ChevronLeft, Play, SlidersHorizontal, Grid, Layers, Clock, CircleDot,
   Zap, Target, Dumbbell, Tv2, LucideIcon,
 } from 'lucide-react';
-import { type TSDBLiveScore } from '../services/sportsdb';
+import { buildEnrichmentMap, type MatchEnrichment } from '../services/sportsdb';
 import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatchCarousel';
 
 // ---------------------------------------------------------------------------
-// Types & API
+// streamed.pk types
 // ---------------------------------------------------------------------------
 
-// Actual sportsrc v2 response: data is an array of league groups
-interface APILeagueGroup {
-  league: { name: string; country?: string; flag?: string; logo?: string };
-  matches: APIMatch[];
-}
+const STREAMED_BASE = 'https://streamed.pk';
 
-interface APIMatch {
-  id:           string;
-  title?:       string;
-  timestamp?:   number;   // ms epoch  (API field name)
-  date?:        number;   // fallback
-  status?:      string;   // "inprogress" | "notstarted" | "finished" | "postponed"
-  category?:    string;   // not returned by API; injected during normalise
-  poster?:      string;
-  teams?:       { home?: { name: string; badge: string; code?: string; color?: string }; away?: { name: string; badge: string; code?: string; color?: string } };
-  score?:       { current?: { home: number; away: number }; display?: string };
-}
-
-// TheSportsDB livescore → SportMatch conversion
-function tsdbToMatch(e: TSDBLiveScore): SportMatch {
-  const sportName = e.strSport || 'Sport';
-  // TSDB livescore only returns in-progress or very-recently-finished events.
-  // BT = before time (kick-off imminent), anything else = actively in play.
-  const notLive = ['FT', 'Finished', 'AOT', 'PEN'].includes(e.strProgress ?? '');
-  const isLive = !notLive;
-  // Parse timestamp: "2026-09-06T18:00:00" (local time from TSDB, treat as UTC)
-  const ts = e.strTimestamp ? new Date(e.strTimestamp + 'Z').getTime() : Date.now();
-  return {
-    id:       e.idEvent,
-    title:    `${e.strHomeTeam} vs ${e.strAwayTeam}`,
-    category: sportName,
-    date:     ts,
-    is_live:  isLive,
-    teams: {
-      home: { name: e.strHomeTeam, badge: e.strHomeTeamBadge },
-      away: { name: e.strAwayTeam, badge: e.strAwayTeamBadge },
-    },
-    tsdb: {
-      homeBadge:  e.strHomeTeamBadge  || undefined,
-      awayBadge:  e.strAwayTeamBadge  || undefined,
-      leagueName: e.strLeague         || undefined,
-      homeScore:  e.intHomeScore != null ? Number(e.intHomeScore) : undefined,
-      awayScore:  e.intAwayScore != null ? Number(e.intAwayScore) : undefined,
-    },
+interface StreamedMatch {
+  id:       string;
+  title:    string;
+  category: string;
+  date:     number;   // Unix ms epoch
+  poster?:  string;
+  popular:  boolean;
+  teams?: {
+    home?: { name: string; badge: string };
+    away?: { name: string; badge: string };
   };
+  sources: { source: string; id: string }[];
 }
 
-interface StreamObj {
+interface StreamedSport {
+  id:   string;
+  name: string;
+}
+
+interface StreamedStream {
   id:       string;
   streamNo: number;
   language: string;
@@ -67,7 +41,33 @@ interface StreamObj {
   source:   string;
 }
 
-interface SportCategory { id: string; name: string; total?: number; }
+// ---------------------------------------------------------------------------
+// streamed.pk helpers
+// ---------------------------------------------------------------------------
+
+/** Resolve badge URL from streamed.pk badge id */
+function badgeUrl(id: string | undefined): string | undefined {
+  if (!id) return undefined;
+  // If it already looks like a full URL keep it
+  if (id.startsWith('http')) return id;
+  return `${STREAMED_BASE}/api/images/badge/${id}.webp`;
+}
+
+async function streamedFetch<T>(path: string): Promise<T | null> {
+  try {
+    const res = await fetch(`${STREAMED_BASE}${path}`);
+    if (!res.ok) return null;
+    return await res.json() as T;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Local interfaces
+// ---------------------------------------------------------------------------
+
+interface SportCategory { id: string; name: string; }
 
 interface SportSectionConfig {
   id:       string;
@@ -81,118 +81,9 @@ interface SportsViewProps {
   onPlayMedia?: (item: any) => void;
 }
 
-const SPORTSRC_BASE = 'https://api.sportsrc.org/v2';
-const SPORTSRC_API_KEY = '0c8457d75effb1169a6da8eddaa58d5c';
-
-interface SportsrcEnvelope<T> {
-  success?: boolean;
-  data?:    T;
-  message?: string;
-}
-
-async function sportsrcFetch(params: Record<string, string>): Promise<Response> {
-  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams({ ...params, api_key: SPORTSRC_API_KEY }).toString()}`);
-}
-
-async function sportsrcJson<T>(params: Record<string, string>): Promise<{ data: T | null; error?: string }> {
-  try {
-    const res = await sportsrcFetch(params);
-    if (!res.ok) return { data: null, error: `HTTP ${res.status}` };
-    const body = await res.json() as Record<string, unknown>;
-    if (body && typeof body === 'object') {
-      // Explicit failure
-      if ('success' in body && (body as SportsrcEnvelope<T>).success === false) {
-        return { data: null, error: (body as SportsrcEnvelope<T>).message || 'API error' };
-      }
-      // Envelope with `data` key
-      if ('data' in body && body.data !== undefined) return { data: body.data as T };
-      // Common sportsrc envelope keys: sports, matches, events, results
-      for (const key of ['sports', 'matches', 'events', 'results', 'items']) {
-        if (key in body && body[key] !== undefined) return { data: body[key] as T };
-      }
-      // Response is the payload itself (array or plain object)
-      if (Array.isArray(body)) return { data: body as unknown as T };
-      // If the object has a single array-valued key, unwrap it
-      const vals = Object.values(body);
-      if (vals.length === 1 && Array.isArray(vals[0])) return { data: vals[0] as unknown as T };
-    }
-    return { data: body as unknown as T };
-  } catch (err) {
-    return { data: null, error: err instanceof Error ? err.message : 'Network error' };
-  }
-}
-
-function extractStreamUrls(detail: Record<string, unknown>): string[] {
-  const urls: string[] = [];
-  const push = (value: unknown) => {
-    if (typeof value === 'string' && value.startsWith('http')) urls.push(value);
-  };
-  // Top-level stream URL fields (as documented by sportsrc)
-  push(detail.embedUrl);
-  push(detail.embed_url);
-  push(detail.streamUrl);
-  push(detail.stream_url);
-  push(detail.url);
-  push(detail.watchUrl);
-  push(detail.iframeUrl);
-  push(detail.iframe_url);
-  // Array fields
-  for (const key of ['streams', 'sources', 'links'] as const) {
-    const list = detail[key];
-    if (!Array.isArray(list)) continue;
-    for (const item of list) {
-      if (typeof item === 'string') push(item);
-      else if (item && typeof item === 'object') {
-        const obj = item as Record<string, unknown>;
-        push(obj.embedUrl);
-        push(obj.embed_url);
-        push(obj.url);
-        push(obj.src);
-        push(obj.iframeUrl);
-        push(obj.iframe_url);
-      }
-    }
-  }
-  return [...new Set(urls)];
-}
-
-function todayStr(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function normalise(m: APIMatch, isLive: boolean): SportMatch {
-  const ts = m.timestamp ?? m.date ?? 0;
-  return {
-    id:       m.id,
-    title:    m.title ?? '',
-    category: m.category ?? '',
-    date:     ts,
-    is_live:  isLive,
-    teams:    m.teams,
-    poster:   m.poster,
-  };
-}
-
-/** Flatten a league-grouped response into a flat APIMatch array, injecting category */
-function flattenLeagueGroups(raw: unknown, sportName: string): APIMatch[] {
-  if (!Array.isArray(raw)) return [];
-  const out: APIMatch[] = [];
-  for (const item of raw) {
-    if (item && typeof item === 'object') {
-      // League-group shape: { league, matches }
-      if ('matches' in item && Array.isArray((item as APILeagueGroup).matches)) {
-        for (const m of (item as APILeagueGroup).matches) {
-          out.push({ ...m, category: sportName });
-        }
-      } else if ('id' in item) {
-        // Direct match object (flat array fallback)
-        out.push({ ...(item as APIMatch), category: sportName });
-      }
-    }
-  }
-  return out;
-}
+// ---------------------------------------------------------------------------
+// Utility helpers
+// ---------------------------------------------------------------------------
 
 function sportIcon(category: string): LucideIcon {
   const l = (category || '').toLowerCase();
@@ -210,11 +101,37 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
   if (sortBy === 'time.asc')  return copy.sort((a, b) => a.date - b.date);
   if (sortBy === 'time.desc') return copy.sort((a, b) => b.date - a.date);
   if (sortBy === 'title')     return copy.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
-  // default: live first, then by time
   return copy.sort((a, b) => {
     if (a.is_live !== b.is_live) return a.is_live ? -1 : 1;
     return a.date - b.date;
   });
+}
+
+/** Convert a StreamedMatch to a SportMatch, applying optional TSDB enrichment */
+function toSportMatch(m: StreamedMatch, isLive: boolean, enrich?: MatchEnrichment): SportMatch {
+  const home = m.teams?.home;
+  const away = m.teams?.away;
+  return {
+    id:       m.id,
+    title:    m.title,
+    category: m.category,
+    date:     m.date,
+    is_live:  isLive,
+    poster:   m.poster ? `${STREAMED_BASE}${m.poster}.webp` : undefined,
+    teams: (home || away) ? {
+      home: home ? { name: home.name, badge: badgeUrl(home.badge) ?? home.badge } : undefined,
+      away: away ? { name: away.name, badge: badgeUrl(away.badge) ?? away.badge } : undefined,
+    } : undefined,
+    tsdb: enrich ? {
+      homeBadge:  enrich.homeBadge,
+      awayBadge:  enrich.awayBadge,
+      leagueName: enrich.leagueName,
+      homeScore:  enrich.homeScore,
+      awayScore:  enrich.awayScore,
+    } : undefined,
+    // Carry sources so the player can fetch streams
+    _sources: m.sources,
+  } as SportMatch;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,115 +139,122 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
 // ---------------------------------------------------------------------------
 
 export const SportsView: React.FC<SportsViewProps> = () => {
-  const [categories, setCategories]       = useState<SportCategory[]>([]);
+  const [sports, setSports]               = useState<StreamedSport[]>([]);
   const [liveMatches, setLiveMatches]     = useState<SportMatch[]>([]);
   const [bySport, setBySport]             = useState<Record<string, SportMatch[]>>({});
   const [loading, setLoading]             = useState(true);
   const [loadError, setLoadError]         = useState<string | null>(null);
 
   // Filters
-  const [selectedSport, setSelectedSport] = useState('all');
+  const [selectedSport, setSelectedSport]   = useState('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'live' | 'upcoming'>('all');
-  const [sortBy, setSortBy]               = useState('default');
-  const [viewMode, setViewMode]           = useState<'carousels' | 'grid'>('carousels');
+  const [sortBy, setSortBy]                 = useState('default');
+  const [viewMode, setViewMode]             = useState<'carousels' | 'grid'>('carousels');
 
   // Hero
-  const [heroIndex, setHeroIndex]         = useState(0);
+  const [heroIndex, setHeroIndex] = useState(0);
 
   // Player
   const [activeMatch, setActiveMatch]     = useState<SportMatch | null>(null);
-  const [streams, setStreams]             = useState<StreamObj[]>([]);
+  const [streams, setStreams]             = useState<StreamedStream[]>([]);
   const [streamLoading, setStreamLoading] = useState(false);
   const [streamError, setStreamError]     = useState(false);
   const [streamIndex, setStreamIndex]     = useState(0);
 
+  const abortRef = useRef<AbortController | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const today = todayStr();
-
-      // ── 1. TheSportsDB livescores (multi-sport: Soccer, Basketball, Baseball, Hockey…)
-      const tsdbRes = await fetch('https://www.thesportsdb.com/api/v1/json/3/livescore.php');
-      const tsdbJson = tsdbRes.ok ? await tsdbRes.json() : { livescore: [] };
-      const tsdbEvents: TSDBLiveScore[] = Array.isArray(tsdbJson.livescore) ? tsdbJson.livescore : [];
-
-      // ── 2. sportsrc football (today's full schedule including upcoming)
-      const [srcLiveRes, srcTodayRes] = await Promise.all([
-        sportsrcJson<unknown>({ type: 'matches', sport: 'football', status: 'inprogress', date: today }),
-        sportsrcJson<unknown>({ type: 'matches', sport: 'football', date: today }),
+      // ── 1. Fetch sports categories & all matches in parallel ──────────────
+      const [sportsData, liveData, allData] = await Promise.all([
+        streamedFetch<StreamedSport[]>('/api/sports'),
+        streamedFetch<StreamedMatch[]>('/api/matches/live'),
+        streamedFetch<StreamedMatch[]>('/api/matches/all'),
       ]);
-      const srcLive    = flattenLeagueGroups(srcLiveRes.data,  'Football');
-      const srcToday   = flattenLeagueGroups(srcTodayRes.data, 'Football');
 
-      // ── Merge: build deduped live list ────────────────────────────────────
-      const liveById = new Map<string, SportMatch>();
+      if (controller.signal.aborted) return;
 
-      // TSDB live events (all sports)
-      for (const e of tsdbEvents) {
-        const m = tsdbToMatch(e);
-        liveById.set(m.id, m);
-      }
+      const sportsList: StreamedSport[] = sportsData ?? [];
+      const liveRaw: StreamedMatch[]    = liveData  ?? [];
+      const allRaw:  StreamedMatch[]    = allData   ?? [];
 
-      // sportsrc inprogress football (may overlap with TSDB Soccer by title, keep both — different IDs)
-      for (const m of srcLive) {
-        const sm = normalise(m, true);
-        if (!liveById.has(sm.id)) liveById.set(sm.id, sm);
-      }
+      setSports(sportsList);
 
-      const live = [...liveById.values()];
+      // ── 2. TSDB enrichment for live matches ───────────────────────────────
+      const enrichMap = await buildEnrichmentMap(
+        liveRaw.map(m => ({ id: m.id, title: m.title, teams: m.teams }))
+      );
 
-      // ── Build per-sport upcoming map from sportsrc today schedule ─────────
-      const liveIds = new Set(live.map(m => m.id));
+      if (controller.signal.aborted) return;
+
+      // ── 3. Build live SportMatch list ─────────────────────────────────────
+      const liveIds = new Set(liveRaw.map(m => m.id));
+      const liveMapped: SportMatch[] = liveRaw.map(m =>
+        toSportMatch(m, true, enrichMap.get(m.id))
+      );
+      setLiveMatches(liveMapped);
+
+      // ── 4. Build per-sport upcoming map ───────────────────────────────────
       const sportMap: Record<string, SportMatch[]> = {};
-
-      const seen = new Set<string>();
-      const footballUpcoming: SportMatch[] = [];
-      for (const m of srcToday) {
-        if (seen.has(m.id)) continue;
-        seen.add(m.id);
-        const sm = normalise(m, liveIds.has(m.id));
-        if (!sm.is_live) footballUpcoming.push(sm);
+      for (const m of allRaw) {
+        if (liveIds.has(m.id)) continue; // already in live section
+        const cat = m.category?.toLowerCase() || 'other';
+        if (!sportMap[cat]) sportMap[cat] = [];
+        sportMap[cat].push(toSportMatch(m, false));
       }
-      if (footballUpcoming.length > 0) {
-        sportMap['football'] = footballUpcoming;
-      }
-
-      // ── Build category list from actual data ─────────────────────────────
-      const sportNames = new Set<string>();
-      for (const m of live) sportNames.add(m.category);
-      if (footballUpcoming.length > 0) sportNames.add('Football');
-
-      const cats: SportCategory[] = [...sportNames].sort().map(name => ({
-        id:   name.toLowerCase().replace(/\s+/g, '-'),
-        name,
-      }));
-      setCategories(cats);
-
-      setLiveMatches(live);
       setBySport(sportMap);
+
     } catch {
-      setLoadError('Could not load sports events. Please try again.');
+      if (!controller.signal.aborted) {
+        setLoadError('Could not load sports events. Please try again.');
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { abortRef.current?.abort(); };
+  }, [load]);
+
+  // ── Derived categories from actual match data + streamed.pk sports list ──
+  const categories: SportCategory[] = useMemo(() => {
+    // Prefer streamed.pk sports list if available, otherwise derive from data
+    if (sports.length > 0) return sports;
+    const seen = new Set<string>();
+    const cats: SportCategory[] = [];
+    const allKeys = [...Object.keys(bySport), ...liveMatches.map(m => m.category.toLowerCase())];
+    for (const k of allKeys) {
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      cats.push({ id: k, name: k.charAt(0).toUpperCase() + k.slice(1) });
+    }
+    return cats.sort((a, b) => a.name.localeCompare(b.name));
+  }, [sports, bySport, liveMatches]);
 
   const sportSections: SportSectionConfig[] = useMemo(() => {
     const sections: SportSectionConfig[] = [{
-      id: 'live',
-      title: 'Live Now',
+      id:       'live',
+      title:    'Live Now',
       subtitle: 'All live games and events happening right now',
-      icon: Flame,
+      icon:     Flame,
     }];
     for (const cat of categories) {
       sections.push({
-        id: cat.id,
-        title: cat.name,
-        subtitle: `Upcoming ${cat.name.toLowerCase()} events today`,
-        icon: sportIcon(cat.name),
+        id:       cat.id,
+        title:    cat.name,
+        subtitle: `Upcoming ${cat.name.toLowerCase()} events`,
+        icon:     sportIcon(cat.name),
       });
     }
     return sections;
@@ -350,11 +274,14 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
   const filteredMatches = useMemo(() => {
     let list = allMatches;
-    if (selectedSport !== 'all') list = list.filter(m => m.category === selectedSport || m.category === categories.find(c => c.id === selectedSport)?.name);
-    if (selectedStatus === 'live') list = list.filter(m => m.is_live);
+    if (selectedSport !== 'all') {
+      const target = selectedSport.toLowerCase();
+      list = list.filter(m => m.category.toLowerCase() === target);
+    }
+    if (selectedStatus === 'live')     list = list.filter(m => m.is_live);
     if (selectedStatus === 'upcoming') list = list.filter(m => !m.is_live);
     return sortMatches(list, sortBy);
-  }, [allMatches, selectedSport, selectedStatus, sortBy, categories]);
+  }, [allMatches, selectedSport, selectedStatus, sortBy]);
 
   const activeFilterCount =
     (selectedSport !== 'all' ? 1 : 0) +
@@ -373,20 +300,37 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     return () => clearInterval(interval);
   }, [heroPool.length]);
 
+  // ── Stream fetching via streamed.pk ───────────────────────────────────────
+
   const openMatch = useCallback(async (match: SportMatch) => {
     setActiveMatch(match);
     setStreams([]);
     setStreamIndex(0);
     setStreamError(false);
     setStreamLoading(true);
+
+    const sources = match._sources;
+
+    if (!sources || sources.length === 0) {
+      setStreamError(true);
+      setStreamLoading(false);
+      return;
+    }
+
     try {
-      const { data: detail } = await sportsrcJson<Record<string, unknown>>({ type: 'detail', id: match.id });
-      if (!detail) { setStreamError(true); return; }
-      const embedUrls = extractStreamUrls(detail);
-      if (!embedUrls.length) { setStreamError(true); return; }
-      setStreams(embedUrls.map((embedUrl, i) => ({
-        id: match.id, streamNo: i + 1, language: '', hd: true, embedUrl, source: 'primary',
-      })));
+      // Fetch all sources in parallel, collect all streams
+      const results = await Promise.all(
+        sources.map(s =>
+          streamedFetch<StreamedStream[]>(`/api/stream/${s.source}/${s.id}`)
+            .then(arr => arr ?? [])
+        )
+      );
+      const allStreams: StreamedStream[] = results.flat();
+      if (!allStreams.length) {
+        setStreamError(true);
+        return;
+      }
+      setStreams(allStreams);
     } catch {
       setStreamError(true);
     } finally {
@@ -398,7 +342,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
   const getSectionMatches = (sectionId: string): SportMatch[] => {
     if (sectionId === 'live') return liveMatches;
-    return bySport[sectionId] ?? [];
+    return bySport[sectionId.toLowerCase()] ?? [];
   };
 
   // ── Player view ──────────────────────────────────────────────────────────
@@ -428,10 +372,11 @@ export const SportsView: React.FC<SportsViewProps> = () => {
             {streams.map((s, i) => (
               <button key={`${s.source}-${s.streamNo}`} onClick={() => setStreamIndex(i)}
                 className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                  streamIndex === i ? 'bg-emerald-500 text-black border-emerald-400'
+                  streamIndex === i
+                    ? 'bg-emerald-500 text-black border-emerald-400'
                     : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/60 hover:text-emerald-300'
                 }`}>
-                {i + 1}{s.hd ? ' HD' : ''}
+                {s.language || `#${s.streamNo}`}{s.hd ? ' HD' : ''}
               </button>
             ))}
           </div>
@@ -469,16 +414,30 @@ export const SportsView: React.FC<SportsViewProps> = () => {
             />
           )}
         </div>
+
+        {/* Match info panel */}
+        {activeMatch.tsdb && (
+          <div className="flex items-center gap-4 bg-[#0b100c] border border-emerald-900/40 rounded-2xl px-5 py-3 flex-wrap">
+            {activeMatch.tsdb.leagueName && (
+              <span className="text-xs text-emerald-300 font-semibold">{activeMatch.tsdb.leagueName}</span>
+            )}
+            {(activeMatch.tsdb.homeScore !== undefined && activeMatch.tsdb.awayScore !== undefined) && (
+              <span className="text-white font-black text-sm">
+                {activeMatch.tsdb.homeScore} – {activeMatch.tsdb.awayScore}
+              </span>
+            )}
+          </div>
+        )}
       </div>
     );
   }
 
-  // ── Main catalog view ────────────────────────────────────────────────────
+  // ── Main catalog view ─────────────────────────────────────────────────────
 
   return (
     <div className="space-y-10 px-4 sm:px-6 lg:px-10 w-full max-w-[1920px] mx-auto pt-4 pb-24 lg:pb-10">
 
-      {/* HERO — featured live event carousel */}
+      {/* HERO */}
       {loading ? (
         <section className="relative w-full rounded-3xl overflow-hidden bg-[#0a100c] border border-emerald-950/60 min-h-[440px] sm:min-h-[520px] flex items-end p-6 sm:p-10 md:p-14 animate-pulse">
           <div className="space-y-4 max-w-2xl w-full z-10">
@@ -501,14 +460,12 @@ export const SportsView: React.FC<SportsViewProps> = () => {
               const aBadge = featuredMatch.teams?.away?.badge || featuredMatch.tsdb?.awayBadge;
               return (
                 <>
-                  {/* Badge glow blobs */}
                   {hBadge && <img src={hBadge} alt="" aria-hidden className="absolute left-[5%] top-1/2 -translate-y-1/2 w-[38%] max-w-[320px] opacity-10 blur-2xl scale-150 pointer-events-none" />}
                   {aBadge && <img src={aBadge} alt="" aria-hidden className="absolute right-[5%] top-1/2 -translate-y-1/2 w-[38%] max-w-[320px] opacity-10 blur-2xl scale-150 pointer-events-none" />}
-                  {/* Crisp badge pair centred-right */}
                   <div className="absolute right-0 top-0 bottom-0 w-1/2 hidden md:flex items-center justify-center gap-6 pr-12">
-                    {hBadge && <img src={hBadge} alt={featuredMatch.teams?.home?.name ?? ''} className="w-28 h-28 lg:w-36 lg:h-36 object-contain drop-shadow-[0_0_24px_rgba(16,185,129,0.3)]" />}
+                    {hBadge && <img src={hBadge} alt={featuredMatch.teams?.home?.name ?? ''} className="w-28 h-28 lg:w-36 lg:h-36 object-contain drop-shadow-[0_0_24px_rgba(16,185,129,0.3)]" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
                     <span className="text-3xl font-black text-emerald-400/60">VS</span>
-                    {aBadge && <img src={aBadge} alt={featuredMatch.teams?.away?.name ?? ''} className="w-28 h-28 lg:w-36 lg:h-36 object-contain drop-shadow-[0_0_24px_rgba(16,185,129,0.3)]" />}
+                    {aBadge && <img src={aBadge} alt={featuredMatch.teams?.away?.name ?? ''} className="w-28 h-28 lg:w-36 lg:h-36 object-contain drop-shadow-[0_0_24px_rgba(16,185,129,0.3)]" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />}
                   </div>
                   <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/60 via-[#060e09]/80 to-[#060e09]" />
                 </>
@@ -532,10 +489,20 @@ export const SportsView: React.FC<SportsViewProps> = () => {
                   {new Date(featuredMatch.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}
+              {featuredMatch.tsdb?.leagueName && (
+                <span className="bg-black/40 text-zinc-300 text-[10px] px-2 py-0.5 rounded-md border border-zinc-700">
+                  {featuredMatch.tsdb.leagueName}
+                </span>
+              )}
             </div>
             <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-white tracking-tight leading-none drop-shadow-lg">
               {featuredMatch.title}
             </h1>
+            {featuredMatch.tsdb && (featuredMatch.tsdb.homeScore !== undefined) && (
+              <p className="text-emerald-300 font-black text-2xl">
+                {featuredMatch.tsdb.homeScore} – {featuredMatch.tsdb.awayScore}
+              </p>
+            )}
             <p className="text-zinc-300 text-sm sm:text-base leading-relaxed max-w-2xl">
               {featuredMatch.is_live
                 ? 'Watch this event live right now on Stoned.Living Sports.'
@@ -597,7 +564,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
             <div>
               <h3 className="text-lg font-black text-white">Sports Filter & Event Explorer</h3>
               <p className="text-xs text-zinc-400">
-                {liveMatches.length} live · {allMatches.filter(m => !m.is_live).length} upcoming today
+                {liveMatches.length} live · {allMatches.filter(m => !m.is_live).length} upcoming
               </p>
             </div>
           </div>
@@ -617,15 +584,35 @@ export const SportsView: React.FC<SportsViewProps> = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
-          <div>
-            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Sport</label>
-            <select value={selectedSport} onChange={(e) => setSelectedSport(e.target.value)}
-              className="w-full bg-[#141d17] text-white border border-emerald-900/50 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-emerald-400">
-              <option value="all">All Sports</option>
-              {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
-            </select>
+        {/* Sport category pill tabs */}
+        {categories.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap pt-1">
+            <button
+              onClick={() => setSelectedSport('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                selectedSport === 'all'
+                  ? 'bg-emerald-500 text-black border-emerald-400'
+                  : 'bg-[#141d17] text-zinc-300 border-emerald-900/50 hover:border-emerald-500/50 hover:text-white'
+              }`}>
+              All Sports
+            </button>
+            {categories.map(cat => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedSport(cat.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
+                  selectedSport === cat.id
+                    ? 'bg-emerald-500 text-black border-emerald-400'
+                    : 'bg-[#141d17] text-zinc-300 border-emerald-900/50 hover:border-emerald-500/50 hover:text-white'
+                }`}>
+                {React.createElement(sportIcon(cat.name), { className: 'w-3 h-3' })}
+                {cat.name}
+              </button>
+            ))}
           </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
           <div>
             <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-1">Status</label>
             <select value={selectedStatus} onChange={(e) => setSelectedStatus(e.target.value as typeof selectedStatus)}
@@ -708,11 +695,11 @@ export const SportsView: React.FC<SportsViewProps> = () => {
               loading={loading}
             />
           ))}
-          {!loading && !liveMatches.length && !Object.values(bySport).some((arr) => (arr as SportMatch[]).length > 0) && !loadError && (
+          {!loading && !liveMatches.length && !Object.values(bySport).some(arr => (arr as SportMatch[]).length > 0) && !loadError && (
             <div className="flex flex-col items-center justify-center py-20 gap-4 text-center">
               <Trophy className="w-12 h-12 text-emerald-500/30" />
               <p className="text-base font-black text-white">No Events Right Now</p>
-              <p className="text-xs text-zinc-400 max-w-sm">Events appear here automatically when they go live or get scheduled for today.</p>
+              <p className="text-xs text-zinc-400 max-w-sm">Events appear here automatically when they go live or get scheduled.</p>
             </div>
           )}
         </div>
