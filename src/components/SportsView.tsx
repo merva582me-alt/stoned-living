@@ -51,16 +51,17 @@ interface SportsViewProps {
 }
 
 // ---------------------------------------------------------------------------
-// Config — call sportsrc.org directly from the browser (no Worker needed).
-// VITE_SPORTSRC_API_KEY is inlined at build time, same pattern as TMDB key.
+// Config — route all sportsrc.org calls through the Worker proxy so that
+// the X-API-KEY header is injected server-side and CORS is handled.
+// The Worker is called by its direct subdomain URL (same pattern as WatchPlayer).
 // ---------------------------------------------------------------------------
 
-const SPORTSRC_BASE = 'https://api.sportsrc.org/v2';
-const SPORTSRC_KEY  = import.meta.env.VITE_SPORTSRC_API_KEY as string;
+const WORKER_BASE = (import.meta.env.VITE_RESOLVER_URL as string | undefined)
+  ?.replace(/\/$/, '')
+  || 'https://stoned-resolver.stonedliving.workers.dev';
 
 function sportsrcFetch(params: Record<string, string>) {
-  const p = new URLSearchParams({ ...params, api_key: SPORTSRC_KEY });
-  return fetch(`${SPORTSRC_BASE}/?${p.toString()}`);
+  return fetch(`${WORKER_BASE}/api/sportsrc?${new URLSearchParams(params).toString()}`);
 }
 
 // ---------------------------------------------------------------------------
