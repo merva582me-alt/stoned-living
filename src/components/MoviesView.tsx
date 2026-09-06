@@ -249,17 +249,17 @@ export const MoviesView: React.FC<MoviesViewProps> = ({
       }
     };
 
-    // Load top 4 sections immediately for instant view response
-    const topSections = movieSections.slice(0, 4);
-    const remainingSections = movieSections.slice(4);
+    // Load top 6 sections immediately
+    const topSections = movieSections.slice(0, 6);
+    const remainingSections = movieSections.slice(6);
 
     topSections.forEach((sec) => loadSection(sec));
 
-    // Stream remaining sections in small batches to keep UI fluid
-    const chunkSize = 4;
+    // Remaining sections in larger batches with shorter delays
+    const chunkSize = 6;
     for (let i = 0; i < remainingSections.length; i += chunkSize) {
       const chunk = remainingSections.slice(i, i + chunkSize);
-      const delay = 150 * Math.floor(i / chunkSize) + 200;
+      const delay = 80 * Math.floor(i / chunkSize) + 100;
       setTimeout(() => {
         if (isMountedRef.current) {
           chunk.forEach((sec) => loadSection(sec));

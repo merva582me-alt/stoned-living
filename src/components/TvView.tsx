@@ -265,17 +265,17 @@ export const TvView: React.FC<TvViewProps> = ({
       }
     };
 
-    // Load top 4 sections immediately
-    const topSections = tvSections.slice(0, 4);
-    const remainingSections = tvSections.slice(4);
+    // Load top 6 sections immediately
+    const topSections = tvSections.slice(0, 6);
+    const remainingSections = tvSections.slice(6);
 
     topSections.forEach((sec) => loadSection(sec));
 
-    // Stream remaining sections in small batches
-    const chunkSize = 4;
+    // Remaining sections in larger batches with shorter delays
+    const chunkSize = 6;
     for (let i = 0; i < remainingSections.length; i += chunkSize) {
       const chunk = remainingSections.slice(i, i + chunkSize);
-      const delay = 150 * Math.floor(i / chunkSize) + 200;
+      const delay = 80 * Math.floor(i / chunkSize) + 100;
       setTimeout(() => {
         if (isMountedRef.current) {
           chunk.forEach((sec) => loadSection(sec));

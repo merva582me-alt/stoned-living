@@ -38,9 +38,10 @@ export const MediaCard: React.FC<MediaCardProps> = ({
             srcSet={posterSrcSet}
             sizes="(max-width: 640px) 144px, (max-width: 768px) 176px, 208px"
             alt={title}
-            className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500 [content-visibility:auto]"
+            className="w-full h-full object-cover group-hover/card:scale-105 transition-transform duration-500"
             loading="lazy"
             decoding="async"
+            fetchPriority="auto"
           />
 
           {/* Gradient Overlay */}

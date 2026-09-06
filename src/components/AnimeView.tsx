@@ -265,17 +265,17 @@ export const AnimeView: React.FC<AnimeViewProps> = ({
       }
     };
 
-    // Load top 4 sections immediately
-    const topSections = animeSections.slice(0, 4);
-    const remainingSections = animeSections.slice(4);
+    // Load top 6 sections immediately
+    const topSections = animeSections.slice(0, 6);
+    const remainingSections = animeSections.slice(6);
 
     topSections.forEach((sec) => loadSection(sec));
 
-    // Stream remaining sections in small batches
-    const chunkSize = 4;
+    // Remaining sections in larger batches with shorter delays
+    const chunkSize = 6;
     for (let i = 0; i < remainingSections.length; i += chunkSize) {
       const chunk = remainingSections.slice(i, i + chunkSize);
-      const delay = 150 * Math.floor(i / chunkSize) + 200;
+      const delay = 80 * Math.floor(i / chunkSize) + 100;
       setTimeout(() => {
         if (isMountedRef.current) {
           chunk.forEach((sec) => loadSection(sec));
@@ -382,15 +382,18 @@ export const AnimeView: React.FC<AnimeViewProps> = ({
           {/* Backdrop Image */}
           <div className="absolute inset-0">
             <img
-              src={
-                featuredItem.backdrop_path
-                  ? `https://image.tmdb.org/t/p/original${featuredItem.backdrop_path}`
-                  : featuredItem.poster_path
-                  ? `https://image.tmdb.org/t/p/original${featuredItem.poster_path}`
-                  : 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=80'
-              }
+              src={(() => {
+                const bp = featuredItem.backdrop_path;
+                const pp = featuredItem.poster_path;
+                if (bp) return bp.startsWith('http') ? bp : `https://image.tmdb.org/t/p/original${bp}`;
+                if (pp) return pp.startsWith('http') ? pp : `https://image.tmdb.org/t/p/original${pp}`;
+                return 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=1600&auto=format&fit=crop&q=80';
+              })()}
               alt={featuredItem.name || featuredItem.title}
               className="w-full h-full object-cover object-center scale-105 transition-all duration-1000"
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
             />
             {/* Dark Emerald Overlay */}
             <div className="absolute inset-0 bg-gradient-to-t from-[#0d1813] via-[#0d1813]/70 to-transparent" />

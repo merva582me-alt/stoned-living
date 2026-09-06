@@ -10,6 +10,17 @@
     <meta name="theme-color" content="#10b981" />
     <link rel="manifest" href="/manifest.json" />
 
+    <!-- DNS prefetch + preconnect for image/API hosts — cuts first-image latency -->
+    <link rel="preconnect" href="https://image.tmdb.org" crossorigin />
+    <link rel="dns-prefetch" href="https://image.tmdb.org" />
+    <link rel="preconnect" href="https://api.themoviedb.org" crossorigin />
+    <link rel="dns-prefetch" href="https://api.themoviedb.org" />
+    <link rel="preconnect" href="https://graphql.anilist.co" crossorigin />
+    <link rel="dns-prefetch" href="https://graphql.anilist.co" />
+    <link rel="preconnect" href="https://s4.anilist.co" crossorigin />
+    <link rel="dns-prefetch" href="https://s4.anilist.co" />
+    <link rel="dns-prefetch" href="https://streamed.pk" />
+
     <!-- Canonical -->
     <link rel="canonical" href="https://stoned.living" />
 

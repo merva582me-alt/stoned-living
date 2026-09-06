@@ -119,17 +119,29 @@ function MatchCard({ match, onOpen }: { match: SportMatch; onOpen: (m: SportMatc
       {hasBadges ? (
         <div className="w-full aspect-video bg-emerald-950/30 rounded-xl mb-3 flex items-center justify-center gap-4 px-4">
           <img src={badgeUrl(home!.badge)} alt={home!.name} className="w-12 h-12 object-contain"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            crossOrigin="anonymous"
+            onError={(e) => {
+              const img = e.target as HTMLImageElement;
+              img.style.display = 'none';
+              // show sport icon fallback container
+              const parent = img.closest('.badge-container') as HTMLElement | null;
+              if (parent) parent.style.display = 'none';
+            }} />
           <span className="text-zinc-400 font-black text-xs">VS</span>
           <img src={badgeUrl(away!.badge)} alt={away!.name} className="w-12 h-12 object-contain"
+            crossOrigin="anonymous"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
         </div>
       ) : match.poster ? (
         <img
-          src={`${STREAMED}${match.poster}.webp`}
+          src={match.poster.startsWith('http') ? match.poster : `${STREAMED}${match.poster}${match.poster.endsWith('.webp') ? '' : '.webp'}`}
           alt={match.title}
           className="w-full aspect-video object-cover rounded-xl mb-3 opacity-80 group-hover:opacity-100 transition"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          crossOrigin="anonymous"
+          onError={(e) => {
+            const img = e.target as HTMLImageElement;
+            img.style.display = 'none';
+          }}
         />
       ) : (
         <div className="w-full aspect-video bg-emerald-950/30 rounded-xl mb-3 flex items-center justify-center">
