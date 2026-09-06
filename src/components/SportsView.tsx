@@ -121,9 +121,15 @@ function isJunkEntry(m: StreamedMatch): boolean {
   return JUNK_PATTERNS.some(p => p.test(m.title));
 }
 
-/** Trust streamed.pk — if it came from the /live endpoint, it's live. */
-function isActuallyLive(_m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
-  return fromLiveEndpoint;
+/** Trust streamed.pk — if it came from the /live endpoint, it's live.
+ *  Also treat always-on broadcast channels (no opponent, has sources) as live. */
+function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
+  if (fromLiveEndpoint) return true;
+  // Channels like "Fox Cricket", "Tennis Channel" etc. have no "vs" opponent
+  // and always have an active stream — mark them live regardless of endpoint.
+  const hasOpponent = /\bvs\.?\b/i.test(m.title);
+  if (!hasOpponent && m.sources?.length > 0) return true;
+  return false;
 }
 
 /** Convert a StreamedMatch to a SportMatch.
@@ -320,10 +326,15 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       );
       setLiveMatches(liveMapped);
 
-      // ── 4. Build per-sport upcoming map (all matches, untouched) ──────────
+      // ── 4. Build per-sport upcoming map ───────────────────────────────────
+      // Any match already in liveIds is genuinely active (confirmed by the
+      // /live endpoint + stream probe above). A match NOT in liveIds whose
+      // scheduled date has already passed is definitively over — skip it.
+      const now = Date.now();
       const sportMap: Record<string, SportMatch[]> = {};
       for (const m of allRaw) {
         if (liveIds.has(m.id)) continue;
+        if (m.date && m.date < now) continue; // past and not live → ended
         const cat = m.category?.toLowerCase() || 'other';
         if (!sportMap[cat]) sportMap[cat] = [];
         sportMap[cat].push(toSportMatch(m, false, enrichMap.get(m.id)));
