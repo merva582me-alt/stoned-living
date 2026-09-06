@@ -67,7 +67,10 @@ function hashCode(s: string): number {
   return h;
 }
 
-const RESOLVER_URL = import.meta.env.VITE_RESOLVER_URL || 'http://localhost:8787';
+// In production on Cloudflare Pages, the Worker is routed at /api/* so we
+// use a relative path by default. VITE_RESOLVER_URL can override for local dev
+// (point it at http://localhost:8787 when running `wrangler dev`).
+const RESOLVER_URL = (import.meta.env.VITE_RESOLVER_URL || '').replace(/\/$/, '');
 
 // ---------------------------------------------------------------------------
 // Component
@@ -82,7 +85,10 @@ export const SportsView: React.FC<SportsViewProps> = ({ onPlayMedia }) => {
     setLoading(true);
     setError(false);
     try {
-      const res = await fetch(`${RESOLVER_URL}/api/sports/events?provider=all`);
+      const endpoint = RESOLVER_URL
+        ? `${RESOLVER_URL}/api/sports/events?provider=all`
+        : '/api/sports/events?provider=all';
+      const res = await fetch(endpoint);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as SportEvent[];
       setEvents(Array.isArray(data) ? data : []);

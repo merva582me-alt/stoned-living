@@ -14,7 +14,9 @@ import { StrainDatabase } from '../data/strainDatabase';
 // Stream resolver helper
 // ---------------------------------------------------------------------------
 
-const RESOLVER_URL = import.meta.env.VITE_RESOLVER_URL || 'http://localhost:8787';
+// In production on Cloudflare Pages the Worker handles /api/* via routing.
+// Set VITE_RESOLVER_URL=http://localhost:8787 for local dev with `wrangler dev`.
+const RESOLVER_BASE = (import.meta.env.VITE_RESOLVER_URL || '').replace(/\/$/, '');
 
 async function resolveStream(
   type: 'movie' | 'tv' | 'anime' | 'sports',
@@ -27,7 +29,7 @@ async function resolveStream(
     let url: string;
     if (type === 'sports') {
       const provider = opts?.provider || 'streamed';
-      url = `${RESOLVER_URL}/api/resolve?source=sports&provider=${provider}&id=${id}`;
+      url = `${RESOLVER_BASE}/api/resolve?source=sports&provider=${provider}&id=${id}`;
     } else {
       const params = new URLSearchParams({
         type,
@@ -36,7 +38,7 @@ async function resolveStream(
         ...(episode !== undefined ? { episode: String(episode) } : {}),
         ...(opts?.anilistId       ? { anilist_id: opts.anilistId } : {})
       });
-      url = `${RESOLVER_URL}/api/resolve?${params}`;
+      url = `${RESOLVER_BASE}/api/resolve?${params}`;
     }
     const res = await fetch(url);
     if (!res.ok) return null;

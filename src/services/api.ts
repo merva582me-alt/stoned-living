@@ -1,6 +1,6 @@
 import { MediaItem, Season, Comment, SiteSettings } from '../types';
 import { StrainDatabase } from '../data/strainDatabase';
-import { MOCK_MOVIES, MOCK_SHOWS } from '../data/mockTmdbData';
+import { MOCK_MOVIES } from '../data/mockTmdbData';
 import {
   cleanAndFilterMediaList
 } from '../utils/mediaUtils';
@@ -8,6 +8,15 @@ import {
 // TMDb credentials via Vite environment variables (set in Cloudflare Pages dashboard)
 const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY as string;
 const TMDB_READ_TOKEN = import.meta.env.VITE_TMDB_READ_TOKEN as string;
+
+if (!TMDB_KEY && !TMDB_READ_TOKEN) {
+  console.warn(
+    '[stoned.living] No TMDB API key found. ' +
+    'Set VITE_TMDB_API_KEY or VITE_TMDB_READ_TOKEN in your .env file ' +
+    '(local dev) or Cloudflare Pages environment variables (production). ' +
+    'Get a free key at https://www.themoviedb.org/settings/api'
+  );
+}
 
 // Base TMDb URL builder — all requests go directly to TMDb (no Express backend)
 function tmdbUrl(path: string, params: Record<string, string> = {}): string {
@@ -129,14 +138,9 @@ export async function fetchTrending(type: 'all' | 'movie' | 'tv' = 'all', time =
       englishOnly: type === 'movie' || type === 'tv',
       prioritizeNew: true
     });
-    return cleaned.length
-      ? (cleaned as MediaItem[])
-      : (enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, { englishOnly: true, prioritizeNew: true }) as MediaItem[]);
+    return cleaned as MediaItem[];
   } catch (_) {
-    return enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, {
-      englishOnly: true,
-      prioritizeNew: true
-    }) as MediaItem[];
+    return [] as MediaItem[];
   }
 }
 
@@ -151,8 +155,7 @@ export async function fetchMediaDetail(type: 'movie' | 'tv', id: number) {
       return data;
     }
   } catch (_) { /* fall through */ }
-  const fallback = [...MOCK_MOVIES, ...MOCK_SHOWS].find((m) => m.id === id) || MOCK_MOVIES[0];
-  return enrichItemClient(fallback) as MediaItem;
+  return null;
 }
 
 export async function fetchTvSeason(tvId: number, seasonNumber: number) {
@@ -173,13 +176,10 @@ export async function searchMedia(query: string) {
       media_type: item.media_type || (item.first_air_date ? 'tv' : 'movie')
     }));
     const cleaned = cleanAndFilterMediaList(raw, { englishOnly: false });
-    if (cleaned.length) return cleaned as MediaItem[];
-  } catch (_) { /* fall through */ }
-  const qLower = query.toLowerCase();
-  const matched = [...MOCK_MOVIES, ...MOCK_SHOWS].filter((m) =>
-    (m.title || m.name || '').toLowerCase().includes(qLower)
-  );
-  return enrichListClient(matched.length ? matched : MOCK_MOVIES, { englishOnly: true }) as MediaItem[];
+    return cleaned as MediaItem[];
+  } catch (_) {
+    return [] as MediaItem[];
+  }
 }
 
 export async function fetchCategoryList(
@@ -194,14 +194,9 @@ export async function fetchCategoryList(
     const data = await cachedFetch<any>(url);
     const raw = (data.results || []).map((item: any) => ({ ...item, media_type: item.media_type || type }));
     const cleaned = cleanAndFilterMediaList(raw, { englishOnly: true, prioritizeNew: true });
-    return cleaned.length
-      ? (cleaned as MediaItem[])
-      : (enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, { englishOnly: true, prioritizeNew: true }) as MediaItem[]);
+    return cleaned as MediaItem[];
   } catch (_) {
-    return enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, {
-      englishOnly: true,
-      prioritizeNew: true
-    }) as MediaItem[];
+    return [] as MediaItem[];
   }
 }
 
@@ -217,14 +212,9 @@ export async function discoverMedia(
     const data = await cachedFetch<any>(url);
     const raw = (data.results || []).map((item: any) => ({ ...item, media_type: item.media_type || type }));
     const cleaned = cleanAndFilterMediaList(raw, { englishOnly: true, prioritizeNew: true });
-    return cleaned.length
-      ? (cleaned as MediaItem[])
-      : (enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, { englishOnly: true, prioritizeNew: true }) as MediaItem[]);
+    return cleaned as MediaItem[];
   } catch (_) {
-    return enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, {
-      englishOnly: true,
-      prioritizeNew: true
-    }) as MediaItem[];
+    return [] as MediaItem[];
   }
 }
 
@@ -244,17 +234,9 @@ export async function discoverMediaAdvanced(
       englishOnly: !isAnime,
       prioritizeNew: !isAnime
     });
-    return cleaned.length
-      ? (cleaned as MediaItem[])
-      : (enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, {
-          englishOnly: !isAnime,
-          prioritizeNew: !isAnime
-        }) as MediaItem[]);
+    return cleaned as MediaItem[];
   } catch (_) {
-    return enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, {
-      englishOnly: true,
-      prioritizeNew: true
-    }) as MediaItem[];
+    return [] as MediaItem[];
   }
 }
 
@@ -264,11 +246,9 @@ export async function fetchTopRated(type: 'movie' | 'tv') {
     const data = await cachedFetch<any>(url);
     const raw = (data.results || []).map((item: any) => ({ ...item, media_type: item.media_type || type }));
     const cleaned = cleanAndFilterMediaList(raw, { englishOnly: true, prioritizeNew: false });
-    return cleaned.length
-      ? (cleaned as MediaItem[])
-      : (enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, { englishOnly: true }) as MediaItem[]);
+    return cleaned as MediaItem[];
   } catch (_) {
-    return enrichListClient(type === 'tv' ? MOCK_SHOWS : MOCK_MOVIES, { englishOnly: true }) as MediaItem[];
+    return [] as MediaItem[];
   }
 }
 
@@ -291,11 +271,24 @@ export async function fetchAnime(
       is_anime: true
     }));
     const cleaned = cleanAndFilterMediaList(raw, { englishOnly: false, prioritizeNew: false });
-    return cleaned.length
-      ? (cleaned as MediaItem[])
-      : (enrichListClient(MOCK_SHOWS, { englishOnly: false }) as MediaItem[]);
+    return cleaned as MediaItem[];
   } catch (_) {
-    return enrichListClient(MOCK_SHOWS, { englishOnly: false }) as MediaItem[];
+    return [] as MediaItem[];
+  }
+}
+
+export async function fetchSearch(query: string, page = 1) {
+  try {
+    const url = tmdbUrl('/search/multi', { query, page: String(page) });
+    const data = await cachedFetch<any>(url);
+    const raw = (data.results || []).map((item: any) => ({
+      ...item,
+      media_type: item.media_type || (item.first_air_date ? 'tv' : 'movie')
+    }));
+    const cleaned = cleanAndFilterMediaList(raw, { englishOnly: false });
+    return cleaned as MediaItem[];
+  } catch (_) {
+    return [] as MediaItem[];
   }
 }
 
