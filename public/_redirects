@@ -1,3 +1,2 @@
-# Cloudflare Pages SPA fallback routing
-# All paths that don't match a static asset serve index.html (React Router / client-side routing)
-/*    /index.html    200
+# SPA fallback is handled by wrangler.toml [assets] not_found_handling = "single-page-application"
+# This file is intentionally empty of rules.

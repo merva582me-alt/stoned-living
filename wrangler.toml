@@ -4,3 +4,9 @@
 name = "stoned-living"
 pages_build_output_dir = "dist"
 compatibility_date = "2024-09-23"
+
+# Native SPA fallback — serves index.html for any path that doesn't match a
+# static asset. Replaces the _redirects "/* /index.html 200" rule which
+# triggers a false-positive infinite-loop warning from Cloudflare's validator.
+[assets]
+not_found_handling = "single-page-application"
