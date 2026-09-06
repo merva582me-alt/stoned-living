@@ -261,11 +261,30 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       if (controller.signal.aborted) return;
 
       const sportsList: StreamedSport[] = sportsData ?? [];
-      const hasStreams = (m: StreamedMatch) => m.sources && m.sources.length > 0;
-      const liveRaw: StreamedMatch[]    = (liveData ?? []).filter(m => !isJunkEntry(m) && hasStreams(m));
-      const allRaw:  StreamedMatch[]    = (allData  ?? []).filter(m => !isJunkEntry(m) && hasStreams(m));
+      const hasSources = (m: StreamedMatch) => m.sources && m.sources.length > 0;
+      const liveRaw: StreamedMatch[]    = (liveData ?? []).filter(m => !isJunkEntry(m) && hasSources(m));
+      const allRaw:  StreamedMatch[]    = (allData  ?? []).filter(m => !isJunkEntry(m) && hasSources(m));
 
       setSports(sportsList);
+
+      // ── 1b. Probe live matches — drop any whose streams have no embedUrl ──────
+      // streamed.pk lists matches as live even when no embed links exist yet.
+      // We fetch streams for every live match in parallel and only keep the ones
+      // that return at least one stream with a non-empty embedUrl.
+      const liveStreamResults = await Promise.all(
+        liveRaw.map(async m => {
+          const results = await Promise.all(
+            m.sources.map(s =>
+              streamedFetch<StreamedStream[]>(`/api/stream/${s.source}/${s.id}`)
+                .then(arr => (arr ?? []).filter(st => !!st.embedUrl))
+            )
+          );
+          return { m, hasStream: results.flat().length > 0 };
+        })
+      );
+      const liveFiltered = liveStreamResults.filter(r => r.hasStream).map(r => r.m);
+
+      if (controller.signal.aborted) return;
 
       // ── 2. TSDB enrichment — Phase 1 synchronous, Phase 2 progressive ──────
       const allForEnrich = [...liveRaw, ...allRaw].map(m => ({
@@ -291,11 +310,9 @@ export const SportsView: React.FC<SportsViewProps> = () => {
         }
       );
 
-      if (controller.signal.aborted) return;
-
       // ── 3. Build live SportMatch list ─────────────────────────────────────
-      const liveIds = new Set(liveRaw.map(m => m.id));
-      const liveMapped: SportMatch[] = liveRaw.map(m =>
+      const liveIds = new Set(liveFiltered.map(m => m.id));
+      const liveMapped: SportMatch[] = liveFiltered.map(m =>
         toSportMatch(m, true, enrichMap.get(m.id))
       );
       setLiveMatches(liveMapped);
@@ -431,7 +448,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
             .then(arr => arr ?? [])
         )
       );
-      const allStreams: StreamedStream[] = results.flat();
+      const allStreams: StreamedStream[] = results.flat().filter(s => !!s.embedUrl);
       if (!allStreams.length) {
         setStreamError(true);
         return;
