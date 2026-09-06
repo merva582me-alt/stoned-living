@@ -352,7 +352,7 @@ export async function buildEnrichmentMap(
   // ── Phase 2: progressive lookups (fire-and-forget) ────────────────────────
   if (onUpdate && unmatched.length > 0) {
     (async () => {
-      // Emit from cache immediately for known teams
+      // Emit from cache immediately for known teams, but still queue league banner
       const needFetch: typeof matches = [];
       for (const match of unmatched) {
         const [homeRaw, awayRaw] = getTeamNames(match);
@@ -361,41 +361,47 @@ export async function buildEnrichmentMap(
           const hc = teamBadgeCache.get(norm(homeRaw));
           const ac = teamBadgeCache.get(norm(awayRaw));
           if (hc !== undefined && ac !== undefined) {
-            if (hc || ac) onUpdate(match.id, { homeBadge: hc || undefined, awayBadge: ac || undefined });
-            continue;
+            // Badges known from cache — emit now, but still need league banner
+            onUpdate(match.id, { homeBadge: hc || undefined, awayBadge: ac || undefined });
+            // Fall through to needFetch so league banner is still fetched
           }
         }
         needFetch.push(match);
       }
 
       // Fetch remaining concurrently (rate-limited)
+      // League banner is ALWAYS fetched alongside team/event lookups so every
+      // card has a background image regardless of whether badges were found.
       await Promise.all(needFetch.map(async match => {
         const [homeRaw, awayRaw] = getTeamNames(match);
         const isVs = !!awayRaw;
 
+        // Always fetch league banner in parallel — used as background behind
+        // badges or as sole image when neither badges nor poster are found.
+        const leagueBannerPromise = match.category
+          ? fetchLeagueBanner(match.category)
+          : Promise.resolve('');
+
         if (isVs) {
-          // Team vs team — badge search
-          const [homeBadge, awayBadge] = await Promise.all([
+          const [homeBadge, awayBadge, leagueBanner] = await Promise.all([
             fetchTeamBadge(homeRaw),
             fetchTeamBadge(awayRaw),
+            leagueBannerPromise,
           ]);
-          if (homeBadge || awayBadge) {
-            onUpdate(match.id, { homeBadge: homeBadge || undefined, awayBadge: awayBadge || undefined });
-          } else if (match.category) {
-            // Badge search failed — fall back to league banner
-            const leagueBanner = await fetchLeagueBanner(match.category);
-            if (leagueBanner) onUpdate(match.id, { leagueBanner });
-          }
+          onUpdate(match.id, {
+            homeBadge:    homeBadge    || undefined,
+            awayBadge:    awayBadge    || undefined,
+            leagueBanner: leagueBanner || undefined,
+          });
         } else if (match.title) {
-          // Single-name event — event poster search
-          const poster = await fetchEventPoster(match.title);
-          if (poster) {
-            onUpdate(match.id, { eventPoster: poster });
-          } else if (match.category) {
-            // Event poster failed — fall back to league banner
-            const leagueBanner = await fetchLeagueBanner(match.category);
-            if (leagueBanner) onUpdate(match.id, { leagueBanner });
-          }
+          const [poster, leagueBanner] = await Promise.all([
+            fetchEventPoster(match.title),
+            leagueBannerPromise,
+          ]);
+          onUpdate(match.id, {
+            eventPoster:  poster       || undefined,
+            leagueBanner: leagueBanner || undefined,
+          });
         }
       }));
     })();
