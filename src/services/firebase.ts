@@ -20,15 +20,13 @@ import firebaseConfigJson from '../../firebase-applet-config.json';
 import { UserProfile, SiteSettings } from '../types';
 import { DEFAULT_USER, saveUserProfile, sanitizeWatchlist } from './storage';
 
-// Prefer VITE_ environment variables (Cloudflare Pages).
-// Fall back to the bundled JSON config for local dev without a .env file.
 const firebaseConfig = {
-  apiKey:            import.meta.env.VITE_FIREBASE_API_KEY            || firebaseConfigJson.apiKey,
-  authDomain:        import.meta.env.VITE_FIREBASE_AUTH_DOMAIN        || firebaseConfigJson.authDomain,
-  projectId:         import.meta.env.VITE_FIREBASE_PROJECT_ID         || firebaseConfigJson.projectId,
-  storageBucket:     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET     || firebaseConfigJson.storageBucket,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfigJson.messagingSenderId,
-  appId:             import.meta.env.VITE_FIREBASE_APP_ID             || firebaseConfigJson.appId
+  apiKey:            'AIzaSyCW-oVDT2FHR4_OJBCTCg1NPcHbOVHuwHM',
+  authDomain:        'gen-lang-client-0508880222.firebaseapp.com',
+  projectId:         'gen-lang-client-0508880222',
+  storageBucket:     'gen-lang-client-0508880222.firebasestorage.app',
+  messagingSenderId: '937737787275',
+  appId:             '1:937737787275:web:d79cf217a0fba2fab2818e',
 };
 
 // Initialize Firebase App

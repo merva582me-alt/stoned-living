@@ -14,15 +14,6 @@ export default defineConfig(() => {
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
-      // Proxy /api/* to the Cloudflare Worker during local development.
-      // Run `wrangler dev` inside /workers/resolver (port 8787) alongside `vite`.
-      proxy: {
-        '/api': {
-          target: 'http://localhost:8787',
-          changeOrigin: true,
-          rewrite: (p) => p // keep path as-is — Worker handles /api/*
-        }
-      }
     },
   };
 });

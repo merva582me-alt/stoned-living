@@ -5,9 +5,8 @@ import {
   cleanAndFilterMediaList
 } from '../utils/mediaUtils';
 
-// TMDb credentials — env vars baked in at build time, with hardcoded fallback
-const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY || 'fca9ca111889a84810f0801d89ac9c61';
-const TMDB_READ_TOKEN = import.meta.env.VITE_TMDB_READ_TOKEN as string;
+const TMDB_KEY = 'fca9ca111889a84810f0801d89ac9c61';
+const TMDB_READ_TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJmY2E5Y2ExMTE4ODlhODQ4MTBmMDgwMWQ4OWFjOWM2MSIsIm5iZiI6MTc4NjA2MDYwNC41MzIsInN1YiI6IjZhNzUxZjNjYmY1MDI0MzZlNzljOTQ4NiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.X3gkph01blnSrczg3ToLUeZcixKtPpJ7nywxF_blpto';
 
 // Base TMDb URL builder — all requests go directly to TMDb (no Express backend)
 function tmdbUrl(path: string, params: Record<string, string> = {}): string {

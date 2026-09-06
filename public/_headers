@@ -14,11 +14,7 @@
   # Permissions policy — disable unused browser features
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   # Content-Security-Policy
-  # Allows:
-  #   - Scripts from self (our Vite bundle)
-  #   - Styles from self + inline (Tailwind / Plyr)
-  #   - Media (video, HLS) from any origin (needed for proxied .m3u8 streams)
-  #   - Blobs (Hls.js uses blob: URLs for media segments)
-  #   - Fonts from self
-  #   - Connect to TMDb, Firebase, AniList, and our resolver Worker
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://graphql.anilist.co https://*.workers.dev https://stoned-resolver.stonedliving.workers.dev https://api.sportsrc.org https://sportsrc.org; font-src 'self' data:; frame-src https://vidsrcme.ru https://vidsrc.me https://vidlink.pro https://vidcore.org https://vidup.to https://embed.st https://*.embed.st https://*.vidsrcme.ru https://*.vidlink.pro https://*.vidcore.org https://*.vidup.to https://sportsrc.org https://*.sportsrc.org; frame-ancestors 'none';
+  # frame-src is 'https:' to allow stream embed iframes from any HTTPS host
+  # (sportsrc.org, movie embed providers, etc.) without needing to whitelist
+  # every CDN/streaming domain individually.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://graphql.anilist.co https://api.sportsrc.org https://www.thesportsdb.com; font-src 'self' data:; frame-src https:; frame-ancestors 'none';

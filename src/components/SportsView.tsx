@@ -44,10 +44,7 @@ interface SportsViewProps {
 }
 
 const SPORTSRC_BASE = 'https://api.sportsrc.org/v2';
-// Docs: https://sportsrc.org/v2/ — auth via ?api_key= or X-API-KEY header.
-// Browser must use query-param auth; X-API-KEY triggers a CORS preflight (OPTIONS → 404).
-const SPORTSRC_API_KEY = (import.meta.env.VITE_SPORTSRC_API_KEY as string | undefined)?.trim()
-  || '0c8457d75effb1169a6da8eddaa58d5c';
+const SPORTSRC_API_KEY = '0c8457d75effb1169a6da8eddaa58d5c';
 
 interface SportsrcEnvelope<T> {
   success?: boolean;
@@ -56,11 +53,7 @@ interface SportsrcEnvelope<T> {
 }
 
 async function sportsrcFetch(params: Record<string, string>): Promise<Response> {
-  const query = { ...params };
-  // Use query-param auth only — the X-API-KEY header triggers a CORS preflight
-  // that sportsrc.org does not handle (OPTIONS → 404), breaking browser fetches.
-  if (SPORTSRC_API_KEY) query.api_key = SPORTSRC_API_KEY;
-  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams(query).toString()}`);
+  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams({ ...params, api_key: SPORTSRC_API_KEY }).toString()}`);
 }
 
 async function sportsrcJson<T>(params: Record<string, string>): Promise<{ data: T | null; error?: string }> {

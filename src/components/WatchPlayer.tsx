@@ -1,51 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import Plyr from 'plyr';
-import Hls from 'hls.js';
-import 'plyr/dist/plyr.css';
 import { toast } from 'sonner';
-import { Play, SkipForward, SkipBack, Maximize, Minimize, Moon, Star, Flame, Cannabis, MessageSquare, Info, Film, Send, Sparkles, Check, Heart, Plus, ChevronLeft, ChevronRight, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Play, SkipForward, SkipBack, Star, Cannabis, MessageSquare, Info, Send, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MediaItem, Season, Episode, Comment, UserProfile, SiteSettings } from '../types';
 import { fetchTvSeason, fetchMediaDetail, fetchComments, postComment } from '../services/api';
 import { updateWatchHistory } from '../services/storage';
 import { auth, saveProfileToFirestore } from '../services/firebase';
 import { StrainDatabase } from '../data/strainDatabase';
-
-// ---------------------------------------------------------------------------
-// Stream resolver helper
-// ---------------------------------------------------------------------------
-
-const RESOLVER_BASE = (import.meta.env.VITE_RESOLVER_URL || 'https://stoned-resolver.stonedliving.workers.dev').replace(/\/$/, '');
-
-async function resolveStream(
-  type: 'movie' | 'tv' | 'anime' | 'sports',
-  id: string | number,
-  season?: number,
-  episode?: number,
-  opts?: { source?: string; provider?: string; anilistId?: string }
-): Promise<string | null> {
-  try {
-    let url: string;
-    if (type === 'sports') {
-      const provider = opts?.provider || 'streamed';
-      url = `${RESOLVER_BASE}/api/resolve?source=sports&provider=${provider}&id=${id}`;
-    } else {
-      const params = new URLSearchParams({
-        type,
-        id: String(id),
-        ...(season !== undefined  ? { season:  String(season)  } : {}),
-        ...(episode !== undefined ? { episode: String(episode) } : {}),
-        ...(opts?.anilistId       ? { anilist_id: opts.anilistId } : {})
-      });
-      url = `${RESOLVER_BASE}/api/resolve?${params}`;
-    }
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const data = await res.json() as { url?: string };
-    return data.url ?? null;
-  } catch {
-    return null;
-  }
-}
 
 interface WatchPlayerProps {
   media: MediaItem;
@@ -74,17 +34,6 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 }) => {
   const isTv = media.media_type === 'tv' || Boolean(media.number_of_seasons) || Boolean(media.first_air_date) || (Boolean(media.name) && !media.title);
   const effectiveMediaType: 'movie' | 'tv' = isTv ? 'tv' : 'movie';
-
-  // ── HLS refs (sports only) ────────────────────────────────────────────────
-  const videoRef  = useRef<HTMLVideoElement>(null);
-  const plyrRef   = useRef<Plyr | null>(null);
-  const hlsRef    = useRef<Hls | null>(null);
-
-  // ── Stream state ──────────────────────────────────────────────────────────
-  const [streamUrl, setStreamUrl]         = useState<string | null>(null);
-  const [streamLoading, setStreamLoading] = useState(false);
-  const [streamError, setStreamError]     = useState(false);
-  const [retryCount, setRetryCount]       = useState(0);
 
   // ── Embed server selection (movies/tv/anime) ──────────────────────────────
   const [serverIndex, setServerIndex] = useState(0);
@@ -201,12 +150,10 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   }, [media, activeMedia, seasonNum, episodeNum, isTv, effectiveMediaType, seasonData, onUpdateUser]);
 
   // ── Detect media kind ─────────────────────────────────────────────────────
-  const isSports = Boolean((media as any).is_live);
-  const isAnime  = Boolean((media as any).is_anime);
+  const isAnime = Boolean((media as any).is_anime);
 
   // ── Build embed server list (movies / TV / anime) — official embed URLs ───
   const embedServers = useMemo(() => {
-    if (isSports) return [];
     const id = media.id;
     if (effectiveMediaType === 'movie') {
       return [
@@ -223,69 +170,10 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
       `https://vidcore.org/embed/tv/${id}/${seasonNum}/${episodeNum}?autoplay=true&theme=10b981`,
       `https://vidup.to/e/${id}?s=${seasonNum}&e=${episodeNum}`,
     ];
-  }, [media.id, effectiveMediaType, seasonNum, episodeNum, isSports]);
+  }, [media.id, effectiveMediaType, seasonNum, episodeNum]);
 
   // Reset server when title/episode changes
   useEffect(() => { setServerIndex(0); }, [media.id, seasonNum, episodeNum]);
-
-  // ── Sports: resolve HLS stream from worker ────────────────────────────────
-  const loadStream = useCallback(async () => {
-    if (!isSports) return;
-    setStreamLoading(true);
-    setStreamError(false);
-    setStreamUrl(null);
-    const url = await resolveStream(
-      'sports',
-      (media as any).channel_id || media.id,
-      undefined, undefined,
-      { provider: (media as any).sports_provider }
-    );
-    if (url) { setStreamUrl(url); } else { setStreamError(true); }
-    setStreamLoading(false);
-  }, [media, isSports]);
-
-  useEffect(() => { if (isSports) loadStream(); }, [isSports, loadStream]);
-
-  // ── HLS/Plyr — sports only ────────────────────────────────────────────────
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !streamUrl || !isSports) return;
-    if (hlsRef.current)  { hlsRef.current.destroy();  hlsRef.current = null; }
-    if (plyrRef.current) { plyrRef.current.destroy(); plyrRef.current = null; }
-    if (Hls.isSupported()) {
-      const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
-      hlsRef.current = hls;
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        plyrRef.current = new Plyr(video, {
-          controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
-          hideControls: true,
-        });
-        plyrRef.current.play().catch(() => {});
-      });
-      hls.on(Hls.Events.ERROR, (_, d) => { if (d.fatal) setStreamError(true); });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = streamUrl;
-      plyrRef.current = new Plyr(video, {
-        controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
-        hideControls: true,
-      });
-    } else {
-      setStreamError(true);
-    }
-    return () => {
-      hlsRef.current?.destroy();
-      plyrRef.current?.destroy();
-      hlsRef.current = null;
-      plyrRef.current = null;
-    };
-  }, [streamUrl, isSports]);
-
-  useEffect(() => () => {
-    hlsRef.current?.destroy();
-    plyrRef.current?.destroy();
-  }, []);
 
   const handleNextEpisode = () => {
     const totalEpsInSeason = seasonData?.episodes?.length || 24;
@@ -492,30 +380,28 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
           <div className="lg:col-span-8 space-y-4 min-w-0">
 
             {/* ── Server switcher bar ─────────────────────────────────────── */}
-            {!isSports && (
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Server:</span>
-                {embedServers.map((_, i) => (
-                  <button
-                    key={i}
-                    onClick={() => setServerIndex(i)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                      serverIndex === i
-                        ? 'bg-emerald-500 text-black border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
-                        : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/60 hover:text-emerald-300'
-                    }`}
-                  >
-                    {i + 1}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Server:</span>
+              {embedServers.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setServerIndex(i)}
+                  className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                    serverIndex === i
+                      ? 'bg-emerald-500 text-black border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                      : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/60 hover:text-emerald-300'
+                  }`}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
 
             {/* ── Video Player Container ──────────────────────────────────── */}
             <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl overflow-hidden border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
 
-              {/* ── iframe embed — movies / TV / anime ── */}
-              {!isSports && embedServers[serverIndex] && (
+              {/* ── iframe embed ── */}
+              {embedServers[serverIndex] && (
                 <iframe
                   key={embedServers[serverIndex]}
                   src={embedServers[serverIndex]}
@@ -526,41 +412,8 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
                 />
               )}
 
-              {/* ── HLS video — sports ── */}
-              {isSports && (
-                <video
-                  ref={videoRef}
-                  id="stoned-player"
-                  className="w-full h-full"
-                  playsInline
-                />
-              )}
-
-              {/* Sports loading overlay */}
-              {isSports && streamLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10">
-                  <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-3" />
-                  <span className="text-xs font-bold text-emerald-300 tracking-widest uppercase">Connecting to stream…</span>
-                </div>
-              )}
-
-              {/* Sports error overlay */}
-              {isSports && streamError && !streamLoading && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/90 z-10 gap-4">
-                  <AlertCircle className="w-10 h-10 text-rose-400" />
-                  <p className="text-sm font-bold text-white">Stream unavailable right now</p>
-                  <p className="text-xs text-zinc-400">This event may not be live yet — try refreshing</p>
-                  <button
-                    onClick={() => { setRetryCount(0); loadStream(); }}
-                    className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" /> Try Again
-                  </button>
-                </div>
-              )}
-
               {/* Episode nav overlay buttons (desktop) */}
-              {isTv && !isSports && (
+              {isTv && (
                 <>
                   <button
                     onClick={handlePrevEpisode}
