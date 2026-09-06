@@ -5,18 +5,9 @@ import {
   cleanAndFilterMediaList
 } from '../utils/mediaUtils';
 
-// TMDb credentials via Vite environment variables (set in Cloudflare Pages dashboard)
-const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY as string;
+// TMDb credentials — env vars baked in at build time, with hardcoded fallback
+const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY || 'fca9ca111889a84810f0801d89ac9c61';
 const TMDB_READ_TOKEN = import.meta.env.VITE_TMDB_READ_TOKEN as string;
-
-if (!TMDB_KEY && !TMDB_READ_TOKEN) {
-  console.warn(
-    '[stoned.living] No TMDB API key found. ' +
-    'Set VITE_TMDB_API_KEY or VITE_TMDB_READ_TOKEN in your .env file ' +
-    '(local dev) or Cloudflare Pages environment variables (production). ' +
-    'Get a free key at https://www.themoviedb.org/settings/api'
-  );
-}
 
 // Base TMDb URL builder — all requests go directly to TMDb (no Express backend)
 function tmdbUrl(path: string, params: Record<string, string> = {}): string {
