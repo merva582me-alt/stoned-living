@@ -51,17 +51,64 @@ interface SportsViewProps {
 }
 
 // ---------------------------------------------------------------------------
-// Config — route all sportsrc.org calls through the Worker proxy so that
-// the X-API-KEY header is injected server-side and CORS is handled.
-// The Worker is called by its direct subdomain URL (same pattern as WatchPlayer).
+// Config — call sportsrc.org directly (CORS-enabled, no Worker proxy).
 // ---------------------------------------------------------------------------
 
-const WORKER_BASE = (import.meta.env.VITE_RESOLVER_URL as string | undefined)
-  ?.replace(/\/$/, '')
-  || 'https://stoned-resolver.stonedliving.workers.dev';
+const SPORTSRC_BASE = 'https://api.sportsrc.org/v2';
+const SPORTSRC_API_KEY = (import.meta.env.VITE_SPORTSRC_API_KEY as string | undefined)?.trim() || '';
 
-function sportsrcFetch(params: Record<string, string>) {
-  return fetch(`${WORKER_BASE}/api/sportsrc?${new URLSearchParams(params).toString()}`);
+interface SportsrcEnvelope<T> {
+  success?: boolean;
+  data?:    T;
+  message?: string;
+}
+
+async function sportsrcFetch(params: Record<string, string>): Promise<Response> {
+  const headers: HeadersInit = { Accept: 'application/json' };
+  if (SPORTSRC_API_KEY) headers['X-API-KEY'] = SPORTSRC_API_KEY;
+  return fetch(`${SPORTSRC_BASE}/?${new URLSearchParams(params).toString()}`, { headers });
+}
+
+async function sportsrcJson<T>(params: Record<string, string>): Promise<T | null> {
+  const res = await sportsrcFetch(params);
+  if (!res.ok) return null;
+  const body = await res.json() as SportsrcEnvelope<T> | T;
+  if (body && typeof body === 'object' && 'success' in body) {
+    const envelope = body as SportsrcEnvelope<T>;
+    if (envelope.success === false) return null;
+    return envelope.data ?? null;
+  }
+  return body as T;
+}
+
+function extractStreamUrls(detail: Record<string, unknown>): string[] {
+  const urls: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.startsWith('http')) urls.push(value);
+  };
+
+  push(detail.streamUrl);
+  push(detail.stream_url);
+  push(detail.embed_url);
+  push(detail.url);
+  push(detail.watchUrl);
+
+  for (const key of ['streams', 'sources'] as const) {
+    const list = detail[key];
+    if (!Array.isArray(list)) continue;
+    for (const item of list) {
+      if (typeof item === 'string') push(item);
+      else if (item && typeof item === 'object') {
+        const obj = item as Record<string, unknown>;
+        push(obj.url);
+        push(obj.embedUrl);
+        push(obj.embed_url);
+        push(obj.src);
+      }
+    }
+  }
+
+  return [...new Set(urls)];
 }
 
 // ---------------------------------------------------------------------------
@@ -240,11 +287,10 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     setLoading(true);
     setError(false);
     try {
+      if (!SPORTSRC_API_KEY) throw new Error('Missing VITE_SPORTSRC_API_KEY');
+
       // Step 1: fetch the sports list first so we know which sports to query
-      const catsRes = await sportsrcFetch({ type: 'sports' });
-      const cats: SportCategory[] = catsRes.ok
-        ? (await catsRes.json() as SportCategory[])
-        : [];
+      const cats = await sportsrcJson<SportCategory[]>({ type: 'sports' });
       const validCats = Array.isArray(cats) ? cats : [];
       setCategories(validCats);
 
@@ -254,11 +300,11 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
       // Step 2: for each sport, fetch live (inprogress) + all-today in parallel
       const fetches = validCats.flatMap((cat) => [
-        sportsrcFetch({ type: 'matches', sport: cat.name, status: 'inprogress', date: today })
-          .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([]))
+        sportsrcJson<APIMatch[]>({ type: 'matches', sport: cat.id, status: 'inprogress', date: today })
+          .then((rows) => rows ?? [])
           .catch(() => [] as APIMatch[]),
-        sportsrcFetch({ type: 'matches', sport: cat.name, date: today })
-          .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([]))
+        sportsrcJson<APIMatch[]>({ type: 'matches', sport: cat.id, date: today })
+          .then((rows) => rows ?? [])
           .catch(() => [] as APIMatch[]),
       ]);
 
@@ -314,10 +360,10 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     const today = todayStr();
     const liveIds = new Set(liveMatches.map((m) => m.id));
     Promise.allSettled([
-      sportsrcFetch({ type: 'matches', sport: activeCategory, status: 'inprogress', date: today })
-        .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([])),
-      sportsrcFetch({ type: 'matches', sport: activeCategory, date: today })
-        .then((r) => r.ok ? r.json() as Promise<APIMatch[]> : Promise.resolve([])),
+      sportsrcJson<APIMatch[]>({ type: 'matches', sport: activeCategory, status: 'inprogress', date: today })
+        .then((rows) => rows ?? []),
+      sportsrcJson<APIMatch[]>({ type: 'matches', sport: activeCategory, date: today })
+        .then((rows) => rows ?? []),
     ]).then((results) => {
       const merged: APIMatch[] = [];
       const seen = new Set<string>();
@@ -338,20 +384,20 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     setStreamError(false);
     setStreamLoading(true);
     try {
-      const res = await sportsrcFetch({ type: 'detail', id: match.id });
-      if (!res.ok) { setStreamError(true); return; }
-      const detail = await res.json() as Record<string, unknown>;
+      const detail = await sportsrcJson<Record<string, unknown>>({ type: 'detail', id: match.id });
+      if (!detail) { setStreamError(true); return; }
 
-      // Extract the embed URL — try common field names from the API response
-      const embedUrl =
-        (detail?.streamUrl  as string) ||
-        (detail?.stream_url as string) ||
-        (detail?.embed_url  as string) ||
-        (detail?.url        as string) ||
-        null;
+      const embedUrls = extractStreamUrls(detail);
+      if (!embedUrls.length) { setStreamError(true); return; }
 
-      if (!embedUrl) { setStreamError(true); return; }
-      setStreams([{ id: match.id, streamNo: 1, language: '', hd: true, embedUrl, source: 'primary' }]);
+      setStreams(embedUrls.map((embedUrl, i) => ({
+        id:       match.id,
+        streamNo: i + 1,
+        language: '',
+        hd:       true,
+        embedUrl,
+        source:   'primary',
+      })));
     } catch {
       setStreamError(true);
     } finally {
@@ -508,9 +554,9 @@ export const SportsView: React.FC<SportsViewProps> = () => {
           {categories.map((cat) => (
             <button
               key={cat.id}
-              onClick={() => setActiveCategory(cat.name)}
+              onClick={() => setActiveCategory(cat.id)}
               className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border font-bold text-xs transition-all cursor-pointer ${
-                activeCategory === cat.name
+                activeCategory === cat.id
                   ? 'bg-emerald-500 text-black border-emerald-400'
                   : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/50 hover:text-white'
               }`}
