@@ -68,49 +68,6 @@ function jsonResponse(data: unknown, status = 200, origin: string | null = null)
 }
 
 // ---------------------------------------------------------------------------
-// Cloudflare Cache API — 5-minute TTL for resolved media manifests
-//                        30-second TTL for live sport streams
-// ---------------------------------------------------------------------------
-
-const CACHE_TTL_MEDIA  = 300;   // 5 minutes (VOD — stream URLs are stable)
-const CACHE_TTL_SPORTS = 30;    // 30 seconds (live — tokens rotate frequently)
-
-function mediaCacheKey(params: ResolveParams): Request {
-  const key = `https://stoned-resolver.internal/cache/media/${params.type}/${params.id}/${params.season ?? 1}/${params.episode ?? 1}`;
-  return new Request(key);
-}
-
-function sportsCacheKey(params: SportResolveParams): Request {
-  const key = `https://stoned-resolver.internal/cache/sports/${params.provider}/${params.channelId}`;
-  return new Request(key);
-}
-
-async function getCached(cacheReq: Request): Promise<string | null> {
-  try {
-    const cache = caches.default;
-    const cached = await cache.match(cacheReq);
-    if (cached) {
-      const data = await cached.json() as { url?: string };
-      return data?.url ?? null;
-    }
-  } catch { /* Cache API unavailable in local wrangler dev */ }
-  return null;
-}
-
-async function setCached(cacheReq: Request, url: string, ttl: number): Promise<void> {
-  try {
-    const cache = caches.default;
-    const res = new Response(JSON.stringify({ url }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': `public, max-age=${ttl}`
-      }
-    });
-    await cache.put(cacheReq, res);
-  } catch { /* Cache API unavailable in local wrangler dev */ }
-}
-
-// ---------------------------------------------------------------------------
 // Fallback chain — media (movies / TV / anime)
 // ---------------------------------------------------------------------------
 
