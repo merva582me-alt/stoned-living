@@ -45,11 +45,27 @@ interface StreamedStream {
 // streamed.pk helpers
 // ---------------------------------------------------------------------------
 
-/** Resolve badge URL from streamed.pk badge id */
+/** Known sport-category strings that streamed.pk incorrectly puts in the badge field */
+const CATEGORY_WORDS = new Set([
+  'football','soccer','basketball','baseball','hockey','tennis','golf','rugby',
+  'cricket','mma','ufc','boxing','fight','motorsports','motor-sports','motor_sports',
+  'motorracing','f1','nfl','nba','mlb','nhl','afl','darts','billiards','other',
+  'sport','sports','american-football','american_football','americanfootball',
+]);
+
+/** Resolve badge URL from streamed.pk badge id.
+ *  Returns undefined for empty / category-word values so the tile falls back
+ *  to the text VS layout instead of showing a broken-image icon. */
 function badgeUrl(id: string | undefined): string | undefined {
-  if (!id) return undefined;
+  if (!id || id.trim() === '') return undefined;
   // If it already looks like a full URL keep it
   if (id.startsWith('http')) return id;
+  // Reject bare category names that aren't real badge IDs
+  const normalised = id.toLowerCase().replace(/[\s_-]/g, '');
+  if (CATEGORY_WORDS.has(normalised)) return undefined;
+  // Must contain at least one digit or hyphen to be a real badge slug
+  // e.g. "man-utd-badge", "liverpool-badge" — reject single words with no separator
+  if (!id.includes('-') && !id.includes('_') && !/\d/.test(id)) return undefined;
   return `${STREAMED_BASE}/api/images/badge/${id}.webp`;
 }
 
@@ -107,20 +123,36 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
   });
 }
 
+/** A match is considered truly live only if its scheduled time is within
+ *  a reasonable window (started ≤60 min ago or up to 15 min before kick-off).
+ *  streamed.pk's /live endpoint sometimes lists matches hours early. */
+function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
+  if (!fromLiveEndpoint) return false;
+  const now = Date.now();
+  const diff = now - m.date; // positive = started in the past
+  // Allow up to 15 min before kick-off and up to 6 hours after start
+  return diff >= -15 * 60 * 1000 && diff <= 6 * 60 * 60 * 1000;
+}
+
 /** Convert a StreamedMatch to a SportMatch, applying optional TSDB enrichment */
-function toSportMatch(m: StreamedMatch, isLive: boolean, enrich?: MatchEnrichment): SportMatch {
+function toSportMatch(m: StreamedMatch, fromLiveEndpoint: boolean, enrich?: MatchEnrichment): SportMatch {
   const home = m.teams?.home;
   const away = m.teams?.away;
+  const homeBadgeUrl = badgeUrl(home?.badge);
+  const awayBadgeUrl = badgeUrl(away?.badge);
+  // Only keep the teams object if at least one badge resolved cleanly
+  const hasTeams = !!(homeBadgeUrl || awayBadgeUrl || home?.name || away?.name);
+  const live = isActuallyLive(m, fromLiveEndpoint);
   return {
     id:       m.id,
     title:    m.title,
     category: m.category,
     date:     m.date,
-    is_live:  isLive,
+    is_live:  live,
     poster:   m.poster ? `${STREAMED_BASE}${m.poster}.webp` : undefined,
-    teams: (home || away) ? {
-      home: home ? { name: home.name, badge: badgeUrl(home.badge) ?? home.badge } : undefined,
-      away: away ? { name: away.name, badge: badgeUrl(away.badge) ?? away.badge } : undefined,
+    teams: hasTeams ? {
+      home: home ? { name: home.name, badge: homeBadgeUrl ?? '' } : undefined,
+      away: away ? { name: away.name, badge: awayBadgeUrl ?? '' } : undefined,
     } : undefined,
     tsdb: enrich ? {
       homeBadge:  enrich.homeBadge,
@@ -129,7 +161,6 @@ function toSportMatch(m: StreamedMatch, isLive: boolean, enrich?: MatchEnrichmen
       homeScore:  enrich.homeScore,
       awayScore:  enrich.awayScore,
     } : undefined,
-    // Carry sources so the player can fetch streams
     _sources: m.sources,
   } as SportMatch;
 }

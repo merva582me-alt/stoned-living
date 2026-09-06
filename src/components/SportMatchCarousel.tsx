@@ -34,13 +34,30 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
   const home = match.teams?.home;
   const away = match.teams?.away;
   const tsdb = match.tsdb;
-  const homeBadge = home?.badge || tsdb?.homeBadge;
-  const awayBadge = away?.badge || tsdb?.awayBadge;
+  // Prefer streamed.pk badges; fall back to TSDB badges
+  const homeBadge = (home?.badge && home.badge !== '') ? home.badge : tsdb?.homeBadge;
+  const awayBadge = (away?.badge && away.badge !== '') ? away.badge : tsdb?.awayBadge;
   const hasBadges = !!(homeBadge && awayBadge);
   const [teamA, teamB] = splitVs(match.title);
   const timeStr = match.date
     ? new Date(match.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
+
+  // Track per-badge load failures so we can fall back gracefully
+  const [homeFailed, setHomeFailed] = React.useState(false);
+  const [awayFailed, setAwayFailed] = React.useState(false);
+  const showBadges = hasBadges && !homeFailed && !awayFailed;
+
+  const TextFallback = () => (
+    <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-3 bg-gradient-to-br from-emerald-950/60 to-[#0a100d]">
+      <Tv2 className="w-5 h-5 text-emerald-500/40" />
+      <div className="flex items-center gap-2 w-full justify-center">
+        <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamA || match.title}</span>
+        {teamB && <><span className="text-emerald-400 font-black text-[10px] shrink-0">VS</span>
+        <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamB}</span></>}
+      </div>
+    </div>
+  );
 
   return (
     <button
@@ -55,23 +72,16 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
             className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
-        ) : hasBadges ? (
+        ) : showBadges ? (
           <div className="w-full h-full flex items-center justify-center gap-4 px-3">
-            <img src={homeBadge} alt="" className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <img src={homeBadge} alt={home?.name ?? ''} className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-sm"
+              onError={() => setHomeFailed(true)} />
             <span className="text-zinc-500 font-black text-xs">VS</span>
-            <img src={awayBadge} alt="" className="w-10 h-10 sm:w-12 sm:h-12 object-contain"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <img src={awayBadge} alt={away?.name ?? ''} className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-sm"
+              onError={() => setAwayFailed(true)} />
           </div>
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 px-3 bg-gradient-to-br from-emerald-950/60 to-[#0a100d]">
-            <Tv2 className="w-5 h-5 text-emerald-500/40" />
-            <div className="flex items-center gap-2 w-full justify-center">
-              <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamA}</span>
-              <span className="text-emerald-400 font-black text-[10px] shrink-0">VS</span>
-              <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamB || match.category}</span>
-            </div>
-          </div>
+          <TextFallback />
         )}
         {match.is_live && (
           <span className="absolute top-2 left-2 flex items-center gap-1 text-[9px] font-bold text-rose-200 bg-rose-600/90 px-2 py-0.5 rounded-full uppercase">
