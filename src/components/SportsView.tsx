@@ -94,9 +94,14 @@ function sortMatches(list: SportMatch[], sortBy: string): SportMatch[] {
   if (sortBy === 'time.asc')  return copy.sort((a, b) => a.date - b.date);
   if (sortBy === 'time.desc') return copy.sort((a, b) => b.date - a.date);
   if (sortBy === 'title')     return copy.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? ''));
+  // Default: live first, then upcoming sorted ascending by air time.
+  // Entries with no date (date === 0) go last within the upcoming group.
   return copy.sort((a, b) => {
     if (a.is_live !== b.is_live) return a.is_live ? -1 : 1;
-    return a.date - b.date;
+    if (a.is_live && b.is_live)  return 0; // preserve API order within live
+    const aDate = a.date || Infinity;
+    const bDate = b.date || Infinity;
+    return aDate - bDate;
   });
 }
 
