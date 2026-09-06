@@ -261,8 +261,9 @@ export const SportsView: React.FC<SportsViewProps> = () => {
       if (controller.signal.aborted) return;
 
       const sportsList: StreamedSport[] = sportsData ?? [];
-      const liveRaw: StreamedMatch[]    = (liveData ?? []).filter(m => !isJunkEntry(m));
-      const allRaw:  StreamedMatch[]    = (allData  ?? []).filter(m => !isJunkEntry(m));
+      const hasStreams = (m: StreamedMatch) => m.sources && m.sources.length > 0;
+      const liveRaw: StreamedMatch[]    = (liveData ?? []).filter(m => !isJunkEntry(m) && hasStreams(m));
+      const allRaw:  StreamedMatch[]    = (allData  ?? []).filter(m => !isJunkEntry(m) && hasStreams(m));
 
       setSports(sportsList);
 
