@@ -1,6 +1,44 @@
 import React, { useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, LucideIcon, Radio } from 'lucide-react';
-import { getSeriesLogo } from '../data/sportLogos';
+import { ChevronLeft, ChevronRight, LucideIcon, Radio, Tv2 } from 'lucide-react';
+
+// ---------------------------------------------------------------------------
+// Hardcoded series / category logos — used ONLY in the text-fallback branch
+// (no badges, no streamed.pk poster, no ESPN/TSDB eventPoster)
+// ---------------------------------------------------------------------------
+const SERIES_LOGOS: Array<{ pattern: RegExp; logo: string }> = [
+  { pattern: /formula\s*1|formula\s*one|\bf1\b/i,              logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/400px-F1.svg.png' },
+  { pattern: /nascar\s+cup/i,                                   logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/NASCAR_Cup_Series_logo.svg/400px-NASCAR_Cup_Series_logo.svg.png' },
+  { pattern: /nascar\s+xfinity/i,                               logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/7/76/NASCAR_Xfinity_Series_logo.svg/400px-NASCAR_Xfinity_Series_logo.svg.png' },
+  { pattern: /nascar/i,                                         logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/NASCAR_Cup_Series_logo.svg/400px-NASCAR_Cup_Series_logo.svg.png' },
+  { pattern: /\bmotogp\b|\bmoto2\b|\bmoto3\b/i,                 logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/MotoGP_logo.svg/400px-MotoGP_logo.svg.png' },
+  { pattern: /indycar/i,                                        logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/IndyCar_series_logo.svg/400px-IndyCar_series_logo.svg.png' },
+  { pattern: /world\s+rally|\bwrc\b/i,                          logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/d4/WRC_logo.svg/400px-WRC_logo.svg.png' },
+  { pattern: /contender\s+series|dana\s+white/i,                logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/UFC_Logo.svg/400px-UFC_Logo.svg.png' },
+  { pattern: /\bufc\b/i,                                        logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/UFC_Logo.svg/400px-UFC_Logo.svg.png' },
+  { pattern: /bellator/i,                                       logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/02/Bellator_MMA_logo.svg/400px-Bellator_MMA_logo.svg.png' },
+  { pattern: /\bone\s+championship\b|\bone\s+fc\b/i,            logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a3/One_Championship_logo.svg/400px-One_Championship_logo.svg.png' },
+  { pattern: /super\s+rizin|rizin/i,                            logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/RIZIN_FF_logo.svg/400px-RIZIN_FF_logo.svg.png' },
+  { pattern: /\bwwe\b|wrestlemania|royal\s+rumble|summerslam/i, logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/WWE_Logo.svg/400px-WWE_Logo.svg.png' },
+  { pattern: /legacy\s+fighting|\blfc\b/i,                      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/UFC_Logo.svg/400px-UFC_Logo.svg.png' },
+];
+
+const CATEGORY_LOGOS: Record<string, string> = {
+  'fight':          'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/UFC_Logo.svg/400px-UFC_Logo.svg.png',
+  'mma':            'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/UFC_Logo.svg/400px-UFC_Logo.svg.png',
+  'boxing':         'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b4/WBC_Logo.png/400px-WBC_Logo.png',
+  'wrestling':      'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/WWE_Logo.svg/400px-WWE_Logo.svg.png',
+  'motor sports':   'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/400px-F1.svg.png',
+  'motorsports':    'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/400px-F1.svg.png',
+  'motorsport':     'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/400px-F1.svg.png',
+  'racing':         'https://upload.wikimedia.org/wikipedia/commons/thumb/3/33/F1.svg/400px-F1.svg.png',
+};
+
+function getSeriesLogo(title: string, category: string): string | undefined {
+  for (const e of SERIES_LOGOS) {
+    if (e.pattern.test(title)) return e.logo;
+  }
+  return CATEGORY_LOGOS[category.toLowerCase().trim()];
+}
 
 export interface SportMatch {
   id:        string;
@@ -53,17 +91,11 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
   const awayBadge    = match.tsdb?.awayBadge;
   const eventPoster  = match.tsdb?.eventPoster;
   const leagueBanner = match.tsdb?.leagueBanner;
+  const hasBadges    = !!(homeBadge || awayBadge); // at least one badge
   const hasBothBadges = !!(homeBadge && awayBadge);
-
-  // Streamed.pk full-cover poster takes highest priority when available
-  const coverImage = match.poster || eventPoster || undefined;
-
-  // Guaranteed background: series logo > league banner from TSDB > nothing
-  // Every card always has this — used full-cover when no badges, dim behind badges when they exist
-  const seriesLogo = getSeriesLogo(match.title, match.category) || leagueBanner;
-
+  // Full-cover image: streamed.pk poster > event poster > league banner (when no badges)
+  const coverImage   = match.poster || eventPoster || (!hasBadges ? leagueBanner : undefined);
   const [teamA, teamB] = splitVs(match.title);
-  const isVsMatch = !!teamB;
   const { dateStr, timeStr } = match.date ? formatMatchDate(match.date) : { dateStr: null, timeStr: null };
 
   return (
@@ -71,77 +103,61 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
       onClick={() => onOpen(match)}
       className="group text-left bg-[#0e1411] hover:bg-[#131d17] border border-emerald-900/40 hover:border-emerald-500/50 rounded-2xl overflow-hidden transition-all duration-200 cursor-pointer w-full h-full flex flex-col"
     >
-      <div className="relative w-full aspect-video bg-[#0a100d]">
-
-        {/* ── Layer 1: background ── */}
+      <div className="relative w-full aspect-video bg-emerald-950/30">
         {coverImage ? (
-          /* Streamed.pk poster or ESPN event image — full cover */
           <img
             src={coverImage}
             alt={match.title}
-            className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
+            className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
-        ) : seriesLogo ? (
-          /* Series / category logo — dimmed, centred, used as texture */
-          <img
-            src={seriesLogo}
-            alt=""
-            aria-hidden
-            className="absolute inset-0 w-full h-full object-contain p-6 opacity-[0.12]"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-          />
-        ) : null}
-
-        {/* ── Layer 2: gradient overlay (always) ── */}
-        <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/60 to-[#0a100d]/80" />
-
-        {/* ── Layer 3: foreground content ── */}
-        {hasBothBadges ? (
-          /* Both team logos — centred side-by-side */
-          <div className="absolute inset-0 flex items-center justify-center gap-4 px-4">
-            <img src={homeBadge!} alt=""
-              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            <span className="text-zinc-300 font-black text-sm shrink-0 opacity-60">VS</span>
-            <img src={awayBadge!} alt=""
-              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-          </div>
-        ) : (homeBadge || awayBadge) ? (
-          /* Only one badge — show it + team name text for the missing side */
-          <div className="absolute inset-0 flex items-center justify-center gap-3 px-4">
-            {homeBadge
-              ? <img src={homeBadge} alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              : <span className="text-white font-black text-[11px] text-center line-clamp-2 flex-1 leading-tight">{teamA}</span>
-            }
-            <span className="text-zinc-300 font-black text-sm shrink-0 opacity-60">VS</span>
-            {awayBadge
-              ? <img src={awayBadge} alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-              : <span className="text-white font-black text-[11px] text-center line-clamp-2 flex-1 leading-tight">{teamB}</span>
-            }
-          </div>
-        ) : coverImage ? null : (
-          /* No badges, no cover image — show series logo large + match names */
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4">
-            {seriesLogo && (
-              <img src={seriesLogo} alt="" aria-hidden
-                className="w-16 h-16 sm:w-20 sm:h-20 object-contain opacity-80 drop-shadow-lg"
+        ) : hasBadges ? (
+          /* Badge layout — league banner as dim background when available */
+          <div className="relative w-full h-full flex items-center justify-center gap-4 px-3">
+            {leagueBanner && (
+              <img src={leagueBanner} alt="" aria-hidden
+                className="absolute inset-0 w-full h-full object-cover opacity-10"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             )}
-            {isVsMatch && (
-              <div className="flex items-center gap-1.5 w-full justify-center mt-1">
-                <span className="text-white font-black text-[10px] text-center line-clamp-1 flex-1">{teamA}</span>
-                <span className="text-zinc-400 font-black text-[10px] shrink-0">VS</span>
-                <span className="text-white font-black text-[10px] text-center line-clamp-1 flex-1">{teamB}</span>
-              </div>
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/70 to-[#0a100d]/90" />
+            <div className="relative flex items-center justify-center gap-4 w-full">
+              {homeBadge
+                ? <img src={homeBadge} alt="" className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-lg"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                : hasBothBadges ? null : <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1 max-w-[40%]">{teamA}</span>
+              }
+              <span className="text-zinc-400 font-black text-xs shrink-0">VS</span>
+              {awayBadge
+                ? <img src={awayBadge} alt="" className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-lg"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                : hasBothBadges ? null : <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1 max-w-[40%]">{teamB}</span>
+              }
+            </div>
+          </div>
+        ) : (
+          /* Text fallback — series/category logo replaces the TV icon when available */
+          <div className="relative w-full h-full flex flex-col items-center justify-center gap-1.5 px-3">
+            {leagueBanner && (
+              <img src={leagueBanner} alt="" aria-hidden
+                className="absolute inset-0 w-full h-full object-cover opacity-10"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             )}
+            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/70 to-[#0a100d]/90" />
+            {(() => {
+              const sLogo = getSeriesLogo(match.title, match.category);
+              return sLogo
+                ? <img src={sLogo} alt="" aria-hidden
+                    className="relative w-16 h-16 sm:w-20 sm:h-20 object-contain opacity-90 drop-shadow-lg"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                : <Tv2 className="relative w-5 h-5 text-emerald-500/40" />;
+            })()}
+            <div className="relative flex items-center gap-2 w-full justify-center">
+              <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamA || match.title}</span>
+              {teamB && <><span className="text-emerald-400 font-black text-[10px] shrink-0">VS</span>
+              <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamB}</span></>}
+            </div>
           </div>
         )}
-
-        {/* ── LIVE badge ── */}
         {match.is_live && (
           <span className="absolute top-2 left-2 flex items-center gap-1 text-[9px] font-bold text-rose-200 bg-rose-600/90 px-2 py-0.5 rounded-full uppercase">
             <Radio className="w-2.5 h-2.5 animate-pulse" /> Live
