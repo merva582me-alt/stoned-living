@@ -149,8 +149,8 @@ function eventSearchVariants(title: string): string[] {
 // ---------------------------------------------------------------------------
 
 let activeRequests = 0;
-const MAX_CONCURRENT = 3;
-const REQUEST_GAP_MS = 120;
+const MAX_CONCURRENT = 2;
+const REQUEST_GAP_MS = 300;
 let lastDispatch = 0;
 
 async function throttle(): Promise<void> {
@@ -409,7 +409,14 @@ export async function buildEnrichmentMap(
   // ── Phase 2: progressive lookups (fire-and-forget) ────────────────────────
   if (onUpdate && unmatched.length > 0) {
     (async () => {
-      // Emit from cache immediately for known teams, but still queue league banner
+      // Pre-fetch one league banner per unique category (deduplicated).
+      // This avoids N requests for the same category when many matches share it.
+      const uniqueCategories = [...new Set(
+        unmatched.map(m => m.category).filter((c): c is string => !!c)
+      )];
+      await Promise.all(uniqueCategories.map(cat => fetchLeagueBanner(cat)));
+
+      // Emit from cache immediately for known teams
       const needFetch: typeof matches = [];
       for (const match of unmatched) {
         const [homeRaw, awayRaw] = getTeamNames(match);
@@ -418,47 +425,38 @@ export async function buildEnrichmentMap(
           const hc = teamBadgeCache.get(norm(homeRaw));
           const ac = teamBadgeCache.get(norm(awayRaw));
           if (hc !== undefined && ac !== undefined) {
-            // Badges known from cache — emit now, but still need league banner
             onUpdate(match.id, { homeBadge: hc || undefined, awayBadge: ac || undefined });
-            // Fall through to needFetch so league banner is still fetched
           }
         }
         needFetch.push(match);
       }
 
-      // Fetch remaining concurrently (rate-limited)
-      // League banner is ALWAYS fetched alongside team/event lookups so every
-      // card has a background image regardless of whether badges were found.
+      // Only fetch team badges for team-vs-team matches.
+      // Single-name events (racing, MMA, boxing) skip fetchEventPoster — ESPN's
+      // buildESPNImageMap covers those with higher-quality images and no rate limit.
       await Promise.all(needFetch.map(async match => {
         const [homeRaw, awayRaw] = getTeamNames(match);
         const isVs = !!awayRaw;
-
-        // Always fetch league banner in parallel — used as background behind
-        // badges or as sole image when neither badges nor poster are found.
-        const leagueBannerPromise = match.category
-          ? fetchLeagueBanner(match.category)
-          : Promise.resolve('');
+        const leagueBanner = match.category
+          ? leagueBannerCache.get(norm(match.category)) || undefined
+          : undefined;
 
         if (isVs) {
-          const [homeBadge, awayBadge, leagueBanner] = await Promise.all([
+          const [homeBadge, awayBadge] = await Promise.all([
             fetchTeamBadge(homeRaw),
             fetchTeamBadge(awayRaw),
-            leagueBannerPromise,
           ]);
           onUpdate(match.id, {
             homeBadge:    homeBadge    || undefined,
             awayBadge:    awayBadge    || undefined,
-            leagueBanner: leagueBanner || undefined,
+            leagueBanner,
           });
-        } else if (match.title) {
-          const [poster, leagueBanner] = await Promise.all([
-            fetchEventPoster(match.title),
-            leagueBannerPromise,
-          ]);
-          onUpdate(match.id, {
-            eventPoster:  poster       || undefined,
-            leagueBanner: leagueBanner || undefined,
-          });
+        } else {
+          // Single-name event — just emit the league banner from cache.
+          // ESPN handles event posters; no searchevents.php call needed.
+          if (leagueBanner) {
+            onUpdate(match.id, { leagueBanner });
+          }
         }
       }));
     })();
