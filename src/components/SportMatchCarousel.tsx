@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, LucideIcon, Radio, Tv2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, LucideIcon, Radio } from 'lucide-react';
+import { getSeriesLogo } from '../data/sportLogos';
 
 export interface SportMatch {
   id:        string;
@@ -52,11 +53,17 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
   const awayBadge    = match.tsdb?.awayBadge;
   const eventPoster  = match.tsdb?.eventPoster;
   const leagueBanner = match.tsdb?.leagueBanner;
-  const hasBadges    = !!(homeBadge || awayBadge); // at least one badge
   const hasBothBadges = !!(homeBadge && awayBadge);
-  // Full-cover image: streamed.pk poster > event poster > league banner (when no badges)
-  const coverImage   = match.poster || eventPoster || (!hasBadges ? leagueBanner : undefined);
+
+  // Streamed.pk full-cover poster takes highest priority when available
+  const coverImage = match.poster || eventPoster || undefined;
+
+  // Guaranteed background: series logo > league banner from TSDB > nothing
+  // Every card always has this — used full-cover when no badges, dim behind badges when they exist
+  const seriesLogo = getSeriesLogo(match.title, match.category) || leagueBanner;
+
   const [teamA, teamB] = splitVs(match.title);
+  const isVsMatch = !!teamB;
   const { dateStr, timeStr } = match.date ? formatMatchDate(match.date) : { dateStr: null, timeStr: null };
 
   return (
@@ -64,54 +71,77 @@ export const SportMatchTile: React.FC<{ match: SportMatch; onOpen: (m: SportMatc
       onClick={() => onOpen(match)}
       className="group text-left bg-[#0e1411] hover:bg-[#131d17] border border-emerald-900/40 hover:border-emerald-500/50 rounded-2xl overflow-hidden transition-all duration-200 cursor-pointer w-full h-full flex flex-col"
     >
-      <div className="relative w-full aspect-video bg-emerald-950/30">
+      <div className="relative w-full aspect-video bg-[#0a100d]">
+
+        {/* ── Layer 1: background ── */}
         {coverImage ? (
+          /* Streamed.pk poster or ESPN event image — full cover */
           <img
             src={coverImage}
             alt={match.title}
-            className="w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
+            className="absolute inset-0 w-full h-full object-cover opacity-85 group-hover:opacity-100 transition"
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           />
-        ) : hasBadges ? (
-          /* Badge layout — league banner as dim background when available */
-          <div className="relative w-full h-full flex items-center justify-center gap-4 px-3">
-            {leagueBanner && (
-              <img src={leagueBanner} alt="" aria-hidden
-                className="absolute inset-0 w-full h-full object-cover opacity-10"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/70 to-[#0a100d]/90" />
-            <div className="relative flex items-center justify-center gap-4 w-full">
-              {homeBadge
-                ? <img src={homeBadge} alt="" className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-lg"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                : hasBothBadges ? null : <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1 max-w-[40%]">{teamA}</span>
-              }
-              <span className="text-zinc-400 font-black text-xs shrink-0">VS</span>
-              {awayBadge
-                ? <img src={awayBadge} alt="" className="w-10 h-10 sm:w-12 sm:h-12 object-contain drop-shadow-lg"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                : hasBothBadges ? null : <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1 max-w-[40%]">{teamB}</span>
-              }
-            </div>
+        ) : seriesLogo ? (
+          /* Series / category logo — dimmed, centred, used as texture */
+          <img
+            src={seriesLogo}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 w-full h-full object-contain p-6 opacity-[0.12]"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+        ) : null}
+
+        {/* ── Layer 2: gradient overlay (always) ── */}
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/60 to-[#0a100d]/80" />
+
+        {/* ── Layer 3: foreground content ── */}
+        {hasBothBadges ? (
+          /* Both team logos — centred side-by-side */
+          <div className="absolute inset-0 flex items-center justify-center gap-4 px-4">
+            <img src={homeBadge!} alt=""
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            <span className="text-zinc-300 font-black text-sm shrink-0 opacity-60">VS</span>
+            <img src={awayBadge!} alt=""
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
           </div>
-        ) : (
-          /* Pure text fallback — league banner as dim background when available */
-          <div className="relative w-full h-full flex flex-col items-center justify-center gap-1.5 px-3">
-            {leagueBanner && (
-              <img src={leagueBanner} alt="" aria-hidden
-                className="absolute inset-0 w-full h-full object-cover opacity-10"
+        ) : (homeBadge || awayBadge) ? (
+          /* Only one badge — show it + team name text for the missing side */
+          <div className="absolute inset-0 flex items-center justify-center gap-3 px-4">
+            {homeBadge
+              ? <img src={homeBadge} alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              : <span className="text-white font-black text-[11px] text-center line-clamp-2 flex-1 leading-tight">{teamA}</span>
+            }
+            <span className="text-zinc-300 font-black text-sm shrink-0 opacity-60">VS</span>
+            {awayBadge
+              ? <img src={awayBadge} alt="" className="w-12 h-12 sm:w-14 sm:h-14 object-contain drop-shadow-lg flex-shrink-0"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              : <span className="text-white font-black text-[11px] text-center line-clamp-2 flex-1 leading-tight">{teamB}</span>
+            }
+          </div>
+        ) : coverImage ? null : (
+          /* No badges, no cover image — show series logo large + match names */
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4">
+            {seriesLogo && (
+              <img src={seriesLogo} alt="" aria-hidden
+                className="w-16 h-16 sm:w-20 sm:h-20 object-contain opacity-80 drop-shadow-lg"
                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             )}
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-950/70 to-[#0a100d]/90" />
-            <Tv2 className="relative w-5 h-5 text-emerald-500/40" />
-            <div className="relative flex items-center gap-2 w-full justify-center">
-              <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamA || match.title}</span>
-              {teamB && <><span className="text-emerald-400 font-black text-[10px] shrink-0">VS</span>
-              <span className="text-white font-black text-[10px] text-center line-clamp-2 flex-1">{teamB}</span></>}
-            </div>
+            {isVsMatch && (
+              <div className="flex items-center gap-1.5 w-full justify-center mt-1">
+                <span className="text-white font-black text-[10px] text-center line-clamp-1 flex-1">{teamA}</span>
+                <span className="text-zinc-400 font-black text-[10px] shrink-0">VS</span>
+                <span className="text-white font-black text-[10px] text-center line-clamp-1 flex-1">{teamB}</span>
+              </div>
+            )}
           </div>
         )}
+
+        {/* ── LIVE badge ── */}
         {match.is_live && (
           <span className="absolute top-2 left-2 flex items-center gap-1 text-[9px] font-bold text-rose-200 bg-rose-600/90 px-2 py-0.5 rounded-full uppercase">
             <Radio className="w-2.5 h-2.5 animate-pulse" /> Live
