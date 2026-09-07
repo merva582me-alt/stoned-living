@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { buildEnrichmentMap, fetchTodayFinishedPairs, type MatchEnrichment } from '../services/sportsdb';
+import { fetchAPIFinishedPairs } from '../services/espn';
 import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatchCarousel';
 import { fetchComments, postComment } from '../services/api';
 import { StrainDatabase } from '../data/strainDatabase';
@@ -276,21 +277,35 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
     abortRef.current = controller;
 
     try {
-      // ── 1. Fetch sports categories, all matches & TSDB finished pairs ─────
-      const [sportsData, liveData, allData, finishedPairs] = await Promise.all([
+      // ── 1. Fetch sports categories, all matches, and finished-match sets ──
+      // fetchTodayFinishedPairs (TSDB) and fetchAPIFinishedPairs (ESPN/MLB/NHL)
+      // run in parallel with the streamed.pk calls; results are merged below.
+      const [sportsData, liveData, allData, tsdbFinished, apiFinished] = await Promise.all([
         streamedFetch<StreamedSport[]>('/api/sports'),
         streamedFetch<StreamedMatch[]>('/api/matches/live'),
         streamedFetch<StreamedMatch[]>('/api/matches/all'),
         fetchTodayFinishedPairs(),
+        fetchAPIFinishedPairs(),
       ]);
 
       if (controller.signal.aborted) return;
 
+      // Merge: a match is finished if either source says so
+      const finishedPairs  = new Set<string>([...tsdbFinished, ...apiFinished.pairs]);
+      const finishedTitles = apiFinished.titles; // for single-name events (NASCAR, UFC, etc.)
+
       const sportsList: StreamedSport[] = sportsData ?? [];
       // Upcoming: show everything streamed.pk provides, untouched
       const allRaw: StreamedMatch[] = (allData ?? []).filter(m => !isJunkEntry(m));
-      // Live: only keep matches that have at least one source listed
-      const liveRaw: StreamedMatch[] = (liveData ?? []).filter(m => !isJunkEntry(m) && m.sources?.length > 0);
+      // Live: only keep matches that have at least one source listed and whose
+      // scheduled start time is not more than 4 hours in the past (a stale-feed
+      // guard — no real match runs longer than that).
+      const MAX_LIVE_AGE_MS = 4 * 60 * 60 * 1000;
+      const liveRaw: StreamedMatch[] = (liveData ?? []).filter(m =>
+        !isJunkEntry(m) &&
+        m.sources?.length > 0 &&
+        (!m.date || Date.now() - m.date < MAX_LIVE_AGE_MS)
+      );
 
       setSports(sportsList);
 
@@ -309,7 +324,31 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
           return { m, hasFeed };
         })
       );
-      const liveFiltered = probeResults.filter(r => r.hasFeed).map(r => r.m);
+
+      // Drop matches confirmed finished by any source
+      const normStr = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+      const liveFiltered = probeResults.filter(r => {
+        if (!r.hasFeed) return false;
+        const m = r.m;
+        const title = m.title ?? '';
+        if (/\bvs\.?\b/i.test(title)) {
+          // Team-vs-team: check the pair set
+          const parts = title.split(/\s+vs\.?\s+/i);
+          if (parts.length >= 2) {
+            const h = normStr(parts[0].trim());
+            const a = normStr(parts.slice(1).join(' vs ').trim());
+            if (finishedPairs.has(`${h}|${a}`)) return false;
+          }
+        } else if (title) {
+          // Single-name event (NASCAR race, UFC card, etc.): check if the
+          // normalised title contains any finished event title as a substring
+          const t = normStr(title);
+          for (const ft of finishedTitles) {
+            if (t.includes(ft) || ft.includes(t)) return false;
+          }
+        }
+        return true;
+      }).map(r => r.m);
 
       if (controller.signal.aborted) return;
 
@@ -353,14 +392,22 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
         if (liveIds.has(m.id)) continue;
         if (m.date && m.date < now) continue; // past kick-off and not live → ended
 
-        // Secondary check: TSDB says this specific match is finished today
-        if (m.title && /\bvs\.?\b/i.test(m.title)) {
-          const parts = m.title.split(/\s+vs\.?\s+/i);
+        // Secondary check: any API says this specific match is finished today
+        const title = m.title ?? '';
+        if (/\bvs\.?\b/i.test(title)) {
+          const parts = title.split(/\s+vs\.?\s+/i);
           if (parts.length >= 2) {
-            const h = parts[0].trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-            const a = parts.slice(1).join(' vs ').trim().toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-            if (finishedPairs.has(`${h}|${a}`)) continue; // confirmed finished
+            const h = normStr(parts[0].trim());
+            const a = normStr(parts.slice(1).join(' vs ').trim());
+            if (finishedPairs.has(`${h}|${a}`)) continue;
           }
+        } else if (title) {
+          const t = normStr(title);
+          let done = false;
+          for (const ft of finishedTitles) {
+            if (t.includes(ft) || ft.includes(t)) { done = true; break; }
+          }
+          if (done) continue;
         }
 
         const cat = m.category?.toLowerCase() || 'other';
