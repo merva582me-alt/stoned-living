@@ -479,7 +479,20 @@ function getTeamNames(match: {
     return [match.teams.home.name, match.teams.away.name];
   }
   if (!match.title) return ['', ''];
-  const parts = match.title.split(/\s+vs\.?\s+/i);
-  if (parts.length >= 2) return [parts[0].trim(), parts.slice(1).join(' vs ').trim()];
+  // "vs" separator — canonical format ("Patriots vs Cowboys")
+  const vsParts = match.title.split(/\s+vs\.?\s+/i);
+  if (vsParts.length >= 2) return [vsParts[0].trim(), vsParts.slice(1).join(' vs ').trim()];
+  // " - " separator — also used by streamed.pk for team matches
+  // ("Detroit Lions - New Orleans Saints") but NOT for race/event titles
+  // ("Moto2 2026 - Gran Premio di San Marino"). Heuristic: treat as a
+  // team-vs-team match only when neither part contains a standalone year (20XX).
+  const dashIdx = match.title.indexOf(' - ');
+  if (dashIdx !== -1) {
+    const left  = match.title.slice(0, dashIdx).trim();
+    const right = match.title.slice(dashIdx + 3).trim();
+    if (left && right && !/\b20\d{2}\b/.test(left) && !/\b20\d{2}\b/.test(right)) {
+      return [left, right];
+    }
+  }
   return [match.title, ''];
 }

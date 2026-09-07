@@ -127,10 +127,36 @@ const JUNK_PATTERNS = [
   /^[A-Z]{2,5}\s+TV$/i,        // e.g. "BBC TV", "ESPN TV"
 ];
 
+/**
+ * Keywords that identify a broadcaster/channel name rather than a team.
+ * Used to catch "NFL vs RedZone", "Fox vs ESPN", etc.
+ */
+const CHANNEL_KEYWORDS = /\b(redzone|red\s+zone|channel|network|tv|espn|fox\s+sports|cbs\s+sports|nbc\s+sports|sky\s+sports|bein\s+sports|dazn|peacock|paramount)\b/i;
+
 function isJunkEntry(m: StreamedMatch): boolean {
   const hasOpponent = /\bvs\.?\b/i.test(m.title);
-  if (hasOpponent) return false; // real match
+  if (hasOpponent) {
+    // Even with "vs", catch entries where one side is a broadcaster name
+    // e.g. "NFL vs RedZone", "Match vs ESPN Channel"
+    const parts = m.title.split(/\s+vs\.?\s+/i);
+    if (parts.length >= 2) {
+      const left  = parts[0].trim();
+      const right = parts.slice(1).join(' vs ').trim();
+      if (CHANNEL_KEYWORDS.test(left) || CHANNEL_KEYWORDS.test(right)) return true;
+    }
+    return false;
+  }
   return JUNK_PATTERNS.some(p => p.test(m.title));
+}
+
+/**
+ * Returns true for always-on broadcast channels (no opponent, channel-like
+ * name) that should appear in liveMatches but never in the upcoming bySport map.
+ */
+function isChannelEntry(m: StreamedMatch): boolean {
+  if (/\bvs\.?\b/i.test(m.title)) return false; // has opponent → real match
+  if (/ - /.test(m.title)) return false;          // dash separator → team match or event
+  return CHANNEL_KEYWORDS.test(m.title) || /\bchannel\b/i.test(m.title);
 }
 
 /** Trust streamed.pk — if it came from the /live endpoint, it's live.
@@ -157,11 +183,13 @@ function toSportMatch(m: StreamedMatch, fromLiveEndpoint: boolean, enrich?: Matc
     poster:   m.poster ? `${STREAMED_BASE}${m.poster}.webp` : undefined,
     // No teams from streamed.pk — badges only come from TSDB below
     tsdb: enrich ? {
-      homeBadge:  enrich.homeBadge,
-      awayBadge:  enrich.awayBadge,
-      leagueName: enrich.leagueName,
-      homeScore:  enrich.homeScore,
-      awayScore:  enrich.awayScore,
+      homeBadge:    enrich.homeBadge,
+      awayBadge:    enrich.awayBadge,
+      leagueName:   enrich.leagueName,
+      homeScore:    enrich.homeScore,
+      awayScore:    enrich.awayScore,
+      eventPoster:  enrich.eventPoster,
+      leagueBanner: enrich.leagueBanner,
     } : undefined,
     _sources: m.sources,
   } as SportMatch;
@@ -327,21 +355,34 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
 
       // Drop matches confirmed finished by any source
       const normStr = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
+
+      // Helper: check a home|away pair (in both orders) against finishedPairs
+      const isPairFinished = (h: string, a: string) =>
+        finishedPairs.has(`${normStr(h)}|${normStr(a)}`);
+
+      // Extract team names from a title using both "vs" and " - " separators
+      const splitTeams = (title: string): [string, string] | null => {
+        const vsParts = title.split(/\s+vs\.?\s+/i);
+        if (vsParts.length >= 2) return [vsParts[0].trim(), vsParts.slice(1).join(' vs ').trim()];
+        const dashIdx = title.indexOf(' - ');
+        if (dashIdx !== -1) {
+          const left  = title.slice(0, dashIdx).trim();
+          const right = title.slice(dashIdx + 3).trim();
+          if (left && right && !/\b20\d{2}\b/.test(left) && !/\b20\d{2}\b/.test(right)) {
+            return [left, right];
+          }
+        }
+        return null;
+      };
+
       const liveFiltered = probeResults.filter(r => {
         if (!r.hasFeed) return false;
-        const m = r.m;
-        const title = m.title ?? '';
-        if (/\bvs\.?\b/i.test(title)) {
-          // Team-vs-team: check the pair set
-          const parts = title.split(/\s+vs\.?\s+/i);
-          if (parts.length >= 2) {
-            const h = normStr(parts[0].trim());
-            const a = normStr(parts.slice(1).join(' vs ').trim());
-            if (finishedPairs.has(`${h}|${a}`)) return false;
-          }
+        const title = r.m.title ?? '';
+        const teams = splitTeams(title);
+        if (teams) {
+          if (isPairFinished(teams[0], teams[1])) return false;
         } else if (title) {
-          // Single-name event (NASCAR race, UFC card, etc.): check if the
-          // normalised title contains any finished event title as a substring
+          // Single-name event (NASCAR race, UFC card, etc.)
           const t = normStr(title);
           for (const ft of finishedTitles) {
             if (t.includes(ft) || ft.includes(t)) return false;
@@ -392,15 +433,14 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
         if (liveIds.has(m.id)) continue;
         if (m.date && m.date < now) continue; // past kick-off and not live → ended
 
+        // Always-on broadcast channels belong in liveMatches only, not upcoming
+        if (isChannelEntry(m)) continue;
+
         // Secondary check: any API says this specific match is finished today
         const title = m.title ?? '';
-        if (/\bvs\.?\b/i.test(title)) {
-          const parts = title.split(/\s+vs\.?\s+/i);
-          if (parts.length >= 2) {
-            const h = normStr(parts[0].trim());
-            const a = normStr(parts.slice(1).join(' vs ').trim());
-            if (finishedPairs.has(`${h}|${a}`)) continue;
-          }
+        const teams = splitTeams(title);
+        if (teams) {
+          if (isPairFinished(teams[0], teams[1])) continue;
         } else if (title) {
           const t = normStr(title);
           let done = false;
@@ -568,11 +608,12 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
   const getSectionMatches = (sectionId: string): SportMatch[] => {
     const raw = sectionId === 'live' ? liveMatches : (bySport[sectionId.toLowerCase()] ?? []);
     return raw.map(applyUpdate).filter(m => {
-      // Drop cards that would render completely blank — no poster, no team badges, no league banner
+      // Drop cards that would render completely blank — no poster, no badges, no artwork
       const hasVisual =
         m.poster ||
         m.tsdb?.homeBadge ||
         m.tsdb?.awayBadge ||
+        m.tsdb?.eventPoster ||
         m.tsdb?.leagueBanner ||
         m.teams?.home?.badge ||
         m.teams?.away?.badge;
