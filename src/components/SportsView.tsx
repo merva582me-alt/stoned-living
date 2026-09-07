@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { buildEnrichmentMap, fetchTodayFinishedPairs, type MatchEnrichment } from '../services/sportsdb';
-import { fetchAPIFinishedPairs } from '../services/espn';
+import { fetchAPIFinishedPairs, buildESPNImageMap } from '../services/espn';
 import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatchCarousel';
 import { fetchComments, postComment } from '../services/api';
 import { StrainDatabase } from '../data/strainDatabase';
@@ -456,17 +456,22 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
       // Reset progressive updates on each full reload
       setEnrichUpdates(new Map());
 
-      const enrichMap = await buildEnrichmentMap(
-        allForEnrich,
-        // onUpdate: called progressively as team-search badges arrive
-        (id, enrichment) => {
-          setEnrichUpdates(prev => {
-            const next = new Map(prev);
-            next.set(id, { ...prev.get(id), ...enrichment });
-            return next;
-          });
-        }
-      );
+      // Shared onUpdate callback — later calls (ESPN) naturally overwrite earlier
+      // ones (TSDB) since the spread always applies incoming enrichment on top.
+      const onUpdate = (id: string, enrichment: MatchEnrichment) => {
+        setEnrichUpdates(prev => {
+          const next = new Map(prev);
+          next.set(id, { ...prev.get(id), ...enrichment });
+          return next;
+        });
+      };
+
+      const enrichMap = await buildEnrichmentMap(allForEnrich, onUpdate);
+
+      // ESPN image enrichment — runs after TSDB so ESPN logos/posters overwrite
+      // TSDB images (ESPN CDN quality is higher). Fire-and-forget: we await it
+      // but it updates the UI progressively via onUpdate callbacks above.
+      buildESPNImageMap(allForEnrich, onUpdate).catch(() => { /* ignore */ });
 
       // ── 3. Build live SportMatch list ─────────────────────────────────────
       // Include always-on channels from allRaw (date=0, no opponent, has sources)

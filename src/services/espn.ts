@@ -1,14 +1,18 @@
 /**
- * ESPN / MLB / NHL finished-match detection
+ * ESPN / MLB / NHL finished-match detection  +  ESPN image enrichment
  *
- * Each scoreboard API returns today's games with a status field.
- * We extract every game that is confirmed "final/finished" and return
- * them as a Set of normalised "home|away" pair strings — the same
- * format used by fetchTodayFinishedPairs() in sportsdb.ts.
+ * Part 1 (original): Each scoreboard API returns today's games with a status
+ * field. We extract every game that is confirmed "final/finished" and return
+ * them as a Set of normalised "home|away" pair strings — the same format used
+ * by fetchTodayFinishedPairs() in sportsdb.ts.
  *
- * The two sets are merged in SportsView so any match confirmed finished
- * by either source is dropped from the live list.
+ * Part 2 (new): The ESPN scoreboard also returns event images and team logos.
+ * buildESPNImageMap() re-uses the same scoreboard responses (separate cache) to
+ * produce a MatchEnrichment map — covering UFC, boxing, NASCAR, F1, NFL, NBA,
+ * soccer, etc. — with real event posters and team logos from ESPN's CDN.
  */
+
+import type { MatchEnrichment } from './sportsdb';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -95,12 +99,22 @@ const ESPN_SLUGS = [
 
 interface ESPNCompetitor {
   homeAway: 'home' | 'away';
-  team: { displayName: string };
+  team: {
+    displayName: string;
+    logo?: string;         // team logo URL (e.g. https://a.espncdn.com/i/teamlogos/...)
+  };
+}
+
+interface ESPNImage {
+  url:   string;
+  type?: string;  // "thumbnail" | "banner" | "default" | etc.
 }
 
 interface ESPNEvent {
-  name?: string;       // full event name, e.g. "NASCAR Cup Series at Daytona"
-  shortName?: string;  // abbreviated name
+  id?:        string;
+  name?:      string;       // full event name, e.g. "NASCAR Cup Series at Daytona"
+  shortName?: string;       // abbreviated name
+  images?:    ESPNImage[];  // event poster/thumbnail images
   competitions: Array<{
     competitors: ESPNCompetitor[];
     status: {
@@ -115,18 +129,40 @@ interface ESPNScoreboard {
   events?: ESPNEvent[];
 }
 
+// ── Image cache — separate from the finished-match cache ─────────────────────
+
+interface ESPNImageData {
+  events: ESPNEvent[];
+}
+
+const espnImageCache = new Map<string, { data: ESPNImageData; fetchedAt: number }>();
+
+async function fetchESPNSlugRaw(slug: string): Promise<ESPNImageData> {
+  const cached = espnImageCache.get(slug);
+  if (cached && Date.now() - cached.fetchedAt < TTL) return cached.data;
+
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/${slug}/scoreboard`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+    );
+    if (!res.ok) return { events: [] };
+    const data = await res.json() as ESPNScoreboard;
+    const result: ESPNImageData = { events: data.events ?? [] };
+    espnImageCache.set(slug, { data: result, fetchedAt: Date.now() });
+    return result;
+  } catch {
+    return { events: [] };
+  }
+}
+
 async function fetchESPNSlug(slug: string): Promise<FinishedSets> {
   const pairs  = new Set<string>();
   const titles = new Set<string>();
   try {
-    const res = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/${slug}/scoreboard`,
-      // User-Agent is required — ESPN blocks requests without it
-      { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
-    );
-    if (!res.ok) return { pairs, titles };
-    const data = await res.json() as ESPNScoreboard;
-    for (const event of data.events ?? []) {
+    // Reuse cached raw data if available, otherwise fetch
+    const { events } = await fetchESPNSlugRaw(slug);
+    for (const event of events) {
       for (const comp of event.competitions ?? []) {
         if (!comp.status?.type?.name?.includes('FINAL')) continue;
 
@@ -251,6 +287,125 @@ async function fetchNHLFinished(): Promise<Set<string>> {
   nhlCache = finished;
   nhlFetchedAt = now;
   return finished;
+}
+
+// ---------------------------------------------------------------------------
+// ESPN image enrichment — extract event posters + team logos from scoreboard
+// ---------------------------------------------------------------------------
+
+type EnrichInput = Array<{ id: string; title: string; category?: string }>;
+type OnUpdate    = (id: string, enrichment: MatchEnrichment) => void;
+
+/** Pick the best image URL from an ESPN images array.
+ *  Prefers "thumbnail" type; falls back to the first available URL. */
+function pickESPNImage(images: ESPNImage[] | undefined): string {
+  if (!images?.length) return '';
+  const thumb = images.find(img => img.type === 'thumbnail');
+  return (thumb ?? images[0]).url;
+}
+
+/** Fuzzy title match — check if the ESPN event name overlaps enough
+ *  with the streamed.pk match title to be considered the same event. */
+function titleMatches(espnName: string, matchTitle: string): boolean {
+  const a = norm(espnName);
+  const b = norm(matchTitle);
+  if (!a || !b) return false;
+  // Exact match
+  if (a === b) return true;
+  // One contains the other
+  if (a.includes(b) || b.includes(a)) return true;
+  // Share at least 3 consecutive words
+  const wordsA = a.split(' ');
+  const wordsB = new Set(b.split(' '));
+  let run = 0;
+  for (const w of wordsA) {
+    if (wordsB.has(w) && w.length > 2) { run++; if (run >= 3) return true; }
+    else run = 0;
+  }
+  return false;
+}
+
+/**
+ * buildESPNImageMap — extract event posters and team logos from ESPN scoreboard.
+ *
+ * Runs after TSDB enrichment so ESPN images overwrite TSDB images (ESPN CDN
+ * quality is higher). Returns a Map<matchId, MatchEnrichment> and also calls
+ * onUpdate progressively per slug.
+ */
+export async function buildESPNImageMap(
+  matches: EnrichInput,
+  onUpdate: OnUpdate
+): Promise<Map<string, MatchEnrichment>> {
+  const result = new Map<string, MatchEnrichment>();
+  if (!matches.length) return result;
+
+  // Fetch all slugs in parallel — fetchESPNSlugRaw uses its own cache so
+  // this does not double-hit the network when fetchESPNFinished ran first.
+  const slugResults = await Promise.allSettled(
+    ESPN_SLUGS.map(async slug => ({ slug, ...(await fetchESPNSlugRaw(slug)) }))
+  );
+
+  for (const settled of slugResults) {
+    if (settled.status !== 'fulfilled') continue;
+    const { events } = settled.value;
+
+    for (const event of events) {
+      // Pick the best image for this event (works for both single-name and team events)
+      const eventImage = pickESPNImage(event.images);
+
+      for (const comp of event.competitions ?? []) {
+        const home = comp.competitors.find(c => c.homeAway === 'home');
+        const away = comp.competitors.find(c => c.homeAway === 'away');
+
+        const homeName  = home?.team.displayName ?? '';
+        const awayName  = away?.team.displayName ?? '';
+        const homeLogo  = home?.team.logo ?? '';
+        const awayLogo  = away?.team.logo ?? '';
+        const isTeamVs  = !!(homeName && awayName);
+
+        for (const match of matches) {
+          let enrichment: MatchEnrichment | null = null;
+
+          if (isTeamVs) {
+            // Team-vs-team match: match by checking both team names appear in title
+            const mNorm = norm(match.title);
+            const hNorm = norm(homeName);
+            const aNorm = norm(awayName);
+            if (
+              mNorm.includes(hNorm) || mNorm.includes(aNorm) ||
+              hNorm.includes(norm(match.title.split(/\s+vs\.?\s+/i)[0] ?? '')) ||
+              aNorm.includes(norm(match.title.split(/\s+vs\.?\s+/i).slice(-1)[0] ?? ''))
+            ) {
+              if (homeLogo || awayLogo || eventImage) {
+                enrichment = {
+                  ...(homeLogo  ? { homeBadge: homeLogo }   : {}),
+                  ...(awayLogo  ? { awayBadge: awayLogo }   : {}),
+                  ...(eventImage ? { eventPoster: eventImage } : {}),
+                };
+              }
+            }
+          } else {
+            // Single-name event (racing, MMA, boxing): match by title similarity
+            const espnName = event.name ?? event.shortName ?? '';
+            if (espnName && titleMatches(espnName, match.title)) {
+              if (eventImage) {
+                enrichment = { eventPoster: eventImage };
+              }
+            }
+          }
+
+          if (enrichment) {
+            const existing = result.get(match.id) ?? {};
+            const merged   = { ...existing, ...enrichment };
+            result.set(match.id, merged);
+            onUpdate(match.id, enrichment);
+          }
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
