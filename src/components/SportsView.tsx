@@ -160,12 +160,24 @@ function isChannelEntry(m: StreamedMatch): boolean {
 }
 
 /** Trust streamed.pk — if it came from the /live endpoint, it's live.
- *  Also treat always-on broadcast channels (no opponent, has sources) as live. */
+ *  Also treat always-on broadcast channels (no opponent, has sources) as live.
+ *  Opponent detection must cover BOTH "vs" and " - " separators — streamed.pk
+ *  uses both formats for team matches (e.g. "Detroit Lions - New Orleans Saints").
+ *  Without the dash check, dash-format allData entries look like channels and
+ *  get incorrectly marked live. */
 function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
   if (fromLiveEndpoint) return true;
-  // Channels like "Fox Cricket", "Tennis Channel" etc. have no "vs" opponent
-  // and always have an active stream — mark them live regardless of endpoint.
-  const hasOpponent = /\bvs\.?\b/i.test(m.title);
+  // A match has an opponent if it contains "vs" OR a " - " that isn't part of
+  // a year-prefixed event title (same heuristic as splitTeams).
+  const hasVs   = /\bvs\.?\b/i.test(m.title);
+  const dashIdx = m.title.indexOf(' - ');
+  const hasDash = dashIdx !== -1 && (() => {
+    const left  = m.title.slice(0, dashIdx).trim();
+    const right = m.title.slice(dashIdx + 3).trim();
+    return left && right && !/\b20\d{2}\b/.test(left) && !/\b20\d{2}\b/.test(right);
+  })();
+  const hasOpponent = hasVs || hasDash;
+  // Only channels (no opponent, has active sources) get a live flag from allData
   if (!hasOpponent && m.sources?.length > 0) return true;
   return false;
 }
@@ -325,15 +337,18 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
       const sportsList: StreamedSport[] = sportsData ?? [];
       // Upcoming: show everything streamed.pk provides, untouched
       const allRaw: StreamedMatch[] = (allData ?? []).filter(m => !isJunkEntry(m));
-      // Live: only keep matches that have at least one source listed and whose
-      // scheduled start time is not more than 4 hours in the past (a stale-feed
-      // guard — no real match runs longer than that).
+      // Live: only keep matches that have at least one source listed.
+      // Apply a 4-hour age gate to real match entries (stale-feed guard).
+      // Channels (always-on) are exempt — their date is meaningless.
       const MAX_LIVE_AGE_MS = 4 * 60 * 60 * 1000;
-      const liveRaw: StreamedMatch[] = (liveData ?? []).filter(m =>
-        !isJunkEntry(m) &&
-        m.sources?.length > 0 &&
-        (!m.date || Date.now() - m.date < MAX_LIVE_AGE_MS)
-      );
+      const nowMs = Date.now();
+      const liveRaw: StreamedMatch[] = (liveData ?? []).filter(m => {
+        if (isJunkEntry(m)) return false;
+        if (!m.sources?.length) return false;
+        // Always-on channels have no real start time — never age them out
+        if (isChannelEntry(m)) return true;
+        return !m.date || nowMs - m.date < MAX_LIVE_AGE_MS;
+      });
 
       setSports(sportsList);
 
@@ -356,10 +371,6 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
       // Drop matches confirmed finished by any source
       const normStr = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
 
-      // Helper: check a home|away pair (in both orders) against finishedPairs
-      const isPairFinished = (h: string, a: string) =>
-        finishedPairs.has(`${normStr(h)}|${normStr(a)}`);
-
       // Extract team names from a title using both "vs" and " - " separators
       const splitTeams = (title: string): [string, string] | null => {
         const vsParts = title.split(/\s+vs\.?\s+/i);
@@ -373,6 +384,33 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
           }
         }
         return null;
+      };
+
+      /**
+       * Check whether a home|away pair is in the finished set.
+       * Uses exact normalised match first, then a fuzzy word-overlap fallback
+       * to handle name variants (e.g. "LA Rams" vs "Los Angeles Rams"):
+       * a pair is considered a match when every word in the shorter name
+       * appears in the longer name for both teams.
+       */
+      const isPairFinished = (h: string, a: string): boolean => {
+        const nh = normStr(h);
+        const na = normStr(a);
+        // Fast path: exact match
+        if (finishedPairs.has(`${nh}|${na}`)) return true;
+        // Fuzzy path: iterate pairs and check word containment both ways
+        for (const pair of finishedPairs) {
+          const [ph, pa] = pair.split('|');
+          const wordsMatch = (src: string, tgt: string) => {
+            if (!src || !tgt) return false;
+            // Every word of the shorter must be present in the longer
+            const shorter = src.length <= tgt.length ? src : tgt;
+            const longer  = src.length <= tgt.length ? tgt : src;
+            return shorter.split(' ').every(w => w.length > 2 && longer.includes(w));
+          };
+          if (wordsMatch(nh, ph) && wordsMatch(na, pa)) return true;
+        }
+        return false;
       };
 
       const liveFiltered = probeResults.filter(r => {
@@ -607,18 +645,7 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
 
   const getSectionMatches = (sectionId: string): SportMatch[] => {
     const raw = sectionId === 'live' ? liveMatches : (bySport[sectionId.toLowerCase()] ?? []);
-    return raw.map(applyUpdate).filter(m => {
-      // Drop cards that would render completely blank — no poster, no badges, no artwork
-      const hasVisual =
-        m.poster ||
-        m.tsdb?.homeBadge ||
-        m.tsdb?.awayBadge ||
-        m.tsdb?.eventPoster ||
-        m.tsdb?.leagueBanner ||
-        m.teams?.home?.badge ||
-        m.teams?.away?.badge;
-      return !!hasVisual;
-    });
+    return raw.map(applyUpdate);
   };
 
   // ── Player view ──────────────────────────────────────────────────────────
