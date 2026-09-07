@@ -131,7 +131,7 @@ const JUNK_PATTERNS = [
  * Keywords that identify a broadcaster/channel name rather than a team.
  * Used to catch "NFL vs RedZone", "Fox vs ESPN", etc.
  */
-const CHANNEL_KEYWORDS = /\b(redzone|red\s+zone|channel|network|tv|espn|fox\s+sports|cbs\s+sports|nbc\s+sports|sky\s+sports|bein\s+sports|dazn|peacock|paramount)\b/i;
+const CHANNEL_KEYWORDS = /\b(channel|network|tv|espn|fox\s+sports|cbs\s+sports|nbc\s+sports|sky\s+sports|bein\s+sports|dazn|peacock|paramount)\b/i;
 
 function isJunkEntry(m: StreamedMatch): boolean {
   const hasOpponent = /\bvs\.?\b/i.test(m.title);
@@ -150,13 +150,18 @@ function isJunkEntry(m: StreamedMatch): boolean {
 }
 
 /**
- * Returns true for always-on broadcast channels (no opponent, channel-like
- * name) that should appear in liveMatches but never in the upcoming bySport map.
+ * Returns true for always-on broadcast channels that should appear in
+ * liveMatches but never in the upcoming bySport map.
+ * Detection: no opponent (no "vs" or team-style " - "), AND date <= 0
+ * (no real scheduled time — the definitive always-on channel signal).
+ * "Fox Cricket", "Willow Cricket", "Tennis Channel", "Rally TV" etc.
+ * all have date=0 or negative. Scheduled events always have a real date.
  */
 function isChannelEntry(m: StreamedMatch): boolean {
   if (/\bvs\.?\b/i.test(m.title)) return false; // has opponent → real match
   if (/ - /.test(m.title)) return false;          // dash separator → team match or event
-  return CHANNEL_KEYWORDS.test(m.title) || /\bchannel\b/i.test(m.title);
+  if (m.date > 0) return false;                   // has a real scheduled time → not a channel
+  return m.sources?.length > 0;                   // no date + has stream = always-on channel
 }
 
 /** Trust streamed.pk — if it came from the /live endpoint, it's live.
@@ -177,7 +182,7 @@ function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
     const r = m.title.slice(di + 3).trim();
     return !!(l && r && !/\b20\d{2}\b/.test(l) && !/\b20\d{2}\b/.test(r));
   })();
-  if (!hasOpponent && m.date === 0 && m.sources?.length > 0) return true;
+  if (!hasOpponent && m.date <= 0 && m.sources?.length > 0) return true;
   return false;
 }
 
@@ -459,7 +464,7 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
       // — they never appear in liveData but should show in the Live section.
       const liveIds = new Set(liveFiltered.map(m => m.id));
       const channelsFromAll = allRaw.filter(m =>
-        !liveIds.has(m.id) && isChannelEntry(m) && m.date === 0 && m.sources?.length > 0
+        !liveIds.has(m.id) && isChannelEntry(m) && m.date <= 0 && m.sources?.length > 0
       );
       const liveMapped: SportMatch[] = [
         ...liveFiltered.map(m => toSportMatch(m, true,  enrichMap.get(m.id))),
