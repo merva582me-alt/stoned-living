@@ -3,10 +3,14 @@ import Hls from 'hls.js';
 import {
   Trophy, Loader2, AlertCircle, RefreshCw, Radio, Flame, Calendar,
   ChevronLeft, Play, SlidersHorizontal, Grid, Layers, Clock, CircleDot,
-  Zap, Target, Dumbbell, Tv2, LucideIcon,
+  Zap, Target, Dumbbell, Tv2, LucideIcon, Cannabis, MessageSquare, Info, Send,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { buildEnrichmentMap, fetchTodayFinishedPairs, type MatchEnrichment } from '../services/sportsdb';
 import { SportMatchCarousel, SportMatchTile, type SportMatch } from './SportMatchCarousel';
+import { fetchComments, postComment } from '../services/api';
+import { StrainDatabase } from '../data/strainDatabase';
+import type { Comment } from '../types';
 
 // ---------------------------------------------------------------------------
 // streamed.pk types
@@ -72,6 +76,13 @@ interface SportSectionConfig {
 interface SportsViewProps {
   user?: any;
   onPlayMedia?: (item: any) => void;
+}
+
+// Stable numeric hash from a string (for comment mediaId)
+function strHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) { h = (Math.imul(31, h) + s.charCodeAt(i)) | 0; }
+  return Math.abs(h);
 }
 
 // ---------------------------------------------------------------------------
@@ -223,7 +234,7 @@ const StreamPlayer: React.FC<{ url: string }> = ({ url }) => {
 // Main component
 // ---------------------------------------------------------------------------
 
-export const SportsView: React.FC<SportsViewProps> = () => {
+export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
   const [sports, setSports]               = useState<StreamedSport[]>([]);
   const [liveMatches, setLiveMatches]     = useState<SportMatch[]>([]);
   const [bySport, setBySport]             = useState<Record<string, SportMatch[]>>({});
@@ -247,6 +258,12 @@ export const SportsView: React.FC<SportsViewProps> = () => {
   const [streamLoading, setStreamLoading] = useState(false);
   const [streamError, setStreamError]     = useState(false);
   const [streamIndex, setStreamIndex]     = useState(0);
+
+  // Player tabs + comments
+  const [playerTab, setPlayerTab]           = useState<'info' | 'comments'>('info');
+  const [comments, setComments]             = useState<Comment[]>([]);
+  const [commentText, setCommentText]       = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -456,6 +473,12 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     setStreamIndex(0);
     setStreamError(false);
     setStreamLoading(true);
+    // Reset player UI state for new match
+    setPlayerTab('info');
+    setComments([]);
+    setCommentText('');
+    // Pre-load comments in background
+    fetchComments('movie', strHash(match.id)).then(setComments);
 
     const sources = match._sources;
 
@@ -486,7 +509,14 @@ export const SportsView: React.FC<SportsViewProps> = () => {
     }
   }, []);
 
-  const closePlayer = () => { setActiveMatch(null); setStreams([]); setStreamError(false); };
+  const closePlayer = () => {
+    setActiveMatch(null);
+    setStreams([]);
+    setStreamError(false);
+    setPlayerTab('info');
+    setComments([]);
+    setCommentText('');
+  };
 
   const getSectionMatches = (sectionId: string): SportMatch[] => {
     const raw = sectionId === 'live' ? liveMatches : (bySport[sectionId.toLowerCase()] ?? []);
@@ -507,75 +537,430 @@ export const SportsView: React.FC<SportsViewProps> = () => {
 
   if (activeMatch) {
     const cur = streams[streamIndex];
+    const matchId = strHash(activeMatch.id);
+
+    // Split title into team names for badge display
+    const titleParts = activeMatch.title.split(/\s+vs\.?\s+/i);
+    const teamA = titleParts[0]?.trim() ?? activeMatch.title;
+    const teamB = titleParts.length >= 2 ? titleParts.slice(1).join(' vs ').trim() : '';
+
+    const homeBadge  = activeMatch.tsdb?.homeBadge;
+    const awayBadge  = activeMatch.tsdb?.awayBadge;
+    const hasScore   = activeMatch.tsdb?.homeScore !== undefined && activeMatch.tsdb?.awayScore !== undefined;
+    const leagueName = activeMatch.tsdb?.leagueName;
+    const progress   = activeMatch.tsdb?.progress;
+
+    // Strain pairing — use match title + action vibe
+    const strainPairing = StrainDatabase.getPairingForMedia({
+      id: matchId,
+      title: activeMatch.title,
+      genre_ids: [28], // action vibe for sports
+    });
+    const couchlockScore = strainPairing.couchlock_score || 90;
+
+    const renderStrainCard = () => (
+      <div className="bg-gradient-to-br from-emerald-950/80 via-[#0a140f] to-green-950/80 border border-emerald-500/30 p-3.5 sm:p-4 rounded-2xl space-y-2.5 shadow-lg">
+        <div className="flex items-center justify-between flex-wrap gap-1">
+          <div className="flex items-center gap-1.5">
+            <Cannabis className="w-4 h-4 text-emerald-400 animate-pulse shrink-0" />
+            <span className="text-[11px] font-black text-emerald-300 uppercase tracking-wider">
+              Recommended Strain Pairing
+            </span>
+          </div>
+          {strainPairing.chill_vibe && (
+            <span className="text-[9px] font-bold text-emerald-300 bg-emerald-900/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+              ✨ {strainPairing.chill_vibe}
+            </span>
+          )}
+        </div>
+        <div className="bg-black/50 border border-emerald-500/20 p-2.5 rounded-xl space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-xs sm:text-sm font-extrabold text-white">{strainPairing.strain_name}</span>
+              {strainPairing.strain_type && (
+                <span className="text-[9px] font-mono font-bold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-1.5 py-0.5 rounded">
+                  {strainPairing.strain_type}
+                </span>
+              )}
+            </div>
+            {strainPairing.thc && (
+              <span className="text-[10px] font-black text-emerald-400 bg-emerald-950 border border-emerald-500/40 px-2 py-0.5 rounded-md">
+                ⚡ {strainPairing.thc.includes('THC') ? strainPairing.thc : `${strainPairing.thc} THC`}
+              </span>
+            )}
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between items-center text-[9px] font-mono">
+              <span className="text-zinc-400">Couchlock Synergy Match</span>
+              <span className="text-amber-400 font-bold">{couchlockScore}%</span>
+            </div>
+            <div className="w-full bg-zinc-900 rounded-full h-1.5 overflow-hidden border border-emerald-900/40">
+              <div
+                className="bg-gradient-to-r from-emerald-500 via-green-400 to-amber-400 h-full rounded-full transition-all duration-500"
+                style={{ width: `${couchlockScore}%` }}
+              />
+            </div>
+          </div>
+        </div>
+        {(strainPairing.flavor || strainPairing.terpenes) && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[10px]">
+            {strainPairing.flavor && (
+              <div className="bg-black/30 border border-emerald-900/40 p-2 rounded-lg">
+                <span className="text-zinc-400 font-bold block text-[9px] uppercase">Flavor Profile</span>
+                <span className="text-emerald-200 font-medium block truncate">🍓 {strainPairing.flavor}</span>
+              </div>
+            )}
+            {strainPairing.terpenes && (
+              <div className="bg-black/30 border border-emerald-900/40 p-2 rounded-lg">
+                <span className="text-zinc-400 font-bold block text-[9px] uppercase">Terpene Spectrum</span>
+                <span className="text-emerald-300 font-mono block truncate">🧪 {strainPairing.terpenes}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {strainPairing.sommelier_note && (
+          <div className="bg-black/40 p-2.5 rounded-xl border border-emerald-500/15">
+            <p className="text-[10px] text-zinc-300 leading-relaxed italic">"{strainPairing.sommelier_note}"</p>
+          </div>
+        )}
+      </div>
+    );
+
+    const handleCommentSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!commentText.trim()) return;
+      setSubmittingComment(true);
+      const activeUsername = user?.username || (user?.email ? user.email.split('@')[0] : 'Stoned Streamer');
+      const activeAvatar = user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80';
+      const result = await postComment({
+        mediaId: matchId,
+        mediaType: 'movie',
+        text: commentText,
+        username: activeUsername,
+        userAvatar: activeAvatar,
+      });
+      if (result?.id) {
+        setComments(prev => [result, ...prev]);
+        setCommentText('');
+        toast.success('Review posted 🌿', { duration: 2000 });
+      } else {
+        toast.error('Failed to post review. Try again.');
+      }
+      setSubmittingComment(false);
+    };
+
     return (
-      <div className="w-full max-w-[1920px] mx-auto py-6 px-4 sm:px-6 lg:px-10 pb-24 lg:pb-10 space-y-4">
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={closePlayer}
-            className="flex items-center gap-1.5 bg-emerald-950/60 hover:bg-emerald-900/80 border border-emerald-500/30 text-emerald-300 font-bold text-xs px-3.5 py-2 rounded-xl transition cursor-pointer shrink-0">
-            <ChevronLeft className="w-4 h-4" /> Back to Sports
-          </button>
-          <div className="flex items-center gap-2 min-w-0">
-            {activeMatch.is_live && (
-              <span className="flex items-center gap-1 text-[9px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-full uppercase shrink-0">
-                <Radio className="w-2.5 h-2.5 animate-pulse" /> Live
-              </span>
-            )}
-            <h1 className="text-sm sm:text-base font-black text-white truncate">{activeMatch.title}</h1>
+      <div className="min-h-screen bg-[#060907]">
+        <div className="mx-auto w-full max-w-[1920px] px-2 sm:px-6 lg:px-8 py-3 sm:py-6 pb-12 sm:pb-16">
+
+          {/* ── Top Control Bar ─────────────────────────────────────────────── */}
+          <div className="flex items-center gap-2 sm:gap-4 mb-3 sm:mb-4 bg-[#0d1310]/90 border border-emerald-500/30 p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl backdrop-blur-md">
+            <button
+              onClick={closePlayer}
+              className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-emerald-950/60 hover:bg-emerald-800/80 text-emerald-300 font-semibold text-[11px] sm:text-xs border border-emerald-500/40 transition-all shrink-0 cursor-pointer"
+            >
+              ← <span className="hidden xs:inline">Back to Sports</span><span className="xs:hidden">Back</span>
+            </button>
+            <div className="min-w-0 flex-1 flex items-center gap-2">
+              {activeMatch.is_live && (
+                <span className="flex items-center gap-1 text-[9px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-full uppercase shrink-0">
+                  <Radio className="w-2.5 h-2.5 animate-pulse" /> Live
+                </span>
+              )}
+              <h1 className="text-xs sm:text-base md:text-lg font-black text-white leading-tight truncate">
+                {activeMatch.title}
+              </h1>
+              {leagueName && (
+                <span className="shrink-0 text-emerald-400 font-mono text-[10px] sm:text-xs bg-emerald-500/20 px-1.5 sm:px-2 py-0.5 rounded border border-emerald-500/30 whitespace-nowrap hidden sm:inline">
+                  {leagueName}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* ── Two-column grid (8 + 4) on desktop, stacked on mobile ────────── */}
+          <div className="lg:grid lg:grid-cols-12 lg:gap-6 lg:items-start">
+
+            {/* LEFT: video + switcher + tabs */}
+            <div className="lg:col-span-8 space-y-4 min-w-0">
+
+              {/* Stream switcher bar */}
+              {streams.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Stream:</span>
+                  {streams.map((s, i) => (
+                    <button key={`${s.source}-${s.streamNo}`} onClick={() => setStreamIndex(i)}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                        streamIndex === i
+                          ? 'bg-emerald-500 text-black border-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                          : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/60 hover:text-emerald-300'
+                      }`}>
+                      {s.language || `#${s.streamNo}`}{s.hd ? ' HD' : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Video container */}
+              <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl overflow-hidden border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+                {streamLoading && (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
+                    <span className="text-xs font-bold text-emerald-300 tracking-widest uppercase">Loading Stream…</span>
+                  </div>
+                )}
+                {streamError && !streamLoading && (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-4">
+                    <AlertCircle className="w-10 h-10 text-rose-400" />
+                    <p className="text-sm font-bold text-white">Stream unavailable</p>
+                    <p className="text-xs text-zinc-400">This event may not have started yet — check back closer to kick-off</p>
+                    <button onClick={() => openMatch(activeMatch)}
+                      className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer">
+                      <RefreshCw className="w-3.5 h-3.5" /> Retry
+                    </button>
+                  </div>
+                )}
+                {!streamLoading && !streamError && cur && (
+                  <StreamPlayer key={cur.embedUrl} url={cur.embedUrl} />
+                )}
+              </div>
+
+              {/* ── Below-video Tabs panel ─────────────────────────────────── */}
+              <div className="bg-[#0d1310] border border-emerald-500/20 rounded-2xl sm:rounded-3xl p-3.5 sm:p-6">
+                {/* Tab bar */}
+                <div className="flex items-center gap-2 sm:gap-4 border-b border-emerald-900/40 pb-3 sm:pb-4 mb-4 sm:mb-6 overflow-x-auto">
+                  <button
+                    onClick={() => setPlayerTab('info')}
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs flex items-center gap-1.5 sm:gap-2 transition shrink-0 ${
+                      playerTab === 'info'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Match Info
+                  </button>
+                  <button
+                    onClick={() => {
+                      setPlayerTab('comments');
+                      fetchComments('movie', matchId).then(setComments);
+                    }}
+                    className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl font-bold text-xs flex items-center gap-1.5 sm:gap-2 transition shrink-0 ${
+                      playerTab === 'comments'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.3)]'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Stash Community ({comments.length})
+                  </button>
+                </div>
+
+                {/* Match Info tab */}
+                {playerTab === 'info' && (
+                  <div className="space-y-5">
+                    {/* Team badges + score */}
+                    <div className="flex items-center justify-center gap-4 sm:gap-8 py-4">
+                      {/* Home team */}
+                      <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
+                        {homeBadge ? (
+                          <img src={homeBadge} alt={teamA}
+                            className="w-14 h-14 sm:w-20 sm:h-20 object-contain drop-shadow-lg"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center">
+                            <Trophy className="w-7 h-7 text-emerald-500/50" />
+                          </div>
+                        )}
+                        <span className="text-xs sm:text-sm font-black text-white text-center line-clamp-2 leading-tight">{teamA}</span>
+                      </div>
+
+                      {/* Score / VS */}
+                      <div className="flex flex-col items-center gap-1 shrink-0">
+                        {hasScore ? (
+                          <>
+                            <span className="text-2xl sm:text-4xl font-black text-white tabular-nums">
+                              {activeMatch.tsdb!.homeScore} <span className="text-zinc-500">–</span> {activeMatch.tsdb!.awayScore}
+                            </span>
+                            {progress && (
+                              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase tracking-wide">
+                                {progress}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-xl sm:text-2xl font-black text-zinc-500">VS</span>
+                            {activeMatch.is_live && (
+                              <span className="flex items-center gap-1 text-[9px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full uppercase">
+                                <Radio className="w-2.5 h-2.5 animate-pulse" /> Live
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Away team */}
+                      <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
+                        {awayBadge ? (
+                          <img src={awayBadge} alt={teamB}
+                            className="w-14 h-14 sm:w-20 sm:h-20 object-contain drop-shadow-lg"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                        ) : (
+                          <div className="w-14 h-14 sm:w-20 sm:h-20 rounded-full bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center">
+                            <Trophy className="w-7 h-7 text-emerald-500/50" />
+                          </div>
+                        )}
+                        <span className="text-xs sm:text-sm font-black text-white text-center line-clamp-2 leading-tight">{teamB || activeMatch.title}</span>
+                      </div>
+                    </div>
+
+                    {/* Meta row */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {leagueName && (
+                        <span className="bg-emerald-950/60 border border-emerald-500/30 text-emerald-300 text-xs px-3 py-1 rounded-full font-medium">
+                          {leagueName}
+                        </span>
+                      )}
+                      <span className="bg-zinc-900/60 border border-zinc-700/60 text-zinc-300 text-xs px-3 py-1 rounded-full font-medium capitalize">
+                        {activeMatch.category}
+                      </span>
+                      {activeMatch.date > 0 && !activeMatch.is_live && (
+                        <span className="bg-zinc-900/60 border border-zinc-700/60 text-zinc-400 text-xs px-3 py-1 rounded-full font-medium font-mono">
+                          {new Date(activeMatch.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Mobile-only strain card */}
+                    <div className="lg:hidden">
+                      {renderStrainCard()}
+                    </div>
+                  </div>
+                )}
+
+                {/* Comments tab */}
+                {playerTab === 'comments' && (
+                  <div className="space-y-6">
+                    <form onSubmit={handleCommentSubmit} className="space-y-3 bg-black/40 border border-emerald-500/20 p-4 rounded-2xl">
+                      <span className="text-xs font-bold text-white block">Join the Session Discussion:</span>
+                      <textarea
+                        value={commentText}
+                        onChange={(e) => setCommentText(e.target.value)}
+                        placeholder="Share your thoughts on the match, strain pairing suggestions..."
+                        className="w-full bg-[#070b08] border border-emerald-500/30 rounded-xl p-3 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-400 min-h-[80px]"
+                      />
+                      <div className="flex justify-end">
+                        <button
+                          type="submit"
+                          disabled={submittingComment || !commentText.trim()}
+                          className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs px-5 py-2.5 rounded-xl transition disabled:opacity-40 cursor-pointer"
+                        >
+                          <Send className="w-3.5 h-3.5" /> {submittingComment ? 'Posting...' : 'Post Review'}
+                        </button>
+                      </div>
+                    </form>
+                    <div className="space-y-3">
+                      {comments.map((c) => (
+                        <div key={c.id} className="bg-[#090f0c] border border-emerald-950/80 p-3.5 sm:p-4 rounded-2xl space-y-2.5 overflow-hidden">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <img src={c.userAvatar} alt={c.username} className="w-7 h-7 sm:w-8 sm:h-8 rounded-full object-cover ring-1 ring-emerald-500/40 shrink-0" />
+                              <span className="font-bold text-xs sm:text-sm text-white truncate">{c.username}</span>
+                            </div>
+                            <span className="text-[10px] sm:text-xs text-zinc-500 shrink-0">{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed break-words whitespace-pre-wrap">{c.text}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* RIGHT SIDEBAR — desktop only */}
+            <div className="hidden lg:flex lg:flex-col lg:col-span-4 space-y-4 min-w-0 mt-0">
+
+              {/* Match Panel */}
+              <div className="bg-[#0c120e] border border-emerald-500/30 p-4 rounded-3xl shadow-xl space-y-4">
+                <div className="flex items-center justify-between border-b border-emerald-900/50 pb-3">
+                  <div className="flex items-center gap-2">
+                    {activeMatch.is_live && (
+                      <span className="flex items-center gap-1 text-[9px] font-bold text-rose-300 bg-rose-500/10 border border-rose-500/20 px-1.5 py-0.5 rounded-full uppercase">
+                        <Radio className="w-2.5 h-2.5 animate-pulse" /> Live
+                      </span>
+                    )}
+                    {leagueName && <span className="text-xs font-bold text-emerald-300">{leagueName}</span>}
+                  </div>
+                  <span className="text-[10px] font-medium text-zinc-500 capitalize">{activeMatch.category}</span>
+                </div>
+
+                {/* Team badges + score — large sidebar version */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
+                    {homeBadge ? (
+                      <img src={homeBadge} alt={teamA}
+                        className="w-16 h-16 object-contain drop-shadow-lg"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center">
+                        <Trophy className="w-7 h-7 text-emerald-500/40" />
+                      </div>
+                    )}
+                    <span className="text-[11px] font-black text-white text-center line-clamp-2 leading-tight">{teamA}</span>
+                  </div>
+
+                  <div className="flex flex-col items-center gap-1 shrink-0 px-1">
+                    {hasScore ? (
+                      <>
+                        <span className="text-3xl font-black text-white tabular-nums leading-none">
+                          {activeMatch.tsdb!.homeScore}
+                        </span>
+                        <span className="text-zinc-600 font-black text-sm">–</span>
+                        <span className="text-3xl font-black text-white tabular-nums leading-none">
+                          {activeMatch.tsdb!.awayScore}
+                        </span>
+                        {progress && (
+                          <span className="text-[9px] font-bold text-emerald-400 bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full mt-1 uppercase tracking-wide">
+                            {progress}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-lg font-black text-zinc-600">VS</span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col items-center gap-2 flex-1 min-w-0">
+                    {awayBadge ? (
+                      <img src={awayBadge} alt={teamB}
+                        className="w-16 h-16 object-contain drop-shadow-lg"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-emerald-950/60 border border-emerald-500/30 flex items-center justify-center">
+                        <Trophy className="w-7 h-7 text-emerald-500/40" />
+                      </div>
+                    )}
+                    <span className="text-[11px] font-black text-white text-center line-clamp-2 leading-tight">{teamB || activeMatch.title}</span>
+                  </div>
+                </div>
+
+                {/* Time if upcoming */}
+                {activeMatch.date > 0 && !activeMatch.is_live && (
+                  <div className="bg-black/40 border border-emerald-900/40 rounded-xl px-3 py-2 text-center">
+                    <span className="text-[10px] text-zinc-500 font-semibold block uppercase tracking-wider mb-0.5">Starts</span>
+                    <span className="text-xs font-mono font-bold text-emerald-300">
+                      {new Date(activeMatch.date).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Strain Pairing Card */}
+              {renderStrainCard()}
+            </div>
+
           </div>
         </div>
-
-        {streams.length > 1 && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Stream:</span>
-            {streams.map((s, i) => (
-              <button key={`${s.source}-${s.streamNo}`} onClick={() => setStreamIndex(i)}
-                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                  streamIndex === i
-                    ? 'bg-emerald-500 text-black border-emerald-400'
-                    : 'bg-black/60 text-zinc-400 border-zinc-700 hover:border-emerald-500/60 hover:text-emerald-300'
-                }`}>
-                {s.language || `#${s.streamNo}`}{s.hd ? ' HD' : ''}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.15)]">
-          {streamLoading && (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-3">
-              <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
-              <span className="text-xs font-bold text-emerald-300 tracking-widest uppercase">Loading Stream…</span>
-            </div>
-          )}
-          {streamError && !streamLoading && (
-            <div className="w-full h-full flex flex-col items-center justify-center gap-4">
-              <AlertCircle className="w-10 h-10 text-rose-400" />
-              <p className="text-sm font-bold text-white">Stream unavailable</p>
-              <p className="text-xs text-zinc-400">This event may not have started yet — check back closer to kick-off</p>
-              <button onClick={() => openMatch(activeMatch)}
-                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-black font-bold text-xs px-5 py-2.5 rounded-xl transition cursor-pointer">
-                <RefreshCw className="w-3.5 h-3.5" /> Retry
-              </button>
-            </div>
-          )}
-          {!streamLoading && !streamError && cur && (
-            <StreamPlayer key={cur.embedUrl} url={cur.embedUrl} />
-          )}
-        </div>
-
-        {/* Match info panel */}
-        {activeMatch.tsdb && (
-          <div className="flex items-center gap-4 bg-[#0b100c] border border-emerald-900/40 rounded-2xl px-5 py-3 flex-wrap">
-            {activeMatch.tsdb.leagueName && (
-              <span className="text-xs text-emerald-300 font-semibold">{activeMatch.tsdb.leagueName}</span>
-            )}
-            {(activeMatch.tsdb.homeScore !== undefined && activeMatch.tsdb.awayScore !== undefined) && (
-              <span className="text-white font-black text-sm">
-                {activeMatch.tsdb.homeScore} – {activeMatch.tsdb.awayScore}
-              </span>
-            )}
-          </div>
-        )}
       </div>
     );
   }
