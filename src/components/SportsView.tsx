@@ -160,25 +160,24 @@ function isChannelEntry(m: StreamedMatch): boolean {
 }
 
 /** Trust streamed.pk — if it came from the /live endpoint, it's live.
- *  Also treat always-on broadcast channels (no opponent, has sources) as live.
- *  Opponent detection must cover BOTH "vs" and " - " separators — streamed.pk
- *  uses both formats for team matches (e.g. "Detroit Lions - New Orleans Saints").
- *  Without the dash check, dash-format allData entries look like channels and
- *  get incorrectly marked live. */
+ *  For allData entries, only always-on broadcast channels get is_live=true.
+ *  Always-on channels have NO scheduled date (date === 0) and no opponent.
+ *  Scheduled single-name events (motorsport, fight series, tennis tournaments)
+ *  have a real future date and must NOT be marked live from allData. */
 function isActuallyLive(m: StreamedMatch, fromLiveEndpoint: boolean): boolean {
   if (fromLiveEndpoint) return true;
-  // A match has an opponent if it contains "vs" OR a " - " that isn't part of
-  // a year-prefixed event title (same heuristic as splitTeams).
-  const hasVs   = /\bvs\.?\b/i.test(m.title);
-  const dashIdx = m.title.indexOf(' - ');
-  const hasDash = dashIdx !== -1 && (() => {
-    const left  = m.title.slice(0, dashIdx).trim();
-    const right = m.title.slice(dashIdx + 3).trim();
-    return left && right && !/\b20\d{2}\b/.test(left) && !/\b20\d{2}\b/.test(right);
+  // Always-on channels: no opponent, no date (date===0), has a stream source.
+  // "Tennis Channel", "Fox Cricket", "NFL RedZone" etc. all have date=0.
+  // Scheduled events like "Formula 1 2026 - Spain GP" have a real future date
+  // and must stay as upcoming regardless of having sources.
+  const hasOpponent = /\bvs\.?\b/i.test(m.title) || (() => {
+    const di = m.title.indexOf(' - ');
+    if (di === -1) return false;
+    const l = m.title.slice(0, di).trim();
+    const r = m.title.slice(di + 3).trim();
+    return !!(l && r && !/\b20\d{2}\b/.test(l) && !/\b20\d{2}\b/.test(r));
   })();
-  const hasOpponent = hasVs || hasDash;
-  // Only channels (no opponent, has active sources) get a live flag from allData
-  if (!hasOpponent && m.sources?.length > 0) return true;
+  if (!hasOpponent && m.date === 0 && m.sources?.length > 0) return true;
   return false;
 }
 
@@ -456,22 +455,29 @@ export const SportsView: React.FC<SportsViewProps> = ({ user }) => {
       );
 
       // ── 3. Build live SportMatch list ─────────────────────────────────────
+      // Include always-on channels from allRaw (date=0, no opponent, has sources)
+      // — they never appear in liveData but should show in the Live section.
       const liveIds = new Set(liveFiltered.map(m => m.id));
-      const liveMapped: SportMatch[] = liveFiltered.map(m =>
-        toSportMatch(m, true, enrichMap.get(m.id))
+      const channelsFromAll = allRaw.filter(m =>
+        !liveIds.has(m.id) && isChannelEntry(m) && m.date === 0 && m.sources?.length > 0
       );
+      const liveMapped: SportMatch[] = [
+        ...liveFiltered.map(m => toSportMatch(m, true,  enrichMap.get(m.id))),
+        ...channelsFromAll.map(m => toSportMatch(m, true, enrichMap.get(m.id))),
+      ];
       setLiveMatches(liveMapped);
 
       // ── 4. Build per-sport upcoming map ───────────────────────────────────
       // Drop matches that are confirmed finished by TSDB or whose scheduled
       // time is in the past and weren't picked up by the live endpoint.
+      const channelIds = new Set(channelsFromAll.map(m => m.id));
       const now = Date.now();
       const sportMap: Record<string, SportMatch[]> = {};
       for (const m of allRaw) {
-        if (liveIds.has(m.id)) continue;
+        if (liveIds.has(m.id) || channelIds.has(m.id)) continue;
         if (m.date && m.date < now) continue; // past kick-off and not live → ended
 
-        // Always-on broadcast channels belong in liveMatches only, not upcoming
+        // Always-on broadcast channels are handled above — skip any that slipped through
         if (isChannelEntry(m)) continue;
 
         // Secondary check: any API says this specific match is finished today
