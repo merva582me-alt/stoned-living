@@ -128,12 +128,21 @@ const JUNK_PATTERNS = [
 ];
 
 /**
+ * Generic feed titles that duplicate a better-named entry for the same event.
+ * Exact case-insensitive match — drop these in favour of the specific listing.
+ */
+const DUPLICATE_TITLES = new Set([
+  'wwe sunday night', // duplicate of "Sunday Nights Main Event"
+]);
+
+/**
  * Keywords that identify a broadcaster/channel name rather than a team.
  * Used to catch "NFL vs RedZone", "Fox vs ESPN", etc.
  */
 const CHANNEL_KEYWORDS = /\b(channel|network|tv|espn|fox\s+sports|cbs\s+sports|nbc\s+sports|sky\s+sports|bein\s+sports|dazn|peacock|paramount)\b/i;
 
 function isJunkEntry(m: StreamedMatch): boolean {
+  if (DUPLICATE_TITLES.has(m.title.toLowerCase())) return true;
   const hasOpponent = /\bvs\.?\b/i.test(m.title);
   if (hasOpponent) {
     // Even with "vs", catch entries where one side is a broadcaster name
