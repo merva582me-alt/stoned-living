@@ -333,18 +333,11 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     // Inject <base> so all relative sub-resource URLs (JS, CSS, fetch) resolve to vidcore.org
     html = injectBaseTag(html);
 
-    // Raise the SSE scrape timeout from 10 s to 20 s so mobile (slower networks)
-    // gets enough time to receive the source URL from VidCore's streaming endpoint.
-    // Use a regex so whitespace/indentation variations in VidCore's source don't break the match.
-    html = html.replace(
-      /(\},\s*)10000(\);\s*\n[\s\S]{0,200}?evtSource\.addEventListener\(['"]start['"])/,
-      '$1' + '20000' + '$2'
-    );
-    // Fallback: also catch plain "10000" timeout values near SSE/EventSource patterns
-    html = html.replace(
-      /(EventSource|evtSource)[^;]{0,300}?setTimeout[^;]*?[,(]\s*10000\s*[)]/g,
-      (m) => m.replace('10000', '20000')
-    );
+    // ── Raise the SSE scrape timeout from 10 s to 30 s ──────────────────────
+    // VidCore's player fires: setTimeout(() => { timedOut = true; evtSource.close(); reject(...); }, 10000);
+    // We replace ALL bare occurrences of ", 10000)" in setTimeout calls with ", 30000)"
+    // so slow networks (mobile, proxy hop) get enough time to receive the source URL.
+    html = html.replace(/,\s*10000\s*\)/g, ', 30000)');
 
     // Inject auto-next-episode bridge + mobile fullscreen polyfill
     const autoNextScript = `<script>
@@ -453,12 +446,57 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       html += buildMobilePatchScript() + autoNextScript;
     }
 
-    // parsePath() reads window.location.pathname which will be /vidcore-proxy/embed/...
-    // Patch it once at the JS source level so the player sees /embed/... instead.
-    html = html.replace(
-      /window\.location\.pathname/g,
-      `window.location.pathname.replace(/^\\/vidcore-proxy/,'')`
-    );
+    // ── Fix parsePath() so it works under the /vidcore-proxy prefix ──────────
+    // VidCore's parsePath() checks parts[0] === 'embed' but when served via the
+    // proxy the pathname is /vidcore-proxy/embed/... so parts[0] is 'vidcore-proxy'
+    // and parsePath() returns null immediately → "All sources failed" before any
+    // source is even tried.
+    //
+    // Strategy: inject a <script> that runs BEFORE the player JS and overrides
+    // window.location so parsePath() sees the correct /embed/... path.
+    // We use Object.defineProperty to make window.location.pathname read-only-safe.
+    const pathnamePatch = `<script>
+(function() {
+  try {
+    var _realPathname = window.location.pathname;
+    var _patchedPathname = _realPathname.replace(/^\\/vidcore-proxy/, '');
+    if (_patchedPathname !== _realPathname) {
+      Object.defineProperty(window.location, 'pathname', {
+        get: function() { return _patchedPathname; },
+        configurable: true
+      });
+    }
+  } catch(e) {
+    // Object.defineProperty on window.location may be restricted in some browsers —
+    // fall back to patching parsePath directly after it is defined.
+    document.addEventListener('DOMContentLoaded', function() {
+      if (typeof parsePath === 'function') {
+        var _orig = parsePath;
+        parsePath = function() {
+          var _origPath = window.location.pathname;
+          try {
+            Object.defineProperty(window.location, 'pathname', {
+              get: function() { return _origPath.replace(/^\\/vidcore-proxy/, ''); },
+              configurable: true
+            });
+          } catch(e2) {}
+          var result = _orig();
+          try {
+            Object.defineProperty(window.location, 'pathname', {
+              get: function() { return _origPath; },
+              configurable: true
+            });
+          } catch(e3) {}
+          return result;
+        };
+      }
+    });
+  }
+})();
+<\/script>`;
+    // Inject the pathname patch as the FIRST thing inside <head> so it runs
+    // before any other script — especially before parsePath() is called.
+    html = html.replace(/<head([^>]*)>/i, `<head$1>${pathnamePatch}`);
 
     const processed = new Response(html, {
       status: 200,
