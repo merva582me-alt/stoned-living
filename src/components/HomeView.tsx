@@ -39,7 +39,6 @@ interface HomeViewProps {
   user: UserProfile;
   onPlayMedia: (item: MediaItem, season?: number, episode?: number) => void;
   onInspectItem: (item: MediaItem) => void;
-  onToggleWatchlist: (item: MediaItem) => void;
   onNavigateTab: (tab: string) => void;
 }
 
@@ -100,7 +99,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
   user,
   onPlayMedia,
   onInspectItem,
-  onToggleWatchlist,
   onNavigateTab
 }) => {
   const [sectionData, setSectionData] = useState<Record<string, MediaItem[]>>(homeCache);
@@ -436,8 +434,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
         items={heroItems}
         onPlay={onPlayMedia}
         onOpenDetails={onInspectItem}
-        onToggleWatchlist={onToggleWatchlist}
-        watchlistIds={user.watchlist}
       />
 
       {/* Render All 21 Horizontal Category Carousels in Exact Sequence */}
@@ -458,8 +454,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
               loading={isLoading}
               onPlay={onPlayMedia}
               onOpenDetails={onInspectItem}
-              onToggleWatchlist={onToggleWatchlist}
-              watchlistIds={user.watchlist}
             />
           </div>
         );

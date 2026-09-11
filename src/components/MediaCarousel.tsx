@@ -10,8 +10,6 @@ interface MediaCarouselProps {
   items: MediaItem[];
   onPlay: (item: MediaItem) => void;
   onOpenDetails: (item: MediaItem) => void;
-  onToggleWatchlist: (item: MediaItem) => void;
-  watchlistIds: number[];
   loading?: boolean;
 }
 
@@ -22,8 +20,6 @@ export const MediaCarousel: React.FC<MediaCarouselProps> = ({
   items,
   onPlay,
   onOpenDetails,
-  onToggleWatchlist,
-  watchlistIds,
   loading = false
 }) => {
   const rowRef = useRef<HTMLDivElement>(null);

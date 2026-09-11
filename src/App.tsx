@@ -349,6 +349,10 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [searchOpen]);
 
+  const handleToggleWatchlist = (_item: MediaItem) => {
+    // Watchlist/stash feature removed — no-op stub so child components still compile
+  };
+
   const handlePlayMedia = (item: MediaItem, season?: number, episode?: number) => {
     setActiveMedia(item);
     setPlaySeason(season);

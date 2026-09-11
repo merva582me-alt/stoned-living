@@ -4,8 +4,6 @@ import {
   Flame,
   Star,
   Play,
-  Plus,
-  Check,
   Info,
   Clock,
   Sparkles,
@@ -43,7 +41,6 @@ interface TvViewProps {
   user: UserProfile;
   onPlayMedia: (item: MediaItem) => void;
   onInspectItem: (item: MediaItem) => void;
-  onToggleWatchlist: (item: MediaItem) => void;
 }
 
 interface TvSectionConfig {
@@ -60,7 +57,6 @@ export const TvView: React.FC<TvViewProps> = ({
   user,
   onPlayMedia,
   onInspectItem,
-  onToggleWatchlist
 }) => {
   const [sectionData, setSectionData] = useState<Record<string, MediaItem[]>>(tvCache);
   const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
@@ -364,8 +360,6 @@ export const TvView: React.FC<TvViewProps> = ({
     (sortBy !== 'popularity.desc' ? 1 : 0);
 
   const isFilterActive = activeFilterCount > 0 || viewMode === 'grid';
-  const isWatchlisted = featuredItem ? user.watchlist.some(id => Number(id) === Number(featuredItem.id)) : false;
-
   return (
     <div className="space-y-10 px-4 sm:px-6 lg:px-10 w-full max-w-[1920px] mx-auto pt-4 pb-4">
       {/* FEATURED TV HERO SECTION */}
@@ -409,25 +403,13 @@ export const TvView: React.FC<TvViewProps> = ({
             </p>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-3 pt-2 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 sm:gap-3 pt-2">
               <button
                 onClick={() => onPlayMedia(featuredItem)}
-                className="px-2 sm:px-6 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] xs:text-xs sm:text-sm transition-all shadow-[0_0_25px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap"
+                className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] xs:text-xs sm:text-sm transition-all shadow-[0_0_25px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap"
               >
                 <Play className="w-3.5 h-3.5 sm:w-5 sm:h-5 fill-black shrink-0" />
                 <span>Stream</span>
-              </button>
-
-              <button
-                onClick={() => onToggleWatchlist(featuredItem)}
-                className={`px-2 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl border font-bold text-[11px] xs:text-xs sm:text-sm transition-all flex items-center justify-center gap-1 sm:gap-2 backdrop-blur-md whitespace-nowrap ${
-                  isWatchlisted
-                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500'
-                    : 'bg-black/60 text-white border-zinc-700 hover:border-emerald-400 hover:text-emerald-400'
-                }`}
-              >
-                {isWatchlisted ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> : <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-                <span>{isWatchlisted ? 'In Stash' : 'Stash'}</span>
               </button>
 
               <button
@@ -658,8 +640,6 @@ export const TvView: React.FC<TvViewProps> = ({
                 loading={isLoading}
                 onPlay={onPlayMedia}
                 onOpenDetails={onInspectItem}
-                onToggleWatchlist={onToggleWatchlist}
-                watchlistIds={user.watchlist}
               />
             );
           })}

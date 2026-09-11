@@ -1,0 +1,309 @@
+[     114ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:20102
+[   34158ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[   34158ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[   52449ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[   52449ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[   65081ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[   65081ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  109944ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  109944ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  110014ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  110014ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  110062ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  110062ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  151304ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  151304ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  151355ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  151355ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  151399ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  151400ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  169102ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  169103ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12
+[  169165ms] [ERROR] %o
+
+%s
+
+%s
+ ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) The above error occurred in the <HeroSlider> component. React will try to recreate this component tree from scratch using the error boundary you provided, ErrorBoundary. @ http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7000
+[  169165ms] [ERROR] [Stoned.living] Uncaught error: ReferenceError: watchlistIds is not defined
+    at HeroSlider (http://192.168.2.11:5173/src/components/HeroSlider.tsx?t=1789169023122:31:23)
+    at Object.react_stack_bottom_frame (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:18509:20)
+    at renderWithHooks (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:5654:24)
+    at updateFunctionComponent (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:7475:21)
+    at beginWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:8525:20)
+    at runWithFiberInDEV (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:997:72)
+    at performUnitOfWork (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12561:98)
+    at workLoopSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12424:43)
+    at renderRootSync (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:12408:13)
+    at performWorkOnRoot (http://192.168.2.11:5173/node_modules/.vite/deps/react-dom_client.js?v=40263c50:11827:37) {componentStack: 
+    at HeroSlider (http://192.168.2.11:5173/src/c…8.2.11:5173/src/components/ErrorBoundary.tsx:6:5)} @ http://192.168.2.11:5173/src/components/ErrorBoundary.tsx:12

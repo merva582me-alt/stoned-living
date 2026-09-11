@@ -1,0 +1,1087 @@
+- generic [active] [ref=f7e1]:
+  - link "Skip to main content" [ref=f7e2] [cursor=pointer]:
+    - /url: "#root"
+  - generic [ref=f7e3]:
+    - generic [ref=f7e4]:
+      - banner [ref=f7e5]:
+        - generic [ref=f7e6]: STONED.LIVING — MADE BY REEF <3
+        - generic [ref=f7e10]:
+          - button "STONED.LIVING High Definition Streaming" [ref=f7e12]:
+            - generic [ref=f7e17]:
+              - generic [ref=f7e18]: STONED.LIVING
+              - paragraph [ref=f7e20]: High Definition Streaming
+          - button "Open search" [ref=f7e22]:
+            - generic [ref=f7e23]: Search movies, TV shows, anime, actors, genres...
+          - button "Admin Panel" [ref=f7e29]
+      - navigation [ref=f7e32]:
+        - button "Home" [ref=f7e33] [cursor=pointer]
+        - button "Search" [ref=f7e37] [cursor=pointer]
+        - button "Movies" [ref=f7e42] [cursor=pointer]
+        - button "TV" [ref=f7e46] [cursor=pointer]
+        - button "Anime" [ref=f7e51] [cursor=pointer]
+        - button "Sports" [ref=f7e56] [cursor=pointer]
+      - main [ref=f7e64]:
+        - generic [ref=f7e66]:
+          - generic [ref=f7e67]:
+            - img "Resident Evil" [ref=f7e69]
+            - generic [ref=f7e72]:
+              - generic [ref=f7e73]:
+                - generic [ref=f7e74]: FEATURED TITLE
+                - generic [ref=f7e78]: Movie
+                - generic [ref=f7e79]: "0.0"
+              - heading "Resident Evil" [level=1] [ref=f7e82]
+              - paragraph [ref=f7e83]: Medical courier Bryan unwittingly finds himself fighting for survival as one fateful, horrifying night collapses around him in chaos.
+              - generic [ref=f7e84]:
+                - button "Watch" [ref=f7e85]
+                - button "Details" [ref=f7e89]
+            - generic [ref=f7e93]:
+              - button [ref=f7e94]
+              - button [ref=f7e95]
+              - button [ref=f7e96]
+              - button [ref=f7e97]
+              - button [ref=f7e98]
+              - button [ref=f7e99]
+              - button [ref=f7e100]
+              - button [ref=f7e101]
+              - button [ref=f7e102]
+          - generic [ref=f7e104]:
+            - generic [ref=f7e105]:
+              - generic [ref=f7e106]:
+                - heading "New Movies" [level=2] [ref=f7e110]
+                - paragraph [ref=f7e111]: Fresh theatrical and 4K digital movie releases
+              - generic [ref=f7e112]:
+                - button "Scroll left" [ref=f7e113]
+                - button "Scroll right" [ref=f7e116]
+            - generic [ref=f7e119]:
+              - generic [ref=f7e121] [cursor=pointer]:
+                - generic [ref=f7e122]:
+                  - generic [ref=f7e123]:
+                    - img "Mayday" [ref=f7e124]
+                    - generic:
+                      - generic: "7.9"
+                      - generic: MOVIE
+                  - heading "Mayday" [level=3] [ref=f7e127]
+                - generic [ref=f7e128]: "2026"
+              - generic [ref=f7e131] [cursor=pointer]:
+                - generic [ref=f7e132]:
+                  - generic [ref=f7e133]:
+                    - img "The Runner" [ref=f7e134]
+                    - generic:
+                      - generic: "6.7"
+                      - generic: MOVIE
+                  - heading "The Runner" [level=3] [ref=f7e137]
+                - generic [ref=f7e138]: "2026"
+              - generic [ref=f7e141] [cursor=pointer]:
+                - generic [ref=f7e142]:
+                  - generic [ref=f7e143]:
+                    - img "Clash of the Thundermans" [ref=f7e144]
+                    - generic:
+                      - generic: "6.8"
+                      - generic: MOVIE
+                  - heading "Clash of the Thundermans" [level=3] [ref=f7e147]
+                - generic [ref=f7e148]: "2026"
+              - generic [ref=f7e151] [cursor=pointer]:
+                - generic [ref=f7e152]:
+                  - generic [ref=f7e153]:
+                    - img "The Whisper Man" [ref=f7e154]
+                    - generic:
+                      - generic: "6.8"
+                      - generic: MOVIE
+                  - heading "The Whisper Man" [level=3] [ref=f7e157]
+                - generic [ref=f7e158]: "2026"
+              - generic [ref=f7e161] [cursor=pointer]:
+                - generic [ref=f7e162]:
+                  - generic [ref=f7e163]:
+                    - img "The Last Sunrise" [ref=f7e164]
+                    - generic:
+                      - generic: "6.7"
+                      - generic: MOVIE
+                  - heading "The Last Sunrise" [level=3] [ref=f7e167]
+                - generic [ref=f7e168]: "2026"
+              - generic [ref=f7e171] [cursor=pointer]:
+                - generic [ref=f7e172]:
+                  - generic [ref=f7e173]:
+                    - img "Coyote vs. Acme" [ref=f7e174]
+                    - generic:
+                      - generic: "7.6"
+                      - generic: MOVIE
+                  - heading "Coyote vs. Acme" [level=3] [ref=f7e177]
+                - generic [ref=f7e178]: "2026"
+              - generic [ref=f7e181] [cursor=pointer]:
+                - generic [ref=f7e182]:
+                  - generic [ref=f7e183]:
+                    - img "Mutiny" [ref=f7e184]
+                    - generic:
+                      - generic: "6.5"
+                      - generic: MOVIE
+                  - heading "Mutiny" [level=3] [ref=f7e187]
+                - generic [ref=f7e188]: "2026"
+              - generic [ref=f7e191] [cursor=pointer]:
+                - generic [ref=f7e192]:
+                  - generic [ref=f7e193]:
+                    - img "Rage of Stars" [ref=f7e194]
+                    - generic:
+                      - generic: "6.1"
+                      - generic: MOVIE
+                  - heading "Rage of Stars" [level=3] [ref=f7e197]
+                - generic [ref=f7e198]: "2026"
+              - generic [ref=f7e201] [cursor=pointer]:
+                - generic [ref=f7e202]:
+                  - generic [ref=f7e203]:
+                    - 'img "Spider-Man: Brand New Day" [ref=f7e204]'
+                    - generic:
+                      - generic: "7.9"
+                      - generic: MOVIE
+                  - 'heading "Spider-Man: Brand New Day" [level=3] [ref=f7e207]'
+                - generic [ref=f7e208]: "2026"
+              - generic [ref=f7e211] [cursor=pointer]:
+                - generic [ref=f7e212]:
+                  - generic [ref=f7e213]:
+                    - img "Above & Below" [ref=f7e214]
+                    - generic:
+                      - generic: "6.2"
+                      - generic: MOVIE
+                  - heading "Above & Below" [level=3] [ref=f7e217]
+                - generic [ref=f7e218]: "2026"
+              - generic [ref=f7e221] [cursor=pointer]:
+                - generic [ref=f7e222]:
+                  - generic [ref=f7e223]:
+                    - 'img "Pinocchio: Unstrung" [ref=f7e224]'
+                    - generic:
+                      - generic: "6.6"
+                      - generic: MOVIE
+                  - 'heading "Pinocchio: Unstrung" [level=3] [ref=f7e227]'
+                - generic [ref=f7e228]: "2026"
+              - generic [ref=f7e231] [cursor=pointer]:
+                - generic [ref=f7e232]:
+                  - generic [ref=f7e233]:
+                    - img "The Odyssey" [ref=f7e234]
+                    - generic:
+                      - generic: "8.0"
+                      - generic: MOVIE
+                  - heading "The Odyssey" [level=3] [ref=f7e237]
+                - generic [ref=f7e238]: "2026"
+              - generic [ref=f7e241] [cursor=pointer]:
+                - generic [ref=f7e242]:
+                  - generic [ref=f7e243]:
+                    - img "Moana" [ref=f7e244]
+                    - generic:
+                      - generic: "6.9"
+                      - generic: MOVIE
+                  - heading "Moana" [level=3] [ref=f7e247]
+                - generic [ref=f7e248]: "2026"
+              - generic [ref=f7e251] [cursor=pointer]:
+                - generic [ref=f7e252]:
+                  - generic [ref=f7e253]:
+                    - img "Minions & Monsters" [ref=f7e254]
+                    - generic:
+                      - generic: "7.6"
+                      - generic: MOVIE
+                  - heading "Minions & Monsters" [level=3] [ref=f7e257]
+                - generic [ref=f7e258]: "2026"
+              - generic [ref=f7e261] [cursor=pointer]:
+                - generic [ref=f7e262]:
+                  - generic [ref=f7e263]:
+                    - img "Obsession" [ref=f7e264]
+                    - generic:
+                      - generic: "8.2"
+                      - generic: MOVIE
+                  - heading "Obsession" [level=3] [ref=f7e267]
+                - generic [ref=f7e268]: "2026"
+              - generic [ref=f7e271] [cursor=pointer]:
+                - generic [ref=f7e272]:
+                  - generic [ref=f7e273]:
+                    - img "Rosebush Pruning" [ref=f7e274]
+                    - generic:
+                      - generic: "6.1"
+                      - generic: MOVIE
+                  - heading "Rosebush Pruning" [level=3] [ref=f7e277]
+                - generic [ref=f7e278]: "2026"
+          - generic [ref=f7e281]:
+            - generic [ref=f7e282]:
+              - generic [ref=f7e283]:
+                - heading "Trending Movies" [level=2] [ref=f7e287]
+                - paragraph [ref=f7e288]: The most watched feature films of the week
+              - generic [ref=f7e289]:
+                - button "Scroll left" [ref=f7e290]
+                - button "Scroll right" [ref=f7e293]
+            - generic [ref=f7e296]:
+              - generic [ref=f7e298] [cursor=pointer]:
+                - generic [ref=f7e299]:
+                  - generic [ref=f7e300]:
+                    - img "Resident Evil" [ref=f7e301]
+                    - generic:
+                      - generic: "0.0"
+                      - generic: MOVIE
+                  - heading "Resident Evil" [level=3] [ref=f7e304]
+                - generic [ref=f7e305]: "2026"
+              - generic [ref=f7e308] [cursor=pointer]:
+                - generic [ref=f7e309]:
+                  - generic [ref=f7e310]:
+                    - img "Practical Magic 2" [ref=f7e311]
+                    - generic:
+                      - generic: "6.3"
+                      - generic: MOVIE
+                  - heading "Practical Magic 2" [level=3] [ref=f7e314]
+                - generic [ref=f7e315]: "2026"
+              - generic [ref=f7e318] [cursor=pointer]:
+                - generic [ref=f7e319]:
+                  - generic [ref=f7e320]:
+                    - img "Why Did I Get Married Again?" [ref=f7e321]
+                    - generic:
+                      - generic: "6.6"
+                      - generic: MOVIE
+                  - heading "Why Did I Get Married Again?" [level=3] [ref=f7e324]
+                - generic [ref=f7e325]: "2026"
+              - generic [ref=f7e328] [cursor=pointer]:
+                - generic [ref=f7e329]:
+                  - generic [ref=f7e330]:
+                    - img "Runner" [ref=f7e331]
+                    - generic:
+                      - generic: "8.2"
+                      - generic: MOVIE
+                  - heading "Runner" [level=3] [ref=f7e334]
+                - generic [ref=f7e335]: "2026"
+              - generic [ref=f7e338] [cursor=pointer]:
+                - generic [ref=f7e339]:
+                  - generic [ref=f7e340]:
+                    - img "Mayday" [ref=f7e341]
+                    - generic:
+                      - generic: "7.9"
+                      - generic: MOVIE
+                  - heading "Mayday" [level=3] [ref=f7e344]
+                - generic [ref=f7e345]: "2026"
+              - generic [ref=f7e348] [cursor=pointer]:
+                - generic [ref=f7e349]:
+                  - generic [ref=f7e350]:
+                    - img "The Runner" [ref=f7e351]
+                    - generic:
+                      - generic: "6.7"
+                      - generic: MOVIE
+                  - heading "The Runner" [level=3] [ref=f7e354]
+                - generic [ref=f7e355]: "2026"
+              - generic [ref=f7e358] [cursor=pointer]:
+                - generic [ref=f7e359]:
+                  - generic [ref=f7e360]:
+                    - img "The Whisper Man" [ref=f7e361]
+                    - generic:
+                      - generic: "6.8"
+                      - generic: MOVIE
+                  - heading "The Whisper Man" [level=3] [ref=f7e364]
+                - generic [ref=f7e365]: "2026"
+              - generic [ref=f7e368] [cursor=pointer]:
+                - generic [ref=f7e369]:
+                  - generic [ref=f7e370]:
+                    - img "Buddy" [ref=f7e371]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: MOVIE
+                  - heading "Buddy" [level=3] [ref=f7e374]
+                - generic [ref=f7e375]: "2026"
+              - generic [ref=f7e378] [cursor=pointer]:
+                - generic [ref=f7e379]:
+                  - generic [ref=f7e380]:
+                    - img "Coyote vs. Acme" [ref=f7e381]
+                    - generic:
+                      - generic: "7.6"
+                      - generic: MOVIE
+                  - heading "Coyote vs. Acme" [level=3] [ref=f7e384]
+                - generic [ref=f7e385]: "2026"
+              - generic [ref=f7e388] [cursor=pointer]:
+                - generic [ref=f7e389]:
+                  - generic [ref=f7e390]:
+                    - img "Mutiny" [ref=f7e391]
+                    - generic:
+                      - generic: "6.4"
+                      - generic: MOVIE
+                  - heading "Mutiny" [level=3] [ref=f7e394]
+                - generic [ref=f7e395]: "2026"
+              - generic [ref=f7e398] [cursor=pointer]:
+                - generic [ref=f7e399]:
+                  - generic [ref=f7e400]:
+                    - img "One Night Only" [ref=f7e401]
+                    - generic:
+                      - generic: "6.7"
+                      - generic: MOVIE
+                  - heading "One Night Only" [level=3] [ref=f7e404]
+                - generic [ref=f7e405]: "2026"
+              - generic [ref=f7e408] [cursor=pointer]:
+                - generic [ref=f7e409]:
+                  - generic [ref=f7e410]:
+                    - 'img "Spider-Man: Brand New Day" [ref=f7e411]'
+                    - generic:
+                      - generic: "7.9"
+                      - generic: MOVIE
+                  - 'heading "Spider-Man: Brand New Day" [level=3] [ref=f7e414]'
+                - generic [ref=f7e415]: "2026"
+              - generic [ref=f7e418] [cursor=pointer]:
+                - generic [ref=f7e419]:
+                  - generic [ref=f7e420]:
+                    - 'img "PAW Patrol: The Dino Movie" [ref=f7e421]'
+                    - generic:
+                      - generic: "7.0"
+                      - generic: MOVIE
+                  - 'heading "PAW Patrol: The Dino Movie" [level=3] [ref=f7e424]'
+                - generic [ref=f7e425]: "2026"
+              - generic [ref=f7e428] [cursor=pointer]:
+                - generic [ref=f7e429]:
+                  - generic [ref=f7e430]:
+                    - img "The Odyssey" [ref=f7e431]
+                    - generic:
+                      - generic: "8.0"
+                      - generic: MOVIE
+                  - heading "The Odyssey" [level=3] [ref=f7e434]
+                - generic [ref=f7e435]: "2026"
+              - generic [ref=f7e438] [cursor=pointer]:
+                - generic [ref=f7e439]:
+                  - generic [ref=f7e440]:
+                    - img "Moana" [ref=f7e441]
+                    - generic:
+                      - generic: "6.9"
+                      - generic: MOVIE
+                  - heading "Moana" [level=3] [ref=f7e444]
+                - generic [ref=f7e445]: "2026"
+              - generic [ref=f7e448] [cursor=pointer]:
+                - generic [ref=f7e449]:
+                  - generic [ref=f7e450]:
+                    - img "Toy Story 5" [ref=f7e451]
+                    - generic:
+                      - generic: "8.3"
+                      - generic: MOVIE
+                  - heading "Toy Story 5" [level=3] [ref=f7e454]
+                - generic [ref=f7e455]: "2026"
+              - generic [ref=f7e458] [cursor=pointer]:
+                - generic [ref=f7e459]:
+                  - generic [ref=f7e460]:
+                    - img "Backrooms" [ref=f7e461]
+                    - generic:
+                      - generic: "7.1"
+                      - generic: MOVIE
+                  - heading "Backrooms" [level=3] [ref=f7e464]
+                - generic [ref=f7e465]: "2026"
+              - generic [ref=f7e468] [cursor=pointer]:
+                - generic [ref=f7e469]:
+                  - generic [ref=f7e470]:
+                    - img "Obsession" [ref=f7e471]
+                    - generic:
+                      - generic: "8.2"
+                      - generic: MOVIE
+                  - heading "Obsession" [level=3] [ref=f7e474]
+                - generic [ref=f7e475]: "2026"
+          - generic [ref=f7e478]:
+            - generic [ref=f7e479]:
+              - generic [ref=f7e480]:
+                - heading "Trending TV Shows" [level=2] [ref=f7e485]
+                - paragraph [ref=f7e486]: Most popular series currently streaming today
+              - generic [ref=f7e487]:
+                - button "Scroll left" [ref=f7e488]
+                - button "Scroll right" [ref=f7e491]
+            - generic [ref=f7e494]:
+              - generic [ref=f7e496] [cursor=pointer]:
+                - generic [ref=f7e497]:
+                  - generic [ref=f7e498]:
+                    - img "Crew Girl" [ref=f7e499]
+                    - generic:
+                      - generic: "7.8"
+                      - generic: TV
+                  - heading "Crew Girl" [level=3] [ref=f7e502]
+                - generic [ref=f7e503]: "2026"
+              - generic [ref=f7e506] [cursor=pointer]:
+                - generic [ref=f7e507]:
+                  - generic [ref=f7e508]:
+                    - img "Last Seen" [ref=f7e509]
+                    - generic:
+                      - generic: "8.9"
+                      - generic: TV
+                  - heading "Last Seen" [level=3] [ref=f7e512]
+                - generic [ref=f7e513]: "2026"
+              - generic [ref=f7e516] [cursor=pointer]:
+                - generic [ref=f7e517]:
+                  - generic [ref=f7e518]:
+                    - img "The Grand Tour" [ref=f7e519]
+                    - generic:
+                      - generic: "9.0"
+                      - generic: TV
+                  - heading "The Grand Tour" [level=3] [ref=f7e522]
+                - generic [ref=f7e523]: "2026"
+              - generic [ref=f7e526] [cursor=pointer]:
+                - generic [ref=f7e527]:
+                  - generic [ref=f7e528]:
+                    - img "Lanterns" [ref=f7e529]
+                    - generic:
+                      - generic: "8.3"
+                      - generic: TV
+                  - heading "Lanterns" [level=3] [ref=f7e532]
+                - generic [ref=f7e533]: "2026"
+              - generic [ref=f7e536] [cursor=pointer]:
+                - generic [ref=f7e537]:
+                  - generic [ref=f7e538]:
+                    - img "The Shards" [ref=f7e539]
+                    - generic:
+                      - generic: "7.2"
+                      - generic: TV
+                  - heading "The Shards" [level=3] [ref=f7e542]
+                - generic [ref=f7e543]: "2026"
+              - generic [ref=f7e546] [cursor=pointer]:
+                - generic [ref=f7e547]:
+                  - generic [ref=f7e548]:
+                    - img "The Paper" [ref=f7e549]
+                    - generic:
+                      - generic: "7.1"
+                      - generic: TV
+                  - heading "The Paper" [level=3] [ref=f7e552]
+                - generic [ref=f7e553]: "2025"
+              - generic [ref=f7e556] [cursor=pointer]:
+                - generic [ref=f7e557]:
+                  - generic [ref=f7e558]:
+                    - img "Dark Matter" [ref=f7e559]
+                    - generic:
+                      - generic: "7.8"
+                      - generic: TV
+                  - heading "Dark Matter" [level=3] [ref=f7e562]
+                - generic [ref=f7e563]: "2024"
+              - generic [ref=f7e566] [cursor=pointer]:
+                - generic [ref=f7e567]:
+                  - generic [ref=f7e568]:
+                    - img "The Gentlemen" [ref=f7e569]
+                    - generic:
+                      - generic: "7.8"
+                      - generic: TV
+                  - heading "The Gentlemen" [level=3] [ref=f7e572]
+                - generic [ref=f7e573]: "2024"
+              - generic [ref=f7e576] [cursor=pointer]:
+                - generic [ref=f7e577]:
+                  - generic [ref=f7e578]:
+                    - img "Lioness" [ref=f7e579]
+                    - generic:
+                      - generic: "8.2"
+                      - generic: TV
+                  - heading "Lioness" [level=3] [ref=f7e582]
+                - generic [ref=f7e583]: "2023"
+              - generic [ref=f7e586] [cursor=pointer]:
+                - generic [ref=f7e587]:
+                  - generic [ref=f7e588]:
+                    - img "Silo" [ref=f7e589]
+                    - generic:
+                      - generic: "8.2"
+                      - generic: TV
+                  - heading "Silo" [level=3] [ref=f7e592]
+                - generic [ref=f7e593]: "2023"
+              - generic [ref=f7e596] [cursor=pointer]:
+                - generic [ref=f7e597]:
+                  - generic [ref=f7e598]:
+                    - 'img "Star Trek: Strange New Worlds" [ref=f7e599]'
+                    - generic:
+                      - generic: "7.9"
+                      - generic: TV
+                  - 'heading "Star Trek: Strange New Worlds" [level=3] [ref=f7e602]'
+                - generic [ref=f7e603]: "2022"
+              - generic [ref=f7e606] [cursor=pointer]:
+                - generic [ref=f7e607]:
+                  - generic [ref=f7e608]:
+                    - img "Reacher" [ref=f7e609]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: TV
+                  - heading "Reacher" [level=3] [ref=f7e612]
+                - generic [ref=f7e613]: "2022"
+              - generic [ref=f7e616] [cursor=pointer]:
+                - generic [ref=f7e617]:
+                  - generic [ref=f7e618]:
+                    - img "Ted Lasso" [ref=f7e619]
+                    - generic:
+                      - generic: "8.4"
+                      - generic: TV
+                  - heading "Ted Lasso" [level=3] [ref=f7e622]
+                - generic [ref=f7e623]: "2020"
+              - generic [ref=f7e626] [cursor=pointer]:
+                - generic [ref=f7e627]:
+                  - generic [ref=f7e628]:
+                    - img "Futurama" [ref=f7e629]
+                    - generic:
+                      - generic: "8.4"
+                      - generic: TV
+                  - heading "Futurama" [level=3] [ref=f7e632]
+                - generic [ref=f7e633]: "1999"
+          - generic [ref=f7e636]:
+            - generic [ref=f7e637]:
+              - generic [ref=f7e638]:
+                - heading "Trending Anime" [level=2] [ref=f7e643]
+                - paragraph [ref=f7e644]: Top Japanese animated series & feature films
+              - generic [ref=f7e645]:
+                - button "Scroll left" [ref=f7e646]
+                - button "Scroll right" [ref=f7e649]
+            - generic [ref=f7e652]:
+              - generic [ref=f7e654] [cursor=pointer]:
+                - generic [ref=f7e655]:
+                  - generic [ref=f7e656]:
+                    - img "REBORN!" [ref=f7e657]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: ANIME
+                  - heading "REBORN!" [level=3] [ref=f7e660]
+                - generic [ref=f7e661]: "2006"
+              - generic [ref=f7e664] [cursor=pointer]:
+                - generic [ref=f7e665]:
+                  - generic [ref=f7e666]:
+                    - img "Doraemon" [ref=f7e667]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: ANIME
+                  - heading "Doraemon" [level=3] [ref=f7e670]
+                - generic [ref=f7e671]: "2005"
+              - generic [ref=f7e674] [cursor=pointer]:
+                - generic [ref=f7e675]:
+                  - generic [ref=f7e676]:
+                    - 'img "Mushoku Tensei: Jobless Reincarnation" [ref=f7e677]'
+                    - generic:
+                      - generic: "8.4"
+                      - generic: ANIME
+                  - 'heading "Mushoku Tensei: Jobless Reincarnation" [level=3] [ref=f7e680]'
+                - generic [ref=f7e681]: "2021"
+              - generic [ref=f7e684] [cursor=pointer]:
+                - generic [ref=f7e685]:
+                  - generic [ref=f7e686]:
+                    - img "Bleach" [ref=f7e687]
+                    - generic:
+                      - generic: "8.3"
+                      - generic: ANIME
+                  - heading "Bleach" [level=3] [ref=f7e690]
+                - generic [ref=f7e691]: "2004"
+              - generic [ref=f7e694] [cursor=pointer]:
+                - generic [ref=f7e695]:
+                  - generic [ref=f7e696]:
+                    - img "Aria" [ref=f7e697]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: ANIME
+                  - heading "Aria" [level=3] [ref=f7e700]
+                - generic [ref=f7e701]: "2005"
+              - generic [ref=f7e704] [cursor=pointer]:
+                - generic [ref=f7e705]:
+                  - generic [ref=f7e706]:
+                    - img "Detective Conan" [ref=f7e707]
+                    - generic:
+                      - generic: "8.0"
+                      - generic: ANIME
+                  - heading "Detective Conan" [level=3] [ref=f7e710]
+                - generic [ref=f7e711]: "1996"
+              - generic [ref=f7e714] [cursor=pointer]:
+                - generic [ref=f7e715]:
+                  - generic [ref=f7e716]:
+                    - img "Overflow" [ref=f7e717]
+                    - generic:
+                      - generic: "7.4"
+                      - generic: ANIME
+                  - heading "Overflow" [level=3] [ref=f7e720]
+                - generic [ref=f7e721]: "2020"
+              - generic [ref=f7e724] [cursor=pointer]:
+                - generic [ref=f7e725]:
+                  - generic [ref=f7e726]:
+                    - img "Kaiju No. 8" [ref=f7e727]
+                    - generic:
+                      - generic: "8.4"
+                      - generic: ANIME
+                  - heading "Kaiju No. 8" [level=3] [ref=f7e730]
+                - generic [ref=f7e731]: "2024"
+              - generic [ref=f7e734] [cursor=pointer]:
+                - generic [ref=f7e735]:
+                  - generic [ref=f7e736]:
+                    - img "Naruto Shippūden" [ref=f7e737]
+                    - generic:
+                      - generic: "8.5"
+                      - generic: ANIME
+                  - heading "Naruto Shippūden" [level=3] [ref=f7e740]
+                - generic [ref=f7e741]: "2007"
+              - generic [ref=f7e744] [cursor=pointer]:
+                - generic [ref=f7e745]:
+                  - generic [ref=f7e746]:
+                    - img "Mushi-Shi" [ref=f7e747]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: ANIME
+                  - heading "Mushi-Shi" [level=3] [ref=f7e750]
+                - generic [ref=f7e751]: "2005"
+              - generic [ref=f7e754] [cursor=pointer]:
+                - generic [ref=f7e755]:
+                  - generic [ref=f7e756]:
+                    - img "Re:ZERO -Starting Life in Another World-" [ref=f7e757]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: ANIME
+                  - heading "Re:ZERO -Starting Life in Another World-" [level=3] [ref=f7e760]
+                - generic [ref=f7e761]: "2016"
+              - generic [ref=f7e764] [cursor=pointer]:
+                - generic [ref=f7e765]:
+                  - generic [ref=f7e766]:
+                    - img "Ranma1/2" [ref=f7e767]
+                    - generic:
+                      - generic: "8.1"
+                      - generic: ANIME
+                  - heading "Ranma1/2" [level=3] [ref=f7e770]
+                - generic [ref=f7e771]: "2024"
+              - generic [ref=f7e774] [cursor=pointer]:
+                - generic [ref=f7e775]:
+                  - generic [ref=f7e776]:
+                    - img "Adam's Sweet Agony" [ref=f7e777]
+                    - generic:
+                      - generic: "6.9"
+                      - generic: ANIME
+                  - heading "Adam's Sweet Agony" [level=3] [ref=f7e780]
+                - generic [ref=f7e781]: "2024"
+              - generic [ref=f7e784] [cursor=pointer]:
+                - generic [ref=f7e785]:
+                  - generic [ref=f7e786]:
+                    - img "Hunter x Hunter" [ref=f7e787]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: ANIME
+                  - heading "Hunter x Hunter" [level=3] [ref=f7e790]
+                - generic [ref=f7e791]: "2011"
+              - generic [ref=f7e794] [cursor=pointer]:
+                - generic [ref=f7e795]:
+                  - generic [ref=f7e796]:
+                    - img "Secret Mission - Undercover Agents Never Back Down!" [ref=f7e797]
+                    - generic:
+                      - generic: "6.2"
+                      - generic: ANIME
+                  - heading "Secret Mission - Undercover Agents Never Back Down!" [level=3] [ref=f7e800]
+                - generic [ref=f7e801]: "2023"
+              - generic [ref=f7e804] [cursor=pointer]:
+                - generic [ref=f7e805]:
+                  - generic [ref=f7e806]:
+                    - img "Pokémon" [ref=f7e807]
+                    - generic:
+                      - generic: "8.0"
+                      - generic: ANIME
+                  - heading "Pokémon" [level=3] [ref=f7e810]
+                - generic [ref=f7e811]: "1997"
+              - generic [ref=f7e814] [cursor=pointer]:
+                - generic [ref=f7e815]:
+                  - generic [ref=f7e816]:
+                    - img "Dragon Ball Z" [ref=f7e817]
+                    - generic:
+                      - generic: "8.4"
+                      - generic: ANIME
+                  - heading "Dragon Ball Z" [level=3] [ref=f7e820]
+                - generic [ref=f7e821]: "1989"
+              - generic [ref=f7e824] [cursor=pointer]:
+                - generic [ref=f7e825]:
+                  - generic [ref=f7e826]:
+                    - img "Chibi Maruko-chan" [ref=f7e827]
+                    - generic:
+                      - generic: "7.8"
+                      - generic: ANIME
+                  - heading "Chibi Maruko-chan" [level=3] [ref=f7e830]
+                - generic [ref=f7e831]: "1990"
+              - generic [ref=f7e834] [cursor=pointer]:
+                - generic [ref=f7e835]:
+                  - generic [ref=f7e836]:
+                    - img "JUJUTSU KAISEN" [ref=f7e837]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: ANIME
+                  - heading "JUJUTSU KAISEN" [level=3] [ref=f7e840]
+                - generic [ref=f7e841]: "2020"
+          - generic [ref=f7e844]:
+            - generic [ref=f7e845]:
+              - generic [ref=f7e846]:
+                - heading "Top Rated Movies" [level=2] [ref=f7e850]
+                - paragraph [ref=f7e851]: Highest rated critically acclaimed cinema masterpieces
+              - generic [ref=f7e852]:
+                - button "Scroll left" [ref=f7e853]
+                - button "Scroll right" [ref=f7e856]
+            - generic [ref=f7e859]:
+              - generic [ref=f7e861] [cursor=pointer]:
+                - generic [ref=f7e862]:
+                  - generic [ref=f7e863]:
+                    - 'img "Avatar Aang: The Last Airbender" [ref=f7e864]'
+                    - generic:
+                      - generic: "9.2"
+                      - generic: MOVIE
+                  - 'heading "Avatar Aang: The Last Airbender" [level=3] [ref=f7e867]'
+                - generic [ref=f7e868]: "2026"
+              - generic [ref=f7e871] [cursor=pointer]:
+                - generic [ref=f7e872]:
+                  - generic [ref=f7e873]:
+                    - img "Swapped" [ref=f7e874]
+                    - generic:
+                      - generic: "8.9"
+                      - generic: MOVIE
+                  - heading "Swapped" [level=3] [ref=f7e877]
+                - generic [ref=f7e878]: "2026"
+              - generic [ref=f7e881] [cursor=pointer]:
+                - generic [ref=f7e882]:
+                  - generic [ref=f7e883]:
+                    - img "The Shawshank Redemption" [ref=f7e884]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: MOVIE
+                  - heading "The Shawshank Redemption" [level=3] [ref=f7e887]
+                - generic [ref=f7e888]: "1994"
+              - generic [ref=f7e891] [cursor=pointer]:
+                - generic [ref=f7e892]:
+                  - generic [ref=f7e893]:
+                    - img "The Godfather" [ref=f7e894]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: MOVIE
+                  - heading "The Godfather" [level=3] [ref=f7e897]
+                - generic [ref=f7e898]: "1972"
+              - generic [ref=f7e901] [cursor=pointer]:
+                - generic [ref=f7e902]:
+                  - generic [ref=f7e903]:
+                    - img "Michael" [ref=f7e904]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: MOVIE
+                  - heading "Michael" [level=3] [ref=f7e907]
+                - generic [ref=f7e908]: "2026"
+              - generic [ref=f7e911] [cursor=pointer]:
+                - generic [ref=f7e912]:
+                  - generic [ref=f7e913]:
+                    - img "Project Hail Mary" [ref=f7e914]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: MOVIE
+                  - heading "Project Hail Mary" [level=3] [ref=f7e917]
+                - generic [ref=f7e918]: "2026"
+              - generic [ref=f7e921] [cursor=pointer]:
+                - generic [ref=f7e922]:
+                  - generic [ref=f7e923]:
+                    - img "The Godfather Part II" [ref=f7e924]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: MOVIE
+                  - heading "The Godfather Part II" [level=3] [ref=f7e927]
+                - generic [ref=f7e928]: "1974"
+              - generic [ref=f7e931] [cursor=pointer]:
+                - generic [ref=f7e932]:
+                  - generic [ref=f7e933]:
+                    - img "12 Angry Men" [ref=f7e934]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: MOVIE
+                  - heading "12 Angry Men" [level=3] [ref=f7e937]
+                - generic [ref=f7e938]: "1957"
+              - generic [ref=f7e941] [cursor=pointer]:
+                - generic [ref=f7e942]:
+                  - generic [ref=f7e943]:
+                    - img "Schindler's List" [ref=f7e944]
+                    - generic:
+                      - generic: "8.6"
+                      - generic: MOVIE
+                  - heading "Schindler's List" [level=3] [ref=f7e947]
+                - generic [ref=f7e948]: "1993"
+              - generic [ref=f7e951] [cursor=pointer]:
+                - generic [ref=f7e952]:
+                  - generic [ref=f7e953]:
+                    - img "The Dark Knight" [ref=f7e954]
+                    - generic:
+                      - generic: "8.5"
+                      - generic: MOVIE
+                  - heading "The Dark Knight" [level=3] [ref=f7e957]
+                - generic [ref=f7e958]: "2008"
+              - generic [ref=f7e961] [cursor=pointer]:
+                - generic [ref=f7e962]:
+                  - generic [ref=f7e963]:
+                    - img "The Green Mile" [ref=f7e964]
+                    - generic:
+                      - generic: "8.5"
+                      - generic: MOVIE
+                  - heading "The Green Mile" [level=3] [ref=f7e967]
+                - generic [ref=f7e968]: "1999"
+              - generic [ref=f7e971] [cursor=pointer]:
+                - generic [ref=f7e972]:
+                  - generic [ref=f7e973]:
+                    - 'img "The Lord of the Rings: The Return of the King" [ref=f7e974]'
+                    - generic:
+                      - generic: "8.5"
+                      - generic: MOVIE
+                  - 'heading "The Lord of the Rings: The Return of the King" [level=3] [ref=f7e977]'
+                - generic [ref=f7e978]: "2003"
+          - generic [ref=f7e981]:
+            - generic [ref=f7e982]:
+              - generic [ref=f7e983]:
+                - heading "Top Rated TV Shows" [level=2] [ref=f7e991]
+                - paragraph [ref=f7e992]: All-time highest rated television series
+              - generic [ref=f7e993]:
+                - button "Scroll left" [ref=f7e994]
+                - button "Scroll right" [ref=f7e997]
+            - generic [ref=f7e1000]:
+              - generic [ref=f7e1002] [cursor=pointer]:
+                - generic [ref=f7e1003]:
+                  - generic [ref=f7e1004]:
+                    - img "Dutton Ranch" [ref=f7e1005]
+                    - generic:
+                      - generic: "9.2"
+                      - generic: TV
+                  - heading "Dutton Ranch" [level=3] [ref=f7e1008]
+                - generic [ref=f7e1009]: "2026"
+              - generic [ref=f7e1012] [cursor=pointer]:
+                - generic [ref=f7e1013]:
+                  - generic [ref=f7e1014]:
+                    - img "Breaking Bad" [ref=f7e1015]
+                    - generic:
+                      - generic: "8.9"
+                      - generic: TV
+                  - heading "Breaking Bad" [level=3] [ref=f7e1018]
+                - generic [ref=f7e1019]: "2008"
+              - generic [ref=f7e1022] [cursor=pointer]:
+                - generic [ref=f7e1023]:
+                  - generic [ref=f7e1024]:
+                    - img "Off Campus" [ref=f7e1025]
+                    - generic:
+                      - generic: "8.9"
+                      - generic: TV
+                  - heading "Off Campus" [level=3] [ref=f7e1028]
+                - generic [ref=f7e1029]: "2026"
+              - generic [ref=f7e1032] [cursor=pointer]:
+                - generic [ref=f7e1033]:
+                  - generic [ref=f7e1034]:
+                    - img "Wizards Beyond Waverly Place" [ref=f7e1035]
+                    - generic:
+                      - generic: "8.8"
+                      - generic: TV
+                  - heading "Wizards Beyond Waverly Place" [level=3] [ref=f7e1038]
+                - generic [ref=f7e1039]: "2024"
+              - generic [ref=f7e1042] [cursor=pointer]:
+                - generic [ref=f7e1043]:
+                  - generic [ref=f7e1044]:
+                    - img "The Chosen" [ref=f7e1045]
+                    - generic:
+                      - generic: "8.8"
+                      - generic: TV
+                  - heading "The Chosen" [level=3] [ref=f7e1048]
+                - generic [ref=f7e1049]: "2019"
+              - generic [ref=f7e1052] [cursor=pointer]:
+                - generic [ref=f7e1053]:
+                  - generic [ref=f7e1054]:
+                    - 'img "Avatar: The Last Airbender" [ref=f7e1055]'
+                    - generic:
+                      - generic: "8.8"
+                      - generic: TV
+                  - 'heading "Avatar: The Last Airbender" [level=3] [ref=f7e1058]'
+                - generic [ref=f7e1059]: "2005"
+              - generic [ref=f7e1062] [cursor=pointer]:
+                - generic [ref=f7e1063]:
+                  - generic [ref=f7e1064]:
+                    - img "Arcane" [ref=f7e1065]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: TV
+                  - heading "Arcane" [level=3] [ref=f7e1068]
+                - generic [ref=f7e1069]: "2021"
+              - generic [ref=f7e1072] [cursor=pointer]:
+                - generic [ref=f7e1073]:
+                  - generic [ref=f7e1074]:
+                    - img "Heated Rivalry" [ref=f7e1075]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: TV
+                  - heading "Heated Rivalry" [level=3] [ref=f7e1078]
+                - generic [ref=f7e1079]: "2025"
+              - generic [ref=f7e1082] [cursor=pointer]:
+                - generic [ref=f7e1083]:
+                  - generic [ref=f7e1084]:
+                    - img "The Pitt" [ref=f7e1085]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: TV
+                  - heading "The Pitt" [level=3] [ref=f7e1088]
+                - generic [ref=f7e1089]: "2025"
+              - generic [ref=f7e1092] [cursor=pointer]:
+                - generic [ref=f7e1093]:
+                  - generic [ref=f7e1094]:
+                    - img "Chernobyl" [ref=f7e1095]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: TV
+                  - heading "Chernobyl" [level=3] [ref=f7e1098]
+                - generic [ref=f7e1099]: "2019"
+              - generic [ref=f7e1102] [cursor=pointer]:
+                - generic [ref=f7e1103]:
+                  - generic [ref=f7e1104]:
+                    - img "Better Call Saul" [ref=f7e1105]
+                    - generic:
+                      - generic: "8.7"
+                      - generic: TV
+                  - heading "Better Call Saul" [level=3] [ref=f7e1108]
+                - generic [ref=f7e1109]: "2015"
+          - generic [ref=f7e1113]:
+            - generic [ref=f7e1114]:
+              - heading "Popular Movies" [level=2] [ref=f7e1118]
+              - paragraph [ref=f7e1119]: Crowd-pleasing blockbusters around the globe
+            - generic [ref=f7e1120]:
+              - button "Scroll left" [ref=f7e1121]
+              - button "Scroll right" [ref=f7e1124]
+          - generic [ref=f7e1130]:
+            - generic [ref=f7e1131]:
+              - heading "Popular TV Shows" [level=2] [ref=f7e1136]
+              - paragraph [ref=f7e1137]: Binge-worthy series trending across all networks
+            - generic [ref=f7e1138]:
+              - button "Scroll left" [ref=f7e1139]
+              - button "Scroll right" [ref=f7e1142]
+          - generic [ref=f7e1148]:
+            - generic [ref=f7e1149]:
+              - heading "Upcoming Movies" [level=2] [ref=f7e1156]
+              - paragraph [ref=f7e1157]: Highly anticipated upcoming theatrical feature releases
+            - generic [ref=f7e1158]:
+              - button "Scroll left" [ref=f7e1159]
+              - button "Scroll right" [ref=f7e1162]
+          - generic [ref=f7e1168]:
+            - generic [ref=f7e1169]:
+              - heading "All-Time Classics" [level=2] [ref=f7e1173]
+              - paragraph [ref=f7e1174]: Timeless masterpiece movies, legendary TV series & classic anime
+            - generic [ref=f7e1175]:
+              - button "Scroll left" [ref=f7e1176]
+              - button "Scroll right" [ref=f7e1179]
+          - generic [ref=f7e1185]:
+            - generic [ref=f7e1186]:
+              - heading "Hidden Gems" [level=2] [ref=f7e1191]
+              - paragraph [ref=f7e1192]: High-scoring, underrated movies, series & anime waiting to be discovered
+            - generic [ref=f7e1193]:
+              - button "Scroll left" [ref=f7e1194]
+              - button "Scroll right" [ref=f7e1197]
+          - generic [ref=f7e1203]:
+            - generic [ref=f7e1204]:
+              - heading "Horror" [level=2] [ref=f7e1208]
+              - paragraph [ref=f7e1209]: Supernatural chills, horror series & dark thriller anime
+            - generic [ref=f7e1210]:
+              - button "Scroll left" [ref=f7e1211]
+              - button "Scroll right" [ref=f7e1214]
+          - generic [ref=f7e1220]:
+            - generic [ref=f7e1221]:
+              - heading "Action" [level=2] [ref=f7e1232]
+              - paragraph [ref=f7e1233]: High-octane films, action series & epic shonen anime
+            - generic [ref=f7e1234]:
+              - button "Scroll left" [ref=f7e1235]
+              - button "Scroll right" [ref=f7e1238]
+          - generic [ref=f7e1244]:
+            - generic [ref=f7e1245]:
+              - heading "Comedy" [level=2] [ref=f7e1250]
+              - paragraph [ref=f7e1251]: Hilarious comedy movies, sitcoms & slice-of-life anime
+            - generic [ref=f7e1252]:
+              - button "Scroll left" [ref=f7e1253]
+              - button "Scroll right" [ref=f7e1256]
+          - generic [ref=f7e1262]:
+            - generic [ref=f7e1263]:
+              - heading "Sci-Fi" [level=2] [ref=f7e1269]
+              - paragraph [ref=f7e1270]: Cosmic films, sci-fi TV series & futuristic anime
+            - generic [ref=f7e1271]:
+              - button "Scroll left" [ref=f7e1272]
+              - button "Scroll right" [ref=f7e1275]
+          - generic [ref=f7e1281]:
+            - generic [ref=f7e1282]:
+              - heading "Thriller" [level=2] [ref=f7e1286]
+              - paragraph [ref=f7e1287]: Edge-of-your-seat films, mystery thrillers & psychological suspense anime
+            - generic [ref=f7e1288]:
+              - button "Scroll left" [ref=f7e1289]
+              - button "Scroll right" [ref=f7e1292]
+          - generic [ref=f7e1298]:
+            - generic [ref=f7e1299]:
+              - heading "Crime" [level=2] [ref=f7e1303]
+              - paragraph [ref=f7e1304]: Gritty mob movies, crime procedural series & detective anime
+            - generic [ref=f7e1305]:
+              - button "Scroll left" [ref=f7e1306]
+              - button "Scroll right" [ref=f7e1309]
+          - generic [ref=f7e1315]:
+            - generic [ref=f7e1316]:
+              - heading "Fantasy" [level=2] [ref=f7e1321]
+              - paragraph [ref=f7e1322]: Magical movies, epic fantasy series & isekai anime realms
+            - generic [ref=f7e1323]:
+              - button "Scroll left" [ref=f7e1324]
+              - button "Scroll right" [ref=f7e1327]
+          - generic [ref=f7e1333]:
+            - generic [ref=f7e1334]:
+              - heading "Animation" [level=2] [ref=f7e1342]
+              - paragraph [ref=f7e1343]: Stunning animated films, global cartoon series & masterpiece anime
+            - generic [ref=f7e1344]:
+              - button "Scroll left" [ref=f7e1345]
+              - button "Scroll right" [ref=f7e1348]
+          - generic [ref=f7e1354]:
+            - generic [ref=f7e1355]:
+              - heading "Family" [level=2] [ref=f7e1359]
+              - paragraph [ref=f7e1360]: Wholesome family films, youth series & heartwarming anime
+            - generic [ref=f7e1361]:
+              - button "Scroll left" [ref=f7e1362]
+              - button "Scroll right" [ref=f7e1365]
+          - generic [ref=f7e1371]:
+            - generic [ref=f7e1372]:
+              - heading "Documentary" [level=2] [ref=f7e1377]
+              - paragraph [ref=f7e1378]: Investigative documentaries, docuseries & true-story animated sagas
+            - generic [ref=f7e1379]:
+              - button "Scroll left" [ref=f7e1380]
+              - button "Scroll right" [ref=f7e1383]
+      - contentinfo [ref=f7e1387]:
+        - generic [ref=f7e1388]:
+          - generic [ref=f7e1389]:
+            - generic [ref=f7e1390]:
+              - button "STONED.LIVING" [ref=f7e1391] [cursor=pointer]
+              - generic [ref=f7e1398]: High Definition Streaming
+            - generic [ref=f7e1399]:
+              - button "VidFast 4K Server Online" [ref=f7e1400] [cursor=pointer]
+              - combobox "Select Preferred Language" [ref=f7e1411] [cursor=pointer]:
+                - option "English (US)" [selected]
+                - option "Español"
+                - option "Deutsch"
+                - option "日本語"
+          - generic [ref=f7e1412]:
+            - generic [ref=f7e1413]:
+              - heading "Browse Content" [level=4] [ref=f7e1414]
+              - list [ref=f7e1415]:
+                - listitem [ref=f7e1416]:
+                  - button "Home Catalog" [ref=f7e1417]
+                - listitem [ref=f7e1418]:
+                  - button "Movies" [ref=f7e1419]
+                - listitem [ref=f7e1422]:
+                  - button "TV Series" [ref=f7e1423]
+                - listitem [ref=f7e1427]:
+                  - button "Anime Central" [ref=f7e1428]
+                - listitem [ref=f7e1432]:
+                  - button "New Releases & Trending" [ref=f7e1433]
+            - generic [ref=f7e1434]:
+              - heading "Support & Tools" [level=4] [ref=f7e1435]
+              - list [ref=f7e1436]:
+                - listitem [ref=f7e1437]:
+                  - button "Help Center & FAQ" [ref=f7e1438]
+                - listitem [ref=f7e1442]:
+                  - button "Stream Speed Diagnostic" [ref=f7e1443]
+                - listitem [ref=f7e1448]:
+                  - button "Player & Server Status" [ref=f7e1449]
+                - listitem [ref=f7e1453]:
+                  - button "Supported Devices" [ref=f7e1454]
+            - generic [ref=f7e1455]:
+              - heading "Legal & Terms" [level=4] [ref=f7e1456]
+              - list [ref=f7e1457]:
+                - listitem [ref=f7e1458]:
+                  - button "Terms of Use" [ref=f7e1459]
+                - listitem [ref=f7e1463]:
+                  - button "Privacy Policy" [ref=f7e1464]
+                - listitem [ref=f7e1465]:
+                  - button "Cookie Preferences" [ref=f7e1466]
+                - listitem [ref=f7e1467]:
+                  - button "DMCA Content Notices" [ref=f7e1468]
+            - generic [ref=f7e1469]:
+              - generic [ref=f7e1470]: HIGH-VIBE STREAMING
+              - paragraph [ref=f7e1474]: Ad-free 4K Ultra HD playback powered exclusively by VidFast. Fast, responsive, and seamless streaming across all devices.
+              - button "Test Your Connection Speed" [ref=f7e1475]
+          - generic [ref=f7e1479]:
+            - generic [ref=f7e1480]:
+              - button [ref=f7e1481] [cursor=pointer]:
+                - generic [ref=f7e1485]:
+                  - text: "Service Code:"
+                  - strong [ref=f7e1486]: 420-808-STREAM
+              - generic [ref=f7e1487]: © 2026 Stoned.living. All rights reserved.
+            - generic [ref=f7e1488]:
+              - button "Terms" [ref=f7e1489]
+              - generic [ref=f7e1490]: •
+              - button "Privacy" [ref=f7e1491]
+              - generic [ref=f7e1492]: •
+              - button "Help" [ref=f7e1493]
+              - generic [ref=f7e1494]: •
+              - link "Metadata by TMDB" [ref=f7e1495] [cursor=pointer]:
+                - /url: https://www.themoviedb.org
+                - generic [ref=f7e1496]: Metadata by
+                - generic [ref=f7e1497]: TMDB
+    - region "Notifications alt+T"

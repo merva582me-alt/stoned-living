@@ -1,21 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Plus, Check, Info, Cannabis, Star, Sparkles } from 'lucide-react';
+import { Play, Info, Cannabis, Star, Sparkles } from 'lucide-react';
 import { MediaItem } from '../types';
 
 interface HeroSliderProps {
   items: MediaItem[];
   onPlay: (item: MediaItem) => void;
   onOpenDetails: (item: MediaItem) => void;
-  onToggleWatchlist: (item: MediaItem) => void;
-  watchlistIds: number[];
 }
 
 export const HeroSlider: React.FC<HeroSliderProps> = ({
   items,
   onPlay,
   onOpenDetails,
-  onToggleWatchlist,
-  watchlistIds
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -36,7 +32,6 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
   }
 
   const current = items[currentIndex];
-  const inWatchlist = watchlistIds.some(id => Number(id) === Number(current.id));
   const backdropUrl = current.backdrop_path
     ? `https://image.tmdb.org/t/p/w1280${current.backdrop_path}`
     : current.poster_path
@@ -91,30 +86,18 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
         )}
 
         {/* Action Buttons */}
-        <div className="grid grid-cols-3 sm:flex items-center gap-1.5 sm:gap-3 pt-2 w-full sm:w-auto">
+        <div className="flex items-center gap-1.5 sm:gap-3 pt-2">
           <button
             onClick={() => onPlay(current)}
-            className="px-2 sm:px-6 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] xs:text-xs sm:text-sm transition-all shadow-[0_0_25px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap"
+            className="px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-[11px] xs:text-xs sm:text-sm transition-all shadow-[0_0_25px_rgba(16,185,129,0.4)] flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap"
           >
             <Play className="w-3.5 h-3.5 sm:w-5 sm:h-5 fill-black shrink-0" />
             <span>Watch</span>
           </button>
 
           <button
-            onClick={() => onToggleWatchlist(current)}
-            className={`px-2 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl border font-bold text-[11px] xs:text-xs sm:text-sm transition-all flex items-center justify-center gap-1 sm:gap-2 backdrop-blur-md whitespace-nowrap ${
-              inWatchlist
-                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500'
-                : 'bg-black/60 text-white border-zinc-700 hover:border-emerald-400 hover:text-emerald-400'
-            }`}
-          >
-            {inWatchlist ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" /> : <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />}
-            <span>{inWatchlist ? 'In Stash' : 'Stash'}</span>
-          </button>
-
-          <button
             onClick={() => onOpenDetails(current)}
-            className="px-2 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl bg-black/60 text-zinc-300 border border-zinc-700 hover:border-white hover:text-white font-bold text-[11px] xs:text-xs sm:text-sm transition-all backdrop-blur-md flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap"
+            className="px-4 sm:px-5 py-2.5 sm:py-3.5 rounded-xl sm:rounded-2xl bg-black/60 text-zinc-300 border border-zinc-700 hover:border-white hover:text-white font-bold text-[11px] xs:text-xs sm:text-sm transition-all backdrop-blur-md flex items-center justify-center gap-1 sm:gap-2 whitespace-nowrap"
           >
             <Info className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>Details</span>

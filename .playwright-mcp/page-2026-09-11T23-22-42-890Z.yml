@@ -1,0 +1,8 @@
+- generic [active] [ref=f5e1]:
+  - link "Skip to main content" [ref=f5e2] [cursor=pointer]:
+    - /url: "#root"
+  - generic [ref=f5e27]:
+    - generic [ref=f5e31]:
+      - heading "Something went wrong." [level=1] [ref=f5e32]
+      - paragraph [ref=f5e33]: Stoned.living hit an unexpected error. Refresh the page to reload your session.
+    - button "Reload Stoned.living" [ref=f5e34]
