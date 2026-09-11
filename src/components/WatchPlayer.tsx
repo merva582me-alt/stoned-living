@@ -45,6 +45,8 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   const [theaterMode, setTheaterMode] = useState(false);
   const [lightsOff, setLightsOff] = useState(false);
   const [isFullScreenActive, setIsFullScreenActive] = useState(false);
+  const wasFullscreenRef = useRef(false);
+  const iframeContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch complete TV details to get all seasons
   useEffect(() => {
@@ -81,7 +83,9 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 
   useEffect(() => {
     const handleFsChange = () => {
-      setIsFullScreenActive(!!document.fullscreenElement);
+      const active = !!document.fullscreenElement;
+      setIsFullScreenActive(active);
+      if (active) wasFullscreenRef.current = true;
     };
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
@@ -211,8 +215,18 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     ];
   }, [media.id, effectiveMediaType, seasonNum, episodeNum]);
 
-  // Reset server when title/episode changes
-  useEffect(() => { setServerIndex(0); }, [media.id, seasonNum, episodeNum]);
+  // Reset server when title/episode changes; restore fullscreen after new iframe loads
+  useEffect(() => {
+    setServerIndex(0);
+    if (wasFullscreenRef.current && !document.fullscreenElement) {
+      // Give the new iframe a moment to mount before re-entering fullscreen
+      const t = setTimeout(() => {
+        const el = iframeContainerRef.current || document.documentElement;
+        el.requestFullscreen?.().catch(() => {});
+      }, 800);
+      return () => clearTimeout(t);
+    }
+  }, [media.id, seasonNum, episodeNum]);
 
   const handleNextEpisode = useCallback(() => {
     const totalEpsInSeason = seasonData?.episodes?.length || 24;
@@ -450,13 +464,23 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
             </div>
 
             {/* ── Video Player Container ──────────────────────────────────── */}
-            <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+            <div ref={iframeContainerRef} className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
 
               {/* ── iframe embed ── */}
               {embedServers[serverIndex] && (
                 <iframe
                   key={embedServers[serverIndex]}
-                  src={embedServers[serverIndex]}
+                  src={(() => {
+                    const url = embedServers[serverIndex];
+                    try {
+                      const u = new URL(url, window.location.origin);
+                      u.searchParams.set('autoplay', '1');
+                      u.searchParams.set('auto_play', '1');
+                      return u.toString();
+                    } catch {
+                      return url;
+                    }
+                  })()}
                   className="w-full h-full border-0 rounded-xl sm:rounded-3xl"
                   allowFullScreen
                   // @ts-ignore — webkit/moz legacy fullscreen attrs for mobile Safari & Firefox

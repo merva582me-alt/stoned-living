@@ -2,6 +2,15 @@
 # Security headers for all Cloudflare Pages responses
 # ─────────────────────────────────────────────────────────────────────────────
 
+# VidCore proxy pages are served inside an iframe and must be able to fetch
+# from arbitrary streaming/scraper origins. Give them a fully open CSP so the
+# player's SSE and fetch calls are never blocked by the parent-page policy.
+# This must come BEFORE the /* rule so it takes precedence.
+/vidcore-proxy/*
+  Content-Security-Policy: default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
+  X-Frame-Options: ALLOWALL
+  Permissions-Policy: fullscreen=*, autoplay=*
+
 /*
   # Prevent MIME sniffing
   X-Content-Type-Options: nosniff

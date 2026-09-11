@@ -236,11 +236,9 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     if (video.__patchBound) return;
     video.__patchBound = true;
 
-    // Remove playsinline so iOS Safari allows native fullscreen
-    video.removeAttribute('playsinline');
-    video.removeAttribute('webkit-playsinline');
-    // x5-playsinline is a WeChat/UC Browser attr that also blocks fullscreen
-    video.removeAttribute('x5-playsinline');
+    // playsinline is required for inline playback on iOS — never remove it.
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
     video.setAttribute('x-webkit-airplay', 'allow');
 
     // Patch requestFullscreen directly on the video element to use
