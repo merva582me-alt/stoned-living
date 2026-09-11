@@ -47,6 +47,8 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   const [isFullScreenActive, setIsFullScreenActive] = useState(false);
   const wasFullscreenRef = useRef(false);
   const iframeContainerRef = useRef<HTMLDivElement>(null);
+  // Track the element that was fullscreened so we can restore it after episode switch
+  const fullscreenElementRef = useRef<Element | null>(null);
 
   // Fetch complete TV details to get all seasons
   useEffect(() => {
@@ -85,10 +87,20 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     const handleFsChange = () => {
       const active = !!document.fullscreenElement;
       setIsFullScreenActive(active);
-      if (active) wasFullscreenRef.current = true;
+      if (active) {
+        wasFullscreenRef.current = true;
+        fullscreenElementRef.current = document.fullscreenElement;
+      } else {
+        fullscreenElementRef.current = null;
+      }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    // Also listen for webkit fullscreen change (iOS/Safari)
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+    };
   }, []);
 
   // ── Block ad iframes/overlays injected into the host page by VidCore ──────
@@ -131,12 +143,16 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   }, []);
 
   const toggleBrowserFullscreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+    const fsElem = (document as any).fullscreenElement || (document as any).webkitFullscreenElement;
+    if (!fsElem) {
+      // Fullscreen the iframe container div — it wraps the iframe and works cross-browser.
+      // The injected polyfill inside the iframe handles webkit video fullscreen on iOS.
+      const target = iframeContainerRef.current || document.documentElement;
+      const req = (target as any).requestFullscreen || (target as any).webkitRequestFullscreen || (target as any).mozRequestFullScreen;
+      if (req) req.call(target);
     } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch(() => {});
-      }
+      const exit = (document as any).exitFullscreen || (document as any).webkitExitFullscreen || (document as any).mozCancelFullScreen;
+      if (exit) exit.call(document);
     }
   };
 
@@ -218,12 +234,18 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   // Reset server when title/episode changes; restore fullscreen after new iframe loads
   useEffect(() => {
     setServerIndex(0);
-    if (wasFullscreenRef.current && !document.fullscreenElement) {
-      // Give the new iframe a moment to mount before re-entering fullscreen
+    if (wasFullscreenRef.current) {
+      // The browser will exit fullscreen when the iframe is unmounted/remounted.
+      // Re-enter fullscreen on the same container element after the new iframe mounts.
+      // We don't call exitFullscreen ourselves — we simply re-enter after the DOM settles.
       const t = setTimeout(() => {
-        const el = iframeContainerRef.current || document.documentElement;
-        el.requestFullscreen?.().catch(() => {});
-      }, 800);
+        const fsElem = (document as any).fullscreenElement || (document as any).webkitFullscreenElement;
+        if (!fsElem) {
+          const target = iframeContainerRef.current || document.documentElement;
+          const req = (target as any).requestFullscreen || (target as any).webkitRequestFullscreen || (target as any).mozRequestFullScreen;
+          if (req) req.call(target).catch?.(() => {});
+        }
+      }, 300);
       return () => clearTimeout(t);
     }
   }, [media.id, seasonNum, episodeNum]);
@@ -242,13 +264,16 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     }
   }, [seasonData, episodeNum, seasonsList, seasonNum]);
 
-  // ── VidCore auto-next: only active when VidCore (source 1 / index 0) is selected ──
+  // ── VidCore auto-next: listen for ended message from the proxied iframe ──
+  // Active for TV only, on all servers that inject the auto-next bridge (server 1 = VidCore proxy).
+  // The injected script posts { type: 'ended' } via window.parent.postMessage.
   useEffect(() => {
     if (!isTv || serverIndex !== 0) return;
     const handler = (e: MessageEvent) => {
       const ended =
-        (typeof e.data === 'string' && e.data === 'vidcore:ended') ||
-        (e.data && typeof e.data === 'object' && e.data.type === 'ended');
+        (typeof e.data === 'string' && (e.data === 'vidcore:ended' || e.data === 'ended')) ||
+        (e.data && typeof e.data === 'object' &&
+          (e.data.type === 'ended' || e.data.event === 'ended' || e.data.action === 'ended'));
       if (ended) handleNextEpisode();
     };
     window.addEventListener('message', handler);

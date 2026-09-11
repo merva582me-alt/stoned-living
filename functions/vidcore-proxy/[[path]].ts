@@ -116,80 +116,114 @@ function injectBaseTag(html: string): string {
 }
 
 /**
- * Build a runtime-injection script that fixes mobile playback without relying
- * on fragile string/whitespace matching against the VidCore source.
+ * Build a runtime-injection script that fixes mobile playback.
  *
- * The player exposes window.__player = { state, reload, switch } after init.
- * We wait for that, then:
+ * Works for BOTH movies and TV:
  *  1. Watch the status badge: auto-retry once when "All sources failed" appears.
+ *     Uses player.reload(true) if available; falls back to page reload.
  *  2. On loadedmetadata call video.play() so autoplay works on iOS/Android
- *     (the native HLS path never called play()).
- *  3. 15 s stall watchdog: if src is set but neither canplay nor error fires,
- *     force-switch to the next source.
+ *     (the native HLS path never calls play() itself).
+ *  3. 20 s stall watchdog: if the video hasn't reached canplay/playing/error,
+ *     try player.switch(next) if the API is present, or reload if not.
+ *
+ * All player API calls are guarded so the script never throws on movies where
+ * the TV-specific player API shape isn't available.
  */
 function buildMobilePatchScript(): string {
   return `<script>
 (function() {
   'use strict';
 
-  // Wait for window.__player to be set by the VidCore player init (polls every 50 ms,
-  // gives up after 30 s if the player never boots).
-  var _check = setInterval(function() {
-    if (!window.__player) return;
-    clearInterval(_check);
-    applyPatches(window.__player);
-  }, 50);
-  setTimeout(function() { clearInterval(_check); }, 30000);
-
-  function applyPatches(player) {
-    var state = player.state;
-    var video = document.getElementById('main-video') || document.querySelector('video');
-    if (!video) return;
-
-    // 1. Auto-retry: watch the status badge for "All sources failed" and
-    //    call player.reload() once after 2 s so users never have to tap Retry.
-    var badge = document.getElementById('status-badge');
-    if (badge) {
-      var _retried = false;
-      new MutationObserver(function() {
-        var txt = (badge.textContent || '').trim();
-        if (txt.indexOf('All sources failed') !== -1 && !_retried && !state.isDestroying) {
-          _retried = true;
-          badge.textContent = 'All sources failed — retrying\u2026';
-          setTimeout(function() {
-            _retried = false;
-            if (!state.isDestroying) player.reload(true);
-          }, 2000);
-        }
-        if (txt.indexOf('Fetching') !== -1 || txt.indexOf('Loading') !== -1) {
+  // ── 1. Status-badge retry watcher ───────────────────────────────────────
+  // Works without __player — only watches DOM text so it fires on movies too.
+  var _retried = false;
+  function watchBadge() {
+    var badge = document.getElementById('status-badge') ||
+                document.querySelector('[class*="status"]') ||
+                document.querySelector('[id*="status"]');
+    if (!badge) return;
+    new MutationObserver(function() {
+      var txt = (badge.textContent || '').trim();
+      if (txt.indexOf('All sources failed') !== -1 && !_retried) {
+        _retried = true;
+        badge.textContent = 'All sources failed \u2014 retrying\u2026';
+        setTimeout(function() {
           _retried = false;
-        }
-      }).observe(badge, { childList: true, characterData: true, subtree: true });
-    }
+          var p = window.__player;
+          if (p && !p.state.isDestroying) {
+            p.reload(true);
+          } else {
+            // Fallback: reload the page (inside the iframe) to restart the scrape
+            try { window.location.reload(); } catch(e) {}
+          }
+        }, 2500);
+      }
+      if (txt.indexOf('Fetching') !== -1 || txt.indexOf('Loading') !== -1 || txt.indexOf('Searching') !== -1) {
+        _retried = false;
+      }
+    }).observe(badge, { childList: true, characterData: true, subtree: true });
+  }
 
-    // 2. Autoplay on iOS/Android: the native HLS path resolves loadedmetadata
-    //    but never calls video.play(). Call it here so playback starts.
+  // ── 2 & 3. Video-level patches (autoplay + stall watchdog) ──────────────
+  function patchVideo(video) {
+    if (video.__mobilePatchApplied) return;
+    video.__mobilePatchApplied = true;
+
+    // 2. Autoplay: native HLS path resolves loadedmetadata but never calls play().
     video.addEventListener('loadedmetadata', function() {
       if (video.paused) video.play().catch(function() {});
     });
 
-    // 3. Stall watchdog: reset a 15 s timer on every loadstart. If we reach
-    //    15 s without canplay/playing/error, the stream is hung — switch source.
+    // 3. Stall watchdog: 20 s without canplay/playing/error = source is hung.
     var _stall = null;
-    function arm() {
+    function armStall() {
       clearTimeout(_stall);
       _stall = setTimeout(function() {
-        if (video.readyState < 2 && !state.isDestroying && state.sources && state.sources.length > 0) {
-          var next = state.sourceIdx + 1;
-          if (next < state.sources.length) player['switch'](next);
-          else if (!state.__autoRetried) { state.__autoRetried = true; player.reload(true); }
+        if (video.readyState >= 3) return; // HAVE_FUTURE_DATA — already buffering fine
+        var p = window.__player;
+        if (p && p.state && !p.state.isDestroying) {
+          // TV-style player with source switching
+          var sources = p.state.sources;
+          if (sources && sources.length > 0) {
+            var next = (p.state.sourceIdx || 0) + 1;
+            if (next < sources.length) {
+              try { p['switch'](next); } catch(e) { p.reload(true); }
+            } else if (!p.state.__autoRetried) {
+              p.state.__autoRetried = true;
+              p.reload(true);
+            }
+            return;
+          }
+          // Movie-style player — just reload
+          if (!p.state.__autoRetried) {
+            p.state.__autoRetried = true;
+            p.reload(true);
+          }
+        } else if (!_retried) {
+          // No player API — reload the page inside the iframe
+          _retried = true;
+          try { window.location.reload(); } catch(e) {}
         }
-      }, 15000);
+      }, 20000);
     }
-    video.addEventListener('loadstart',  arm);
-    video.addEventListener('canplay',    function() { clearTimeout(_stall); });
-    video.addEventListener('playing',    function() { clearTimeout(_stall); });
-    video.addEventListener('error',      function() { clearTimeout(_stall); });
+    video.addEventListener('loadstart', armStall);
+    video.addEventListener('canplay',   function() { clearTimeout(_stall); });
+    video.addEventListener('playing',   function() { clearTimeout(_stall); });
+    video.addEventListener('error',     function() { clearTimeout(_stall); });
+  }
+
+  function init() {
+    watchBadge();
+    document.querySelectorAll('video').forEach(patchVideo);
+    new MutationObserver(function() {
+      document.querySelectorAll('video').forEach(patchVideo);
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
   }
 })();
 <\\/script>`;
@@ -299,11 +333,17 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     // Inject <base> so all relative sub-resource URLs (JS, CSS, fetch) resolve to vidcore.org
     html = injectBaseTag(html);
 
-    // Raise the SSE scrape timeout from 10 s to 20 s. Simple literal replace
-    // on the one unique string in scrapeServer — resilient to indentation changes.
+    // Raise the SSE scrape timeout from 10 s to 20 s so mobile (slower networks)
+    // gets enough time to receive the source URL from VidCore's streaming endpoint.
+    // Use a regex so whitespace/indentation variations in VidCore's source don't break the match.
     html = html.replace(
-      "}, 10000);\n\n                    evtSource.addEventListener('start'",
-      "}, 20000);\n\n                    evtSource.addEventListener('start'"
+      /(\},\s*)10000(\);\s*\n[\s\S]{0,200}?evtSource\.addEventListener\(['"]start['"])/,
+      '$1' + '20000' + '$2'
+    );
+    // Fallback: also catch plain "10000" timeout values near SSE/EventSource patterns
+    html = html.replace(
+      /(EventSource|evtSource)[^;]{0,300}?setTimeout[^;]*?[,(]\s*10000\s*[)]/g,
+      (m) => m.replace('10000', '20000')
     );
 
     // Inject auto-next-episode bridge + mobile fullscreen polyfill
@@ -402,9 +442,16 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
   }
 })();
 <\/script>`;
-    // Inject the mobile patch script BEFORE the autoNextScript so the
-    // __player poller is already running when the player finishes init.
-    html = html.replace('</body>', buildMobilePatchScript() + autoNextScript + '</body>');
+    // Inject mobile patch BEFORE autoNext so the badge watcher and video patching
+    // are in place before the player finishes initialising.
+    // Use lastIndexOf so we insert before the final </body> even if VidCore's
+    // HTML has multiple partial occurrences earlier in the markup.
+    const bodyClose = html.lastIndexOf('</body>');
+    if (bodyClose !== -1) {
+      html = html.slice(0, bodyClose) + buildMobilePatchScript() + autoNextScript + html.slice(bodyClose);
+    } else {
+      html += buildMobilePatchScript() + autoNextScript;
+    }
 
     // parsePath() reads window.location.pathname which will be /vidcore-proxy/embed/...
     // Patch it once at the JS source level so the player sees /embed/... instead.
