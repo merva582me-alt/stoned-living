@@ -475,7 +475,6 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
                     try {
                       const u = new URL(url, window.location.origin);
                       u.searchParams.set('autoplay', '1');
-                      u.searchParams.set('auto_play', '1');
                       return u.toString();
                     } catch {
                       return url;

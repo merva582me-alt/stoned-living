@@ -115,9 +115,78 @@ function injectBaseTag(html: string): string {
   return html.replace(/<head([^>]*)>/i, `<head$1><base href="https://vidcore.org/">`);
 }
 
+/**
+ * Patch the player's SSE timeout from 10 000 ms to 20 000 ms so slow mobile
+ * networks don't time out every server before any stream is found, and add a
+ * one-shot auto-retry when "All sources failed" fires (instead of requiring
+ * the user to manually tap Retry).
+ *
+ * Also adds the missing loadTimeout guard for the native HLS path (iOS/Android)
+ * so a stalled stream on mobile still advances to the next source after 15 s
+ * instead of hanging forever.
+ */
+function patchPlayerScript(html: string): string {
+  // 1. Raise SSE timeout: 10000 → 20000 ms
+  //    Original: }, 10000);  (inside scrapeServer, after evtSource creation)
+  //    We target the specific timeout that rejects the SSE promise.
+  html = html.replace(
+    /reject\(new Error\(`SSE timeout for \$\{serverId\}`\)\);\s*\},\s*10000\)/,
+    "reject(new Error(`SSE timeout for ${serverId}`));\n                    }, 20000)"
+  );
+
+  // 2. Auto-retry on "All sources failed": instead of just showing the error,
+  //    automatically call fetchStreamData(true) once after 2 s if it hasn't
+  //    already been retried.
+  html = html.replace(
+    /setStatus\('All sources failed', 'error'\);\s*showSpinner\(false\);/,
+    `setStatus('All sources failed — retrying\u2026', 'error');
+                    showSpinner(false);
+                    if (!state.__autoRetried) {
+                        state.__autoRetried = true;
+                        setTimeout(function() {
+                            if (!state.isDestroying) {
+                                state.__autoRetried = false;
+                                fetchStreamData(true);
+                            }
+                        }, 2000);
+                        return;
+                    }`
+  );
+
+  // 3. Add a loadTimeout guard for the native HLS path (iOS Safari / Android
+  //    Chrome). Without this, if the video.src stalls and never fires 'error'
+  //    or 'loadedmetadata', the player hangs indefinitely on mobile.
+  //    We insert the guard right after "video.src = url;" in the native branch.
+  html = html.replace(
+    /(video\.src\s*=\s*url;\s*\n)([ \t]*)(video\.addEventListener\('loadedmetadata',\s*function onMeta\(\))/,
+    `$1$2// Native HLS load guard — advance to next source if no metadata within 15 s
+$2var nativeLoadTimer = setTimeout(function() {
+$2    if (!resolved) { resolveError(); moveToNextSource(); }
+$2}, 15000);
+$2$3`
+  );
+
+  // 4. Clear the native load timer when loadedmetadata fires
+  html = html.replace(
+    /(video\.removeEventListener\('loadedmetadata', onMeta\);)\s*(\s*showSpinner\(false\);)/,
+    `$1\n                            clearTimeout(nativeLoadTimer);$2`
+  );
+
+  // 5. Clear the native load timer when video error fires (native path)
+  html = html.replace(
+    /(video\.removeEventListener\('error', onErr\);\s*\n\s*)(resolveError\(\);\s*\n\s*moveToNextSource\(\);)/,
+    `$1clearTimeout(nativeLoadTimer);\n                            $2`
+  );
+
+  return html;
+}
+
 const RESPONSE_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
-  'cache-control': 'public, max-age=300, stale-while-revalidate=600', // cache 5 min — same embed URL is identical
+  // Cache for 2 minutes only — TV show episode changes need fresh scrape results.
+  // No stale-while-revalidate: a stale response with exhausted sources would
+  // immediately show "All sources failed" to the next viewer of the same episode.
+  'cache-control': 'public, max-age=120',
   'x-proxy': 'vidcore-ad-stripped',
   'x-frame-options': 'ALLOWALL',
   'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
@@ -125,10 +194,48 @@ const RESPONSE_HEADERS = {
   'permissions-policy': 'fullscreen=*, autoplay=*',
 };
 
+/** Fetch from VidCore with up to `maxAttempts` retries on non-200 or network error. */
+async function fetchWithRetry(vidcoreUrl: string, maxAttempts = 3): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    // Give each attempt 12 s; total wall time stays well under CF's 30 s limit.
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(vidcoreUrl, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Referer': 'https://vidcore.org/',
+          'Origin': 'https://vidcore.org',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          // Cache-bust on retry so VidCore doesn't serve a stale/errored page
+          ...(attempt > 1 ? { 'Cache-Control': 'no-cache' } : {}),
+        },
+      });
+      clearTimeout(timeout);
+      if (res.ok) return res;
+      // 5xx from VidCore — worth retrying; 4xx are definitive
+      if (res.status < 500) return res;
+      lastErr = new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      clearTimeout(timeout);
+      lastErr = err;
+    }
+    // Brief back-off before retry (200 ms, 400 ms)
+    if (attempt < maxAttempts) await new Promise(r => setTimeout(r, attempt * 200));
+  }
+  throw lastErr;
+}
+
 export async function onRequest(context: { request: Request; waitUntil?: (p: Promise<any>) => void }): Promise<Response> {
   const url = new URL(context.request.url);
 
-  // Strip the /vidcore-proxy prefix to get the actual VidCore path
+  // Strip the /vidcore-proxy prefix to get the actual VidCore path.
+  // Also strip any query params we added (e.g. autoplay=1) — VidCore uses
+  // URL params directly so we keep them, but we must not double-encode them.
   const vidcorePath = url.pathname.replace(/^\/vidcore-proxy/, '');
   const vidcoreUrl = `${VIDCORE_BASE}${vidcorePath}${url.search}`;
 
@@ -137,7 +244,8 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     return new Response('Not found', { status: 404 });
   }
 
-  // Check Cloudflare cache first — avoids hitting VidCore on repeat loads
+  // Cache key uses the full URL including query string (autoplay=1 etc.) so
+  // different param combos get separate cache entries.
   const cache = caches.default;
   const cacheKey = new Request(vidcoreUrl);
   const cached = await cache.match(cacheKey);
@@ -146,23 +254,8 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     return new Response(body, { status: 200, headers: RESPONSE_HEADERS });
   }
 
-  // Abort fetch after 12 s — fail fast rather than hanging until CF's 30 s wall
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12_000);
-
   try {
-    const upstream = await fetch(vidcoreUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': 'https://vidcore.org/',
-        'Origin': 'https://vidcore.org',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    clearTimeout(timeout);
+    const upstream = await fetchWithRetry(vidcoreUrl);
 
     if (!upstream.ok) {
       return new Response(`Upstream error: ${upstream.status}`, { status: upstream.status });
@@ -192,14 +285,11 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     // Inject <base> so all relative sub-resource URLs (JS, CSS, fetch) resolve to vidcore.org
     html = injectBaseTag(html);
 
-    // Inject auto-next-episode bridge: when the video ends, notify the parent frame
-    // so WatchPlayer can advance to the next episode. Uses MutationObserver to wait
-    // for the #main-video element in case it is created after DOMContentLoaded.
-    // Also injects a mobile fullscreen polyfill: iOS Safari does not support
-    // requestFullscreen() on arbitrary elements — only video.webkitEnterFullscreen().
-    // We intercept all fullscreen requests on the video element and any fullscreen
-    // button clicks, delegating to webkitEnterFullscreen() when the standard API
-    // is absent (iOS Safari) so the fullscreen button works on mobile.
+    // Patch the embedded player: raise SSE timeouts, add auto-retry, fix
+    // the missing native HLS loadTimeout so mobile doesn't hang.
+    html = patchPlayerScript(html);
+
+    // Inject auto-next-episode bridge + mobile fullscreen polyfill
     const autoNextScript = `<script>
 (function(){
   // ── Mobile fullscreen polyfill ───────────────────────────────────────────
@@ -304,12 +394,14 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       `window.location.pathname.replace(/^\\/vidcore-proxy/,'')`
     );
 
-    const processed = new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+    const processed = new Response(html, {
+      status: 200,
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=120' },
+    });
     context.waitUntil?.(cache.put(cacheKey, processed.clone()));
 
     return new Response(html, { status: 200, headers: RESPONSE_HEADERS });
   } catch (err: any) {
-    clearTimeout(timeout);
     const isTimeout = err?.name === 'AbortError';
     return new Response(isTimeout ? 'Upstream timed out' : `Proxy error: ${err}`, {
       status: isTimeout ? 504 : 502,
