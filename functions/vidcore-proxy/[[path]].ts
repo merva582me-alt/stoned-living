@@ -121,6 +121,8 @@ const RESPONSE_HEADERS = {
   'x-proxy': 'vidcore-ad-stripped',
   'x-frame-options': 'ALLOWALL',
   'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
+  // Allow fullscreen from within the iframe (required for Permissions Policy on modern browsers)
+  'permissions-policy': 'fullscreen=*, autoplay=*',
 };
 
 export async function onRequest(context: { request: Request; waitUntil?: (p: Promise<any>) => void }): Promise<Response> {
@@ -189,6 +191,113 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
 
     // Inject <base> so all relative sub-resource URLs (JS, CSS, fetch) resolve to vidcore.org
     html = injectBaseTag(html);
+
+    // Inject auto-next-episode bridge: when the video ends, notify the parent frame
+    // so WatchPlayer can advance to the next episode. Uses MutationObserver to wait
+    // for the #main-video element in case it is created after DOMContentLoaded.
+    // Also injects a mobile fullscreen polyfill: iOS Safari does not support
+    // requestFullscreen() on arbitrary elements — only video.webkitEnterFullscreen().
+    // We intercept all fullscreen requests on the video element and any fullscreen
+    // button clicks, delegating to webkitEnterFullscreen() when the standard API
+    // is absent (iOS Safari) so the fullscreen button works on mobile.
+    const autoNextScript = `<script>
+(function(){
+  // ── Mobile fullscreen polyfill ───────────────────────────────────────────
+  // iOS Safari only supports fullscreen via HTMLVideoElement.webkitEnterFullscreen.
+  // Patch Element.prototype.requestFullscreen so any player code that calls it
+  // on a non-video element still triggers native fullscreen on the video.
+  (function patchFullscreen() {
+    var _orig = Element.prototype.requestFullscreen;
+    Element.prototype.requestFullscreen = function() {
+      // If native fullscreen is supported, use it
+      if (_orig && document.fullscreenEnabled !== false) {
+        try { return _orig.call(this); } catch(e) {}
+      }
+      // Fallback: find the nearest video element and use webkitEnterFullscreen
+      var video = (this.tagName === 'VIDEO' ? this : this.querySelector('video')) ||
+                  document.getElementById('main-video') ||
+                  document.querySelector('video');
+      if (video && video.webkitEnterFullscreen) {
+        try { video.webkitEnterFullscreen(); } catch(e) {}
+      }
+      return Promise.resolve();
+    };
+    // Also patch webkitRequestFullscreen / mozRequestFullScreen aliases
+    Element.prototype.webkitRequestFullscreen = Element.prototype.requestFullscreen;
+    Element.prototype.mozRequestFullScreen = Element.prototype.requestFullscreen;
+    Element.prototype.msRequestFullscreen = Element.prototype.requestFullscreen;
+  })();
+
+  function notifyEnded() {
+    try { window.parent.postMessage({ type: 'ended' }, '*'); } catch(_) {}
+  }
+
+  function attachVideoListeners(video) {
+    if (video.__patchBound) return;
+    video.__patchBound = true;
+
+    // Remove playsinline so iOS Safari allows native fullscreen
+    video.removeAttribute('playsinline');
+    video.removeAttribute('webkit-playsinline');
+    // x5-playsinline is a WeChat/UC Browser attr that also blocks fullscreen
+    video.removeAttribute('x5-playsinline');
+    video.setAttribute('x-webkit-airplay', 'allow');
+
+    // Patch requestFullscreen directly on the video element to use
+    // webkitEnterFullscreen when the standard API is unavailable
+    if (!document.fullscreenEnabled && video.webkitEnterFullscreen) {
+      video.requestFullscreen = function() {
+        try { video.webkitEnterFullscreen(); } catch(e) {}
+        return Promise.resolve();
+      };
+      video.webkitRequestFullscreen = video.requestFullscreen;
+    }
+
+    // Auto-next bridge
+    if (!video.__endedBound) {
+      video.__endedBound = true;
+
+      // Primary: native ended event
+      video.addEventListener('ended', notifyEnded);
+
+      // Fallback: timeupdate-based detection for HLS/DASH players that never
+      // fire 'ended' because they manage segments themselves. Fire when the
+      // playhead is within 1.5 s of the duration and the video is not paused.
+      video.addEventListener('timeupdate', function() {
+        if (video.__endedFired) return;
+        var dur = video.duration;
+        if (!dur || !isFinite(dur) || dur < 10) return; // ignore ads / short clips
+        if (!video.paused && (dur - video.currentTime) <= 1.5) {
+          video.__endedFired = true;
+          notifyEnded();
+        }
+      });
+
+      // Reset the fired flag whenever the video src changes (new episode src)
+      video.addEventListener('emptied', function() { video.__endedFired = false; });
+      video.addEventListener('loadstart', function() { video.__endedFired = false; });
+    }
+  }
+
+  function init() {
+    var v = document.getElementById('main-video') || document.querySelector('video');
+    if (v) { attachVideoListeners(v); }
+    var obs = new MutationObserver(function() {
+      document.querySelectorAll('video').forEach(function(vid) {
+        attachVideoListeners(vid);
+      });
+    });
+    obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+<\/script>`;
+    html = html.replace('</body>', autoNextScript + '</body>');
 
     // parsePath() reads window.location.pathname which will be /vidcore-proxy/embed/...
     // Patch it once at the JS source level so the player sees /embed/... instead.

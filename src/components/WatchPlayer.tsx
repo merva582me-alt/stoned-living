@@ -463,7 +463,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
                   mozallowfullscreen="true"
                   webkitallowfullscreen="true"
                   allow="autoplay; encrypted-media; picture-in-picture; fullscreen; web-share"
-                  referrerPolicy="no-referrer"
+                  referrerPolicy="strict-origin-when-cross-origin"
                 />
               )}
 
