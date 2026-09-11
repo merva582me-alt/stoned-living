@@ -196,7 +196,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     const id = media.id;
     if (effectiveMediaType === 'movie') {
       return [
-        `/vidcore-proxy/embed/movie/${id}?autoplay=true&theme=10b981`,
+        `/vidcore-proxy/embed/movie/${id}`,
         `https://vidsrcme.ru/embed/movie/${id}`,
         `https://vidlink.pro/movie/${id}`,
         `https://vidup.to/e/${id}`,
@@ -204,7 +204,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     }
     // TV or Anime
     return [
-      `/vidcore-proxy/embed/tv/${id}/${seasonNum}/${episodeNum}?autoplay=true&theme=10b981`,
+      `/vidcore-proxy/embed/tv/${id}/${seasonNum}/${episodeNum}`,
       `https://vidsrcme.ru/embed/tv/${id}/${seasonNum}/${episodeNum}`,
       `https://vidlink.pro/tv/${id}/${seasonNum}/${episodeNum}`,
       `https://vidup.to/e/${id}?s=${seasonNum}&e=${episodeNum}`,
@@ -214,7 +214,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   // Reset server when title/episode changes
   useEffect(() => { setServerIndex(0); }, [media.id, seasonNum, episodeNum]);
 
-  const handleNextEpisode = () => {
+  const handleNextEpisode = useCallback(() => {
     const totalEpsInSeason = seasonData?.episodes?.length || 24;
     if (episodeNum < totalEpsInSeason) {
       setEpisodeNum(episodeNum + 1);
@@ -226,17 +226,16 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
         setEpisodeNum(1);
       }
     }
-  };
+  }, [seasonData, episodeNum, seasonsList, seasonNum]);
 
-  // ── VidCore auto-next: listen for vidcore:ended postMessage ───────────────
-  // VidCore is always index 0. Only advance episode when it's the active server.
+  // ── VidCore auto-next: only active when VidCore (source 1 / index 0) is selected ──
   useEffect(() => {
-    if (!isTv) return;
+    if (!isTv || serverIndex !== 0) return;
     const handler = (e: MessageEvent) => {
-      if (serverIndex !== 0) return;
-      if (typeof e.data === 'string' && e.data === 'vidcore:ended') {
-        handleNextEpisode();
-      }
+      const ended =
+        (typeof e.data === 'string' && e.data === 'vidcore:ended') ||
+        (e.data && typeof e.data === 'object' && e.data.type === 'ended');
+      if (ended) handleNextEpisode();
     };
     window.addEventListener('message', handler);
     return () => window.removeEventListener('message', handler);
@@ -451,16 +450,19 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
             </div>
 
             {/* ── Video Player Container ──────────────────────────────────── */}
-            <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl overflow-hidden border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
+            <div className="relative group z-40 w-full aspect-video bg-black rounded-xl sm:rounded-3xl border border-emerald-500/30 shadow-[0_0_50px_rgba(16,185,129,0.2)]">
 
               {/* ── iframe embed ── */}
               {embedServers[serverIndex] && (
                 <iframe
                   key={embedServers[serverIndex]}
                   src={embedServers[serverIndex]}
-                  className="w-full h-full border-0"
+                  className="w-full h-full border-0 rounded-xl sm:rounded-3xl"
                   allowFullScreen
-                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                  // @ts-ignore — webkit/moz legacy fullscreen attrs for mobile Safari & Firefox
+                  mozallowfullscreen="true"
+                  webkitallowfullscreen="true"
+                  allow="autoplay; encrypted-media; picture-in-picture; fullscreen; web-share"
                   referrerPolicy="no-referrer"
                 />
               )}

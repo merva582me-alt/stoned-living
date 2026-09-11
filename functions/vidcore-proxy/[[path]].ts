@@ -106,6 +106,15 @@ function rewriteAssetUrls(html: string): string {
   return html.replace(re, '$1="https://');
 }
 
+/**
+ * Inject a <base href="https://vidcore.org/"> tag so all relative sub-resource
+ * URLs (scripts, stylesheets, fetch calls using relative paths) resolve back to
+ * VidCore's origin rather than the proxy's origin.
+ */
+function injectBaseTag(html: string): string {
+  return html.replace(/<head([^>]*)>/i, `<head$1><base href="https://vidcore.org/">`);
+}
+
 export async function onRequest(context: { request: Request }): Promise<Response> {
   const url = new URL(context.request.url);
 
@@ -155,15 +164,14 @@ export async function onRequest(context: { request: Request }): Promise<Response
     // Strip any <meta http-equiv="X-Frame-Options"> or CSP meta tags VidCore injects
     html = html.replace(/<meta[^>]+http-equiv=["']?(?:x-frame-options|content-security-policy)["']?[^>]*>/gi, '<!-- meta-security stripped -->');
 
-    // Rewrite the one relative asset URL (/favicon.ico) to absolute
-    html = html.replace(/href="\/favicon\.ico"/gi, `href="${VIDCORE_BASE}/favicon.ico"`);
+    // Inject <base> so all relative sub-resource URLs (JS, CSS, fetch) resolve to vidcore.org
+    html = injectBaseTag(html);
 
-    // parsePath() uses window.location.pathname and checks parts[0] === 'embed'.
-    // When proxied, pathname is /vidcore-proxy/embed/... so parts[0] = 'vidcore-proxy'.
-    // Direct string replace in the player source: strip the proxy prefix from the pathname read.
+    // parsePath() reads window.location.pathname which will be /vidcore-proxy/embed/...
+    // Patch it once at the JS source level so the player sees /embed/... instead.
     html = html.replace(
-      /const path = window\.location\.pathname;/,
-      `const path = window.location.pathname.replace(/^\\/vidcore-proxy/, '');`
+      /window\.location\.pathname/g,
+      `window.location.pathname.replace(/^\\/vidcore-proxy/,'')`
     );
 
     return new Response(html, {
