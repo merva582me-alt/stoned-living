@@ -126,20 +126,22 @@ function injectBaseTag(html: string): string {
  * instead of hanging forever.
  */
 function patchPlayerScript(html: string): string {
-  // 1. Raise SSE timeout: 10000 → 20000 ms
-  //    Original: }, 10000);  (inside scrapeServer, after evtSource creation)
-  //    We target the specific timeout that rejects the SSE promise.
+  // The VidCore player uses 24-space indentation (6 levels × 4 spaces) inside
+  // the DOMContentLoaded listener. All literal replacements use exact whitespace
+  // from the live source so they never silently no-op.
+
+  // 1. Raise SSE timeout: 10000 → 20000 ms.
+  //    Live source (lines ~1434-1438): 20-space indent inside scrapeServer.
   html = html.replace(
-    /reject\(new Error\(`SSE timeout for \$\{serverId\}`\)\);\s*\},\s*10000\)/,
-    "reject(new Error(`SSE timeout for ${serverId}`));\n                    }, 20000)"
+    "                        reject(new Error(`SSE timeout for ${serverId}`));\n                    }, 10000);",
+    "                        reject(new Error(`SSE timeout for ${serverId}`));\n                    }, 20000);"
   );
 
-  // 2. Auto-retry on "All sources failed": instead of just showing the error,
-  //    automatically call fetchStreamData(true) once after 2 s if it hasn't
-  //    already been retried.
+  // 2. Auto-retry on "All sources failed".
+  //    Live source (line ~1969): 20-space indent inside moveToNextSource.
   html = html.replace(
-    /setStatus\('All sources failed', 'error'\);\s*showSpinner\(false\);/,
-    `setStatus('All sources failed — retrying\u2026', 'error');
+    "                    setStatus('All sources failed', 'error');\n                    showSpinner(false);",
+    `                    setStatus('All sources failed — retrying…', 'error');
                     showSpinner(false);
                     if (!state.__autoRetried) {
                         state.__autoRetried = true;
@@ -153,29 +155,38 @@ function patchPlayerScript(html: string): string {
                     }`
   );
 
-  // 3. Add a loadTimeout guard for the native HLS path (iOS Safari / Android
-  //    Chrome). Without this, if the video.src stalls and never fires 'error'
-  //    or 'loadedmetadata', the player hangs indefinitely on mobile.
-  //    We insert the guard right after "video.src = url;" in the native branch.
+  // 3. Native HLS path (iOS/Android): insert a 15 s timeout guard right after
+  //    video.src = url so a stalled stream advances to the next source.
+  //    Live source (line ~1783): 24-space indent.
   html = html.replace(
-    /(video\.src\s*=\s*url;\s*\n)([ \t]*)(video\.addEventListener\('loadedmetadata',\s*function onMeta\(\))/,
-    `$1$2// Native HLS load guard — advance to next source if no metadata within 15 s
-$2var nativeLoadTimer = setTimeout(function() {
-$2    if (!resolved) { resolveError(); moveToNextSource(); }
-$2}, 15000);
-$2$3`
+    "                        video.src = url;\n                        video.addEventListener('loadedmetadata', function onMeta() {",
+    `                        video.src = url;
+                        var nativeLoadTimer = setTimeout(function() {
+                            if (!resolved) { resolveError(); moveToNextSource(); }
+                        }, 15000);
+                        video.addEventListener('loadedmetadata', function onMeta() {`
   );
 
-  // 4. Clear the native load timer when loadedmetadata fires
+  // 4. Inside loadedmetadata (native): clear timer + call video.play() for autoplay.
+  //    Live source (lines ~1785-1788): 28-space indent.
   html = html.replace(
-    /(video\.removeEventListener\('loadedmetadata', onMeta\);)\s*(\s*showSpinner\(false\);)/,
-    `$1\n                            clearTimeout(nativeLoadTimer);$2`
+    "                            video.removeEventListener('loadedmetadata', onMeta);\n                            showSpinner(false);\n                            setStatus('Playing (native)', 'playing');\n                            resolveSuccess();",
+    `                            video.removeEventListener('loadedmetadata', onMeta);
+                            clearTimeout(nativeLoadTimer);
+                            showSpinner(false);
+                            setStatus('Playing (native)', 'playing');
+                            resolveSuccess();
+                            video.play().catch(function() {});`
   );
 
-  // 5. Clear the native load timer when video error fires (native path)
+  // 5. Inside error handler (native): clear timer before advancing.
+  //    Live source (lines ~1810-1812): 28-space indent.
   html = html.replace(
-    /(video\.removeEventListener\('error', onErr\);\s*\n\s*)(resolveError\(\);\s*\n\s*moveToNextSource\(\);)/,
-    `$1clearTimeout(nativeLoadTimer);\n                            $2`
+    "                            video.removeEventListener('error', onErr);\n                            resolveError();\n                            moveToNextSource();",
+    `                            video.removeEventListener('error', onErr);
+                            clearTimeout(nativeLoadTimer);
+                            resolveError();
+                            moveToNextSource();`
   );
 
   return html;
