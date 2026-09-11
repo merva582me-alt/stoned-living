@@ -115,7 +115,15 @@ function injectBaseTag(html: string): string {
   return html.replace(/<head([^>]*)>/i, `<head$1><base href="https://vidcore.org/">`);
 }
 
-export async function onRequest(context: { request: Request }): Promise<Response> {
+const RESPONSE_HEADERS = {
+  'content-type': 'text/html; charset=utf-8',
+  'cache-control': 'public, max-age=300, stale-while-revalidate=600', // cache 5 min — same embed URL is identical
+  'x-proxy': 'vidcore-ad-stripped',
+  'x-frame-options': 'ALLOWALL',
+  'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
+};
+
+export async function onRequest(context: { request: Request; waitUntil?: (p: Promise<any>) => void }): Promise<Response> {
   const url = new URL(context.request.url);
 
   // Strip the /vidcore-proxy prefix to get the actual VidCore path
@@ -127,8 +135,22 @@ export async function onRequest(context: { request: Request }): Promise<Response
     return new Response('Not found', { status: 404 });
   }
 
+  // Check Cloudflare cache first — avoids hitting VidCore on repeat loads
+  const cache = caches.default;
+  const cacheKey = new Request(vidcoreUrl);
+  const cached = await cache.match(cacheKey);
+  if (cached) {
+    const body = await cached.text();
+    return new Response(body, { status: 200, headers: RESPONSE_HEADERS });
+  }
+
+  // Abort fetch after 12 s — fail fast rather than hanging until CF's 30 s wall
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+
   try {
     const upstream = await fetch(vidcoreUrl, {
+      signal: controller.signal,
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -138,6 +160,7 @@ export async function onRequest(context: { request: Request }): Promise<Response
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });
+    clearTimeout(timeout);
 
     if (!upstream.ok) {
       return new Response(`Upstream error: ${upstream.status}`, { status: upstream.status });
@@ -174,19 +197,15 @@ export async function onRequest(context: { request: Request }): Promise<Response
       `window.location.pathname.replace(/^\\/vidcore-proxy/,'')`
     );
 
-    return new Response(html, {
-      status: 200,
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-        'x-proxy': 'vidcore-ad-stripped',
-        // Allow this page to be iframed from any origin
-        'x-frame-options': 'ALLOWALL',
-        // Permissive CSP so the player scripts/media still load
-        'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
-      },
+    const processed = new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=300' } });
+    context.waitUntil?.(cache.put(cacheKey, processed.clone()));
+
+    return new Response(html, { status: 200, headers: RESPONSE_HEADERS });
+  } catch (err: any) {
+    clearTimeout(timeout);
+    const isTimeout = err?.name === 'AbortError';
+    return new Response(isTimeout ? 'Upstream timed out' : `Proxy error: ${err}`, {
+      status: isTimeout ? 504 : 502,
     });
-  } catch (err) {
-    return new Response(`Proxy error: ${err}`, { status: 502 });
   }
 }
