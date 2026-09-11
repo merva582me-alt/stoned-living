@@ -28,3 +28,6 @@ streaming-overhaul-plan.md
 # Editor and OS
 .DS_Store
 Thumbs.db
+
+# Playwright test artifacts
+.playwright-mcp/
