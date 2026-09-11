@@ -87,6 +87,45 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
+  // ── Block ad iframes/overlays injected into the host page by VidCore ──────
+  useEffect(() => {
+    const isAdNode = (node: Node): boolean => {
+      if (!(node instanceof HTMLElement)) return false;
+      const src = (node as HTMLIFrameElement).src || '';
+      const cls = node.className || '';
+      const id  = node.id || '';
+      // Only match direct identifiers — not outerHTML — to avoid false positives
+      return (
+        src.includes('bakestubborn') ||
+        cls.includes('bakestubborn') ||
+        id.includes('bakestubborn') ||
+        cls.includes('pl-d327acfd') ||
+        id.includes('pl-d327acfd') ||
+        id.startsWith('container-d327acfd')
+      );
+    };
+
+    const sweep = () => {
+      document.querySelectorAll(
+        'iframe[src*="bakestubborn"], [class*="bakestubborn"], [id*="bakestubborn"], [id^="container-d327acfd"]'
+      ).forEach(el => el.remove());
+    };
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach(node => {
+          if (isAdNode(node)) (node as HTMLElement).remove();
+        });
+      }
+    });
+
+    // Only watch direct children of body — ads are injected at the top level
+    observer.observe(document.body, { childList: true });
+    sweep();
+
+    return () => observer.disconnect();
+  }, []);
+
   const toggleBrowserFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
@@ -157,17 +196,17 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     const id = media.id;
     if (effectiveMediaType === 'movie') {
       return [
+        `/vidcore-proxy/embed/movie/${id}?autoplay=true&theme=10b981`,
         `https://vidsrcme.ru/embed/movie/${id}`,
         `https://vidlink.pro/movie/${id}`,
-        `https://vidcore.org/embed/movie/${id}?autoplay=true&theme=10b981`,
         `https://vidup.to/e/${id}`,
       ];
     }
     // TV or Anime
     return [
+      `/vidcore-proxy/embed/tv/${id}/${seasonNum}/${episodeNum}?autoplay=true&theme=10b981`,
       `https://vidsrcme.ru/embed/tv/${id}/${seasonNum}/${episodeNum}`,
       `https://vidlink.pro/tv/${id}/${seasonNum}/${episodeNum}`,
-      `https://vidcore.org/embed/tv/${id}/${seasonNum}/${episodeNum}?autoplay=true&theme=10b981`,
       `https://vidup.to/e/${id}?s=${seasonNum}&e=${episodeNum}`,
     ];
   }, [media.id, effectiveMediaType, seasonNum, episodeNum]);
@@ -188,6 +227,20 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
       }
     }
   };
+
+  // ── VidCore auto-next: listen for vidcore:ended postMessage ───────────────
+  // VidCore is always index 0. Only advance episode when it's the active server.
+  useEffect(() => {
+    if (!isTv) return;
+    const handler = (e: MessageEvent) => {
+      if (serverIndex !== 0) return;
+      if (typeof e.data === 'string' && e.data === 'vidcore:ended') {
+        handleNextEpisode();
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [isTv, serverIndex, handleNextEpisode]);
 
   // Handle next/prev episode navigation
   const handlePrevEpisode = () => {
