@@ -22,7 +22,6 @@ export const DEFAULT_USER: UserProfile = {
     autoSkipIntro: false,
     darkCanvasMode: true,
     smokeEffects: true,
-    ambientSound: false
   }
 };
 

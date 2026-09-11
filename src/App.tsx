@@ -13,21 +13,17 @@ import { MediaCard } from './components/MediaCard';
 import { WatchPlayer } from './components/WatchPlayer';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
 import { SearchModal } from './components/SearchModal';
-import { UserProfileView } from './components/UserProfileView';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { Footer } from './components/Footer';
 import { SmokeParticleCanvas } from './components/SmokeParticleCanvas';
-import { AmbientSoundPlayer } from './components/AmbientSoundPlayer';
-import { UnauthorizedDomainModal } from './components/UnauthorizedDomainModal';
 
 import { MediaItem, UserProfile, SiteSettings } from './types';
 import { fetchTrending, discoverMedia, discoverMediaAdvanced, fetchTopRated, fetchAnime, fetchSiteSettings, enrichListClient } from './services/api';
 import { MOCK_MOVIES, MOCK_SHOWS } from './data/mockTmdbData';
-import { loadUserProfile, saveUserProfile, toggleFavorite, toggleWatchlist } from './services/storage';
+import { loadUserProfile, saveUserProfile } from './services/storage';
 import { Flame, Film, Tv, Sparkles, Star, Clock, Bookmark, Heart, Smile, Zap, Ghost, HeartHandshake, Baby, Shield, Rocket, Trophy, Compass, ShieldAlert } from 'lucide-react';
-import { auth, loginWithGoogle, logoutUser, subscribeToUserProfile, saveProfileToFirestore, checkRedirectResult, subscribeToSiteSettings } from './services/firebase';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { subscribeToSiteSettings } from './services/firebase';
 import { toast } from 'sonner';
 
 // Genre Configurations for Movies
@@ -69,7 +65,7 @@ const ANIME_CATEGORY_CONFIGS = [
   { id: 'classic_anime', name: 'All-Time Classics', icon: Trophy, title: '🏆 All-Time Classic Anime', subtitle: 'Highest rated masterpiece anime series and films' }
 ];
 
-const VALID_TABS = new Set(['home', 'movies', 'tv', 'anime', 'sports', 'stash', 'admin']);
+const VALID_TABS = new Set(['home', 'movies', 'tv', 'anime', 'sports', 'admin']);
 
 function getInitialTab(): string {
   const params = new URLSearchParams(window.location.search);
@@ -98,12 +94,9 @@ export default function App() {
     }
   }, [currentTab]);
 
-  // App Data & Auth State
+  // App Data & Settings State
   const [user, setUser] = useState<UserProfile>(loadUserProfile());
-  const [authUser, setAuthUser] = useState<FirebaseUser | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
-  const [unauthorizedDomain, setUnauthorizedDomain] = useState<string | null>(null);
 
   // Admin Portal State
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
@@ -136,32 +129,6 @@ export default function App() {
   const [singleAnimeCategoryGrid, setSingleAnimeCategoryGrid] = useState<MediaItem[]>([]);
   const [loadingAnimeCategoryGrid, setLoadingAnimeCategoryGrid] = useState(false);
 
-  // Subscribe to Firebase Auth changes
-  useEffect(() => {
-    let unsubscribeProfile: (() => void) | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, (fbUser) => {
-      setAuthUser(fbUser);
-      setAuthLoading(false);
-      if (fbUser) {
-        unsubscribeProfile = subscribeToUserProfile(fbUser, (updatedProfile) => {
-          setUser(updatedProfile);
-        });
-      } else {
-        if (unsubscribeProfile) {
-          unsubscribeProfile();
-          unsubscribeProfile = null;
-        }
-        setUser(loadUserProfile());
-      }
-    });
-
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeProfile) unsubscribeProfile();
-    };
-  }, []);
-
   // Fetch and subscribe to site settings in real-time
   useEffect(() => {
     fetchSiteSettings().then(setSettings);
@@ -169,24 +136,6 @@ export default function App() {
       setSettings(liveSettings);
     });
     return () => unsubscribe();
-  }, []);
-
-  // Check for Google OAuth redirect result on app boot (e.g. returning from Google sign-in on mobile / GitHub Pages)
-  useEffect(() => {
-    checkRedirectResult()
-      .then((fbUser) => {
-        if (fbUser) {
-          toast.success(`Welcome back, ${fbUser.displayName || 'Friend'}! 🌿`);
-          setCurrentTab('stash');
-          window.history.pushState({}, '', '?tab=stash');
-        }
-      })
-      .catch((err: any) => {
-        if (err?.code === 'auth/unauthorized-domain' || err?.message?.startsWith('UNAUTHORIZED_DOMAIN:')) {
-          const domain = err.message?.split(':')[1] || window.location.hostname;
-          setUnauthorizedDomain(domain);
-        }
-      });
   }, []);
 
   // Fetch initial media catalogs exclusively from TMDb API
@@ -341,46 +290,6 @@ export default function App() {
     }
   }, [selectedAnimeCategory]);
 
-  const handleGoogleSignIn = async (targetTabOnSuccess?: string | React.SyntheticEvent) => {
-    try {
-      const fbUser = await loginWithGoogle();
-      if (fbUser) {
-        toast.success(`Welcome back, ${fbUser.displayName || 'Friend'}! 🌿`);
-        const destination = typeof targetTabOnSuccess === 'string' ? targetTabOnSuccess : 'stash';
-        setCurrentTab(destination);
-        if (VALID_TABS.has(destination)) {
-          window.history.pushState({}, '', `?tab=${destination}`);
-        }
-      }
-    } catch (err: any) {
-      if (err?.code === 'auth/unauthorized-domain' || err?.message?.startsWith('UNAUTHORIZED_DOMAIN:')) {
-        const domain = err.message?.split(':')[1] || window.location.hostname;
-        setUnauthorizedDomain(domain);
-      } else if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
-        toast('Sign in cancelled');
-      } else if (err?.code === 'auth/popup-blocked') {
-        toast.error('Sign in popup was blocked by your browser. Please allow popups.');
-      } else {
-        console.error('Google Sign In Error:', err);
-        toast.error('Sign in failed. Please check domain authorization.');
-      }
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      await logoutUser();
-      toast('Signed out. See you next session 🌿');
-      if (currentTab === 'stash') {
-        setCurrentTab('home');
-        window.history.replaceState({}, '', '?tab=home');
-      }
-    } catch (err: any) {
-      console.error('Sign out error:', err);
-      toast.error('Sign out failed. Please try again.');
-    }
-  };
-
   // Prevent main site background scrolling while details modal or search modal is open
   useEffect(() => {
     if (inspectItem || searchOpen) {
@@ -408,6 +317,7 @@ export default function App() {
     }
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
 
   // Sync tab from browser back/forward navigation
   useEffect(() => {
@@ -449,37 +359,6 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleToggleWatchlist = (item: MediaItem) => {
-    if (!authUser && !auth.currentUser) {
-      toast.error('Sign in required to save items to your Stash 🌿', { duration: 3000 });
-      handleGoogleSignIn('stash');
-      return;
-    }
-    const { inList, updatedProfile } = toggleWatchlist(item);
-    setUser(updatedProfile);
-    toast.success(inList ? `Added to Stash 🌿` : `Removed from Stash`, { duration: 2000 });
-    if (auth.currentUser) {
-      saveProfileToFirestore(updatedProfile);
-    }
-  };
-
-  const handleToggleAmbientSound = () => {
-    const newSoundState = !user.settings.ambientSound;
-    const updated = {
-      ...user,
-      settings: {
-        ...user.settings,
-        ambientSound: newSoundState
-      }
-    };
-    saveUserProfile(updated);
-    setUser(updated);
-    if (auth.currentUser) {
-      saveProfileToFirestore(updated);
-    }
-    toast.success(newSoundState ? 'Ambient Lofi Sound Enabled 🎵' : 'Ambient Lofi Sound Muted 🔇', { duration: 2000 });
-  };
-
   const allCatalog = [
     ...homeTrendingMovies,
     ...homeTrendingShows,
@@ -497,21 +376,13 @@ export default function App() {
       {/* Background Particles Canvas */}
       <SmokeParticleCanvas enabled={user.settings.smokeEffects} />
 
-      {/* Ambient Lofi Audio Player */}
-      <AmbientSoundPlayer enabled={user.settings.ambientSound} isPlayingMedia={currentTab === 'watch'} />
-
       {/* Main Header Navbar */}
       <Navbar
         currentTab={currentTab}
         onNavigate={navigateTo}
         onOpenSearch={() => setSearchOpen(prev => !prev)}
         searchOpen={searchOpen}
-        user={user}
         settings={settings}
-        isLoggedIn={!!authUser}
-        onGoogleSignIn={handleGoogleSignIn}
-        onSignOut={handleSignOut}
-        onToggleAmbientSound={handleToggleAmbientSound}
       />
 
       {/* App Body Views */}
@@ -520,7 +391,6 @@ export default function App() {
           <div className={currentTab === 'home' ? 'block' : 'hidden'}>
             <HomeView
               user={user}
-              isLoggedIn={!!authUser}
               onPlayMedia={handlePlayMedia}
               onInspectItem={setInspectItem}
               onToggleWatchlist={handleToggleWatchlist}
@@ -567,21 +437,6 @@ export default function App() {
             <SportsView
               user={user}
               onPlayMedia={handlePlayMedia}
-            />
-          </div>
-        )}
-
-        {visitedTabs.has('stash') && (
-          <div className={currentTab === 'stash' ? 'block' : 'hidden'}>
-            <UserProfileView
-              user={user}
-              onUpdateUser={setUser}
-              onPlay={handlePlayMedia}
-              onOpenDetails={setInspectItem}
-              catalog={allCatalog}
-              isLoggedIn={!!authUser}
-              onGoogleSignIn={handleGoogleSignIn}
-              onSignOut={handleSignOut}
             />
           </div>
         )}
@@ -639,9 +494,7 @@ export default function App() {
             settings={settings}
             onClose={() => navigateTo('home')}
             onSelectMedia={handlePlayMedia}
-            onToggleWatchlist={handleToggleWatchlist}
             onUpdateUser={(updated) => setUser(updated)}
-            inWatchlist={user.watchlist.some(id => Number(id) === Number(activeMedia.id))}
           />
         )}
 
@@ -662,21 +515,7 @@ export default function App() {
           item={inspectItem}
           onClose={() => setInspectItem(null)}
           onPlay={handlePlayMedia}
-          onToggleWatchlist={handleToggleWatchlist}
-          inWatchlist={user.watchlist.some(id => Number(id) === Number(inspectItem.id))}
           onSelectMedia={(selected) => setInspectItem(selected)}
-        />
-      )}
-
-      {/* GitHub Pages / Unauthorized Domain Guidance Modal */}
-      {unauthorizedDomain && (
-        <UnauthorizedDomainModal
-          domain={unauthorizedDomain}
-          onClose={() => setUnauthorizedDomain(null)}
-          onRetry={() => {
-            setUnauthorizedDomain(null);
-            handleGoogleSignIn();
-          }}
         />
       )}
 

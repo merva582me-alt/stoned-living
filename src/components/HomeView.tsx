@@ -37,7 +37,6 @@ import {
 
 interface HomeViewProps {
   user: UserProfile;
-  isLoggedIn?: boolean;
   onPlayMedia: (item: MediaItem, season?: number, episode?: number) => void;
   onInspectItem: (item: MediaItem) => void;
   onToggleWatchlist: (item: MediaItem) => void;
@@ -99,7 +98,6 @@ async function mixMedia(
 
 export const HomeView: React.FC<HomeViewProps> = ({
   user,
-  isLoggedIn,
   onPlayMedia,
   onInspectItem,
   onToggleWatchlist,
@@ -441,67 +439,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
         onToggleWatchlist={onToggleWatchlist}
         watchlistIds={user.watchlist}
       />
-
-      {/* Continue Watching Section (only for logged in users with watch history) */}
-      {isLoggedIn && user.watchHistory.length > 0 && (
-        <section className="my-8 bg-[#0c120e] border border-emerald-500/20 p-5 rounded-3xl">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-extrabold text-white flex items-center gap-2">
-              <Clock className="w-5 h-5 text-emerald-400" /> Continue Watching
-            </h2>
-            <button
-              onClick={() => onNavigateTab('stash')}
-              className="text-xs font-bold text-emerald-400 hover:underline"
-            >
-              View All History →
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {user.watchHistory.slice(0, 3).map((h) => {
-              const matchedMedia = combinedCatalog.find((m) => Number(m.id) === Number(h.mediaId)) || {
-                id: h.mediaId,
-                title: h.title,
-                name: h.title,
-                overview: '',
-                poster_path: h.posterPath,
-                backdrop_path: h.backdropPath,
-                vote_average: 8.5,
-                vote_count: 10,
-                popularity: 10,
-                media_type: h.mediaType || 'movie'
-              };
-
-              const posterUrl = h.posterPath
-                ? `https://image.tmdb.org/t/p/w300${h.posterPath}`
-                : 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=300&auto=format&fit=crop&q=80';
-
-              return (
-                <div
-                  key={h.id}
-                  onClick={() => onPlayMedia(matchedMedia, h.season, h.episode)}
-                  className="flex items-center gap-4 bg-[#101713] hover:bg-emerald-950/40 border border-emerald-900/50 hover:border-emerald-500/40 p-3 rounded-2xl cursor-pointer group transition"
-                >
-                  <img src={posterUrl} alt={h.title} className="w-16 h-22 rounded-xl object-cover" />
-                  <div className="flex-1 min-w-0">
-                    <h4 className="font-bold text-sm text-white group-hover:text-emerald-400 transition-colors truncate">
-                      {h.title}
-                    </h4>
-                    {h.season && (
-                      <p className="text-xs text-emerald-400 font-mono mt-0.5">
-                        S{h.season}:E{h.episode} {h.episodeTitle ? `• ${h.episodeTitle}` : ''}
-                      </p>
-                    )}
-                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden mt-3">
-                      <div className="bg-emerald-500 h-full" style={{ width: `${h.progressPercent}%` }} />
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* Render All 21 Horizontal Category Carousels in Exact Sequence */}
       {sections.map((sec, idx) => {

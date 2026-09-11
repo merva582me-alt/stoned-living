@@ -1,21 +1,20 @@
 import React, { useState } from 'react';
-import { 
-  Cannabis, 
-  HelpCircle, 
-  FileText, 
-  Wifi, 
-  Globe, 
-  X, 
-  CheckCircle2, 
-  ExternalLink, 
-  RefreshCw, 
-  Server, 
-  ShieldCheck, 
-  Sparkles, 
-  Zap, 
-  Tv, 
-  Film, 
-  Bookmark, 
+import {
+  Cannabis,
+  HelpCircle,
+  FileText,
+  Wifi,
+  Globe,
+  X,
+  CheckCircle2,
+  ExternalLink,
+  RefreshCw,
+  Server,
+  ShieldCheck,
+  Sparkles,
+  Zap,
+  Tv,
+  Film,
   Activity,
   ChevronRight
 } from 'lucide-react';
@@ -108,8 +107,8 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, userRole }) => {
           </div>
         </div>
 
-        {/* 5-Column Compact Navigation Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 lg:gap-8">
+        {/* 4-Column Compact Navigation Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6 lg:gap-8">
           
           {/* Column 1: Explore */}
           <div className="space-y-3">
@@ -138,38 +137,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, userRole }) => {
               <li>
                 <button onClick={() => onNavigate('home')} className="hover:text-white hover:underline transition">
                   New Releases & Trending
-                </button>
-              </li>
-            </ul>
-          </div>
-
-          {/* Column 2: Account & Stash */}
-          <div className="space-y-3">
-            <h4 className="font-bold text-white text-[11px] uppercase tracking-wider text-emerald-400/90">My Account</h4>
-            <ul className="space-y-2 text-xs">
-              <li>
-                <button onClick={() => onNavigate('stash')} className="hover:text-white hover:underline transition flex items-center gap-1.5">
-                  <Bookmark className="w-3 h-3 text-emerald-400" /> My Stash Watchlist
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('stash')} className="hover:text-white hover:underline transition">
-                  Favorite Masterpieces
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('stash')} className="hover:text-white hover:underline transition">
-                  Continue Watching
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('stash')} className="hover:text-white hover:underline transition">
-                  Server Preferences
-                </button>
-              </li>
-              <li>
-                <button onClick={() => onNavigate('admin')} className="text-amber-400 hover:text-amber-300 font-extrabold hover:underline transition flex items-center gap-1">
-                  <span>⚡ Admin Panel</span>
                 </button>
               </li>
             </ul>

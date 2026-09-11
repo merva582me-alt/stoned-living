@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
-import { Play, SkipForward, SkipBack, Star, Cannabis, MessageSquare, Info, Send, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, SkipForward, SkipBack, Star, Cannabis, MessageSquare, Info, Send, ChevronLeft, ChevronRight } from 'lucide-react';
 import { MediaItem, Season, Episode, Comment, UserProfile, SiteSettings } from '../types';
 import { fetchTvSeason, fetchMediaDetail, fetchComments, postComment } from '../services/api';
 import { updateWatchHistory } from '../services/storage';
@@ -15,9 +15,7 @@ interface WatchPlayerProps {
   initialEpisode?: number;
   onClose: () => void;
   onSelectMedia: (item: MediaItem) => void;
-  onToggleWatchlist: (item: MediaItem) => void;
   onUpdateUser?: (updated: UserProfile) => void;
-  inWatchlist?: boolean;
 }
 
 export const WatchPlayer: React.FC<WatchPlayerProps> = ({
@@ -28,9 +26,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   initialEpisode = 1,
   onClose,
   onSelectMedia,
-  onToggleWatchlist,
   onUpdateUser,
-  inWatchlist = false
 }) => {
   const isTv = media.media_type === 'tv' || Boolean(media.number_of_seasons) || Boolean(media.first_air_date) || (Boolean(media.name) && !media.title);
   const effectiveMediaType: 'movie' | 'tv' = isTv ? 'tv' : 'movie';
@@ -430,7 +426,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
               onClick={onClose}
               className="px-2.5 sm:px-3.5 py-1 sm:py-1.5 rounded-lg sm:rounded-xl bg-emerald-950/60 hover:bg-emerald-800/80 text-emerald-300 font-semibold text-[11px] sm:text-xs border border-emerald-500/40 transition-all shrink-0"
             >
-              ← <span className="hidden xs:inline">Back to Stash</span><span className="xs:hidden">Back</span>
+              ← <span className="hidden xs:inline">Back</span><span className="xs:hidden">Back</span>
             </button>
 
             <div className="min-w-0 flex-1">
@@ -448,20 +444,6 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
             </div>
           </div>
 
-          {/* Quick Player Actions */}
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              onClick={() => onToggleWatchlist(media)}
-              className={`p-1.5 sm:p-2 rounded-lg sm:rounded-xl border text-xs font-semibold transition ${
-                inWatchlist
-                  ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500'
-                  : 'bg-black/60 text-zinc-300 border-emerald-500/20 hover:border-emerald-400'
-              }`}
-              title="Save to Stash"
-            >
-              {inWatchlist ? <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" /> : <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-            </button>
-          </div>
         </div>
 
         {/* Responsive Grid Layout Container: Side-by-Side on PC (lg:grid), Stacked on Mobile/Tablet */}
@@ -654,7 +636,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >
-                  <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Stash Community ({comments.length})
+                  <MessageSquare className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Community ({comments.length})
                 </button>
               </div>
 

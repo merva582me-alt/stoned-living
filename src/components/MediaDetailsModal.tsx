@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   Play,
-  Plus,
-  Check,
   Heart,
   X,
   Star,
@@ -85,8 +83,6 @@ interface MediaDetailsModalProps {
   item: MediaItem;
   onClose: () => void;
   onPlay: (item: MediaItem) => void;
-  onToggleWatchlist: (item: MediaItem) => void;
-  inWatchlist?: boolean;
   onSelectMedia?: (item: MediaItem) => void;
 }
 
@@ -94,8 +90,6 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   item,
   onClose,
   onPlay,
-  onToggleWatchlist,
-  inWatchlist = false,
   onSelectMedia
 }) => {
   const mediaType = getEffectiveMediaType(item);
@@ -262,17 +256,6 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 <span>STREAM NOW</span>
               </button>
 
-              <button
-                onClick={() => onToggleWatchlist(detail)}
-                className={`p-2 sm:p-3.5 rounded-xl sm:rounded-2xl border transition-all ${
-                  inWatchlist
-                    ? 'bg-emerald-500/30 text-emerald-300 border-emerald-500'
-                    : 'bg-black/60 text-white border-white/20 hover:border-emerald-400'
-                }`}
-                title={inWatchlist ? 'Remove from Stash' : 'Add to Stash Watchlist'}
-              >
-                {inWatchlist ? <Check className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" /> : <Plus className="w-4 h-4 sm:w-5 sm:h-5" />}
-              </button>
             </div>
           </div>
         </div>

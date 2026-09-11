@@ -192,7 +192,6 @@ export interface UserProfile {
     autoSkipIntro: boolean;
     darkCanvasMode: boolean;
     smokeEffects: boolean;
-    ambientSound: boolean;
   };
 }
 
