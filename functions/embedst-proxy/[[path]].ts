@@ -31,6 +31,7 @@ const AD_DOMAINS = [
   'usrpubtrk.com',
   'doubleclick.net',
   'googleadservices.com',
+  'cdn-cgi/rum',
 ];
 
 /**
@@ -191,15 +192,18 @@ function injectBaseTag(html: string): string {
 
 /**
  * Patch window.location.pathname so the player's path parser sees /embed/...
- * instead of /embedst-proxy/embed/... — same technique as vidcore-proxy.
- * Injected as the first script in <head> so it runs before the player bundle.
+ * instead of /embedst-proxy/embed/...
+ *
+ * Object.defineProperty on window.location is non-configurable in all browsers,
+ * so we use history.replaceState to actually rewrite the URL before the player
+ * bundle executes its path parser. This is a real navigation-safe rewrite.
  */
 function injectPathnamePatch(html: string): string {
   const patch = '<script>' +
     '(function(){' +
-    "try{var r=window.location.pathname,p=r.replace(/^\\/embedst-proxy/,'');" +
-    "if(p!==r){Object.defineProperty(window.location,'pathname',{get:function(){return p;},configurable:true});}" +
-    '}catch(e){}' +
+    "try{var p=window.location.pathname.replace(/^\\/embedst-proxy/,'');" +
+    "history.replaceState(null,'',p+window.location.search+window.location.hash);}" +
+    'catch(e){}' +
     '})();' +
     '</' + 'script>';
   if (/<head[\s>]/i.test(html)) {
