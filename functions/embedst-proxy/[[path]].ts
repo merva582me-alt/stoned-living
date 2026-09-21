@@ -191,26 +191,27 @@ function injectBaseTag(html: string): string {
 }
 
 /**
- * Patch window.location.pathname so the player's path parser sees /embed/...
+ * Rewrite window.location.pathname so the player's path parser sees /embed/...
  * instead of /embedst-proxy/embed/...
  *
- * We override the pathname getter on Location.prototype — this IS configurable
- * and works in all browsers. The instance property (window.location.pathname)
- * is non-configurable, but the prototype getter is. The player reads
- * window.location.pathname which walks up to Location.prototype and hits our
- * getter, which strips the /embedst-proxy prefix before returning the value.
+ * history.replaceState() is the only reliable cross-browser way to change what
+ * window.location.pathname returns inside an iframe. Location.prototype
+ * descriptor overrides are blocked by browsers as a security measure, and
+ * Object.defineProperty on window.location itself throws because location
+ * properties are non-configurable.
+ *
+ * replaceState does NOT trigger a navigation or reload — it only updates the
+ * URL bar value. The _redirects rule is updated to passthrough /embed/* so
+ * any reload of the rewritten URL also reaches the correct proxy handler.
+ *
+ * embedPath: the actual embed.st path e.g. /embed/admin/match-id/1
  */
-function injectPathnamePatch(html: string): string {
+function injectPathnamePatch(html: string, embedPath: string): string {
+  const safePath = JSON.stringify(embedPath);
   const patch = '<script>' +
     '(function(){' +
-    "try{" +
-    "var _get=Object.getOwnPropertyDescriptor(Location.prototype,'pathname');" +
-    "if(_get&&_get.get){" +
-    "Object.defineProperty(Location.prototype,'pathname',{" +
-    "get:function(){return _get.get.call(this).replace(/^\\/embedst-proxy/,'');}," +
-    "configurable:true" +
-    "});}" +
-    "}catch(e){}" +
+    `try{history.replaceState(null,'',${safePath}+window.location.search+window.location.hash);}` +
+    'catch(e){}' +
     '})();' +
     '</' + 'script>';
   if (/<head[\s>]/i.test(html)) {
@@ -376,8 +377,8 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     // Inject <base> so all relative sub-resource URLs resolve to embed.st
     html = injectBaseTag(html);
 
-    // Patch window.location.pathname so the player sees /embed/... not /embedst-proxy/embed/...
-    html = injectPathnamePatch(html);
+    // Rewrite window.location.pathname so the player sees /embed/... not /embedst-proxy/embed/...
+    html = injectPathnamePatch(html, embedPath);
 
     const processed = new Response(html, {
       status: 200,
