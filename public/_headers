@@ -11,6 +11,11 @@
   X-Frame-Options: ALLOWALL
   Permissions-Policy: fullscreen=*, autoplay=*
 
+/embedst-proxy/*
+  Content-Security-Policy: default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
+  X-Frame-Options: ALLOWALL
+  Permissions-Policy: fullscreen=*, autoplay=*
+
 /*
   # Prevent MIME sniffing
   X-Content-Type-Options: nosniff
@@ -26,4 +31,4 @@
   # frame-src is 'https:' to allow stream embed iframes from any HTTPS host
   # (sportsrc.org, movie embed providers, etc.) without needing to whitelist
   # every CDN/streaming domain individually.
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://graphql.anilist.co https://streamed.pk https://www.thesportsdb.com; font-src 'self' data:; frame-src https:; frame-ancestors 'none';
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://graphql.anilist.co https://streamed.pk https://www.thesportsdb.com https://site.api.espn.com https://statsapi.mlb.com https://api-web.nhle.com; font-src 'self' data:; frame-src https:; frame-ancestors 'none';
