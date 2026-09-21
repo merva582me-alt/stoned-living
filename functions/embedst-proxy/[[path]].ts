@@ -194,16 +194,23 @@ function injectBaseTag(html: string): string {
  * Patch window.location.pathname so the player's path parser sees /embed/...
  * instead of /embedst-proxy/embed/...
  *
- * Object.defineProperty on window.location is non-configurable in all browsers,
- * so we use history.replaceState to actually rewrite the URL before the player
- * bundle executes its path parser. This is a real navigation-safe rewrite.
+ * We override the pathname getter on Location.prototype — this IS configurable
+ * and works in all browsers. The instance property (window.location.pathname)
+ * is non-configurable, but the prototype getter is. The player reads
+ * window.location.pathname which walks up to Location.prototype and hits our
+ * getter, which strips the /embedst-proxy prefix before returning the value.
  */
 function injectPathnamePatch(html: string): string {
   const patch = '<script>' +
     '(function(){' +
-    "try{var p=window.location.pathname.replace(/^\\/embedst-proxy/,'');" +
-    "history.replaceState(null,'',p+window.location.search+window.location.hash);}" +
-    'catch(e){}' +
+    "try{" +
+    "var _get=Object.getOwnPropertyDescriptor(Location.prototype,'pathname');" +
+    "if(_get&&_get.get){" +
+    "Object.defineProperty(Location.prototype,'pathname',{" +
+    "get:function(){return _get.get.call(this).replace(/^\\/embedst-proxy/,'');}," +
+    "configurable:true" +
+    "});}" +
+    "}catch(e){}" +
     '})();' +
     '</' + 'script>';
   if (/<head[\s>]/i.test(html)) {
