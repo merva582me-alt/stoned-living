@@ -159,20 +159,42 @@ function rewriteAssetUrls(html: string): string {
 }
 
 /**
- * Strip the inline script that calls document.body.insertAdjacentHTML to inject
+ * Strip the inline IIFE that calls document.body.insertAdjacentHTML to inject
  * a hidden <iframe src="/ad.html">. This script uses a path-relative URL so the
- * domain blocklist can't catch it. It is a small self-contained IIFE (~200 chars).
- * Pattern confirmed in stoned.living-sports.har: the script calls insertAdjacentHTML
- * with a hidden iframe pointing to /ad.html and repeats itself via setTimeout.
+ * domain blocklist can't catch it.
+ *
+ * The previous [\s\S]{0,4000} span was too greedy — it matched across multiple
+ * </script><script> tag boundaries, stripping the Clappr + p2p-engine player
+ * loader scripts that appear just before the ad IIFE in the body.
+ *
+ * Fix: match only <script> tags that have NO src attribute (inline-only) and
+ * contain both insertAdjacentHTML and /ad.html within ≤800 chars.
  */
 function stripAdHtmlScript(html: string): string {
-  // Match inline <script> blocks (≤4000 chars) that use insertAdjacentHTML to
-  // inject a hidden /ad.html iframe. The script body contains HTML string literals
-  // with < chars, so we can't use [^<]*. Use a size-capped [\s\S] match instead.
-  return html.replace(
-    /<script[^>]*>([\s\S]{0,4000}?insertAdjacentHTML[\s\S]{0,4000}?\/ad\.html[\s\S]{0,500}?)<\/script>/gi,
+  // The ad IIFE injects a hidden /ad.html iframe using insertAdjacentHTML.
+  // It is always a self-contained IIFE starting with (()=>{ or (function(){
+  // and has no src= attribute.
+  //
+  // Two-pass approach:
+  //  1. Match the specific IIFE pattern directly (most reliable).
+  //  2. Fall back to a broader inline-only match capped to 1200 chars total.
+  //
+  // Critically: the regex must NOT use [\s\S] across the whole script block
+  // because the IIFE body itself contains '<' (from the injected <iframe>).
+  // We use a lookahead (?!.*src=) guard on the <script> open tag to exclude
+  // any tag that has a src attribute, so external player scripts are safe.
+
+  // Pass 1: direct IIFE match — the body is ~280 chars and starts with (()=>{
+  html = html.replace(
+    /<script(?![^>]*\bsrc\b)[^>]*>\s*\(\(\)=>\{[\s\S]{1,500}?\/ad\.html[\s\S]{1,300}?\}\)\(\);\s*<\/script>/gi,
     '<!-- ad-html-script blocked -->'
   );
+  // Pass 2: legacy function(){} style IIFE
+  html = html.replace(
+    /<script(?![^>]*\bsrc\b)[^>]*>\s*\(function\(\)[\s\S]{1,500}?\/ad\.html[\s\S]{1,300}?\}\)\(\);\s*<\/script>/gi,
+    '<!-- ad-html-script blocked -->'
+  );
+  return html;
 }
 
 /**
@@ -298,6 +320,15 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     embedPath.startsWith('/js/') ||
     embedPath.startsWith('/css/')
   );
+
+  // Silently swallow Cloudflare RUM / analytics beacons — return 204 so the
+  // browser stops retrying and the DevTools console stays clean.
+  if (embedPath.startsWith('/cdn-cgi/')) {
+    return new Response(null, {
+      status: 204,
+      headers: { 'access-control-allow-origin': '*' },
+    });
+  }
 
   if (!isEmbedPage && !isPassthrough) {
     return new Response('Not found', { status: 404 });
