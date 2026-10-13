@@ -11,6 +11,7 @@ const VIDCORE_BASE = 'https://vidcore.org';
 
 /** All ad/tracker domain fragments to block */
 const AD_DOMAINS = [
+  // original
   'ferocitycandour.com',
   'alaphoid.com',
   'portalfluently.com',
@@ -19,6 +20,12 @@ const AD_DOMAINS = [
   'indirectlyrawpick.com',
   'pushcrew.com',
   'onesignal.com',
+
+  // new (biomanos / social-bar / chaturbate style ads)
+  'biomanos.org',
+  'show-creative1.com',
+  'holdbitter.com',
+  'apiguinee.org',
 ];
 
 /**
@@ -81,6 +88,29 @@ function stripAdLinkTags(html: string): string {
     );
     html = html.replace(re, '<!-- ad-link blocked -->');
   }
+  return html;
+}
+
+/**
+ * Extra pattern-based stripper for social-bar / chaturbate-style ads
+ * that keep rotating domains.
+ */
+function stripCommonAdPatterns(html: string): string {
+  // Block any script that references the known ad networks by keyword
+  html = html.replace(
+    /<script[^>]+src=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|chaturbate)[^"'\s>]*["']?[^>]*>[\s\S]*?<\/script>/gi,
+    '<!-- ad-pattern blocked -->'
+  );
+  // Self-closing / no-body variant
+  html = html.replace(
+    /<script[^>]+src=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|chaturbate)[^"'\s>]*["']?[^>]*\/?>/gi,
+    '<!-- ad-pattern blocked -->'
+  );
+  // Link tags
+  html = html.replace(
+    /<link[^>]+href=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee)[^"'\s>]*["']?[^>]*>/gi,
+    '<!-- ad-link-pattern blocked -->'
+  );
   return html;
 }
 
@@ -325,6 +355,7 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     html = stripExternalAdScripts(html); // <script src="ad.com/...">
     html = stripInlineAdScripts(html);   // inline blocks mentioning ad domains
     html = stripAdLinkTags(html);        // <link preconnect/dns-prefetch href="ad.com">
+    html = stripCommonAdPatterns(html);  // keyword-based social-bar / chaturbate ads
     html = stripDevtoolsScript(html);    // devtools → youtube redirect
     html = rewriteAssetUrls(html);       // fix protocol-relative asset URLs
     // Strip any <meta http-equiv="X-Frame-Options"> or CSP meta tags VidCore injects
