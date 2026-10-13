@@ -224,13 +224,6 @@ function toSportMatch(m: StreamedMatch, fromLiveEndpoint: boolean, enrich?: Matc
 // StreamPlayer — handles HLS (.m3u8), direct video, and embed iframe URLs
 // ---------------------------------------------------------------------------
 
-function proxyEmbedUrl(url: string): string {
-  if (url.startsWith('https://embed.st/')) {
-    return url.replace('https://embed.st', '/embedst-proxy');
-  }
-  return url;
-}
-
 function isHlsUrl(url: string): boolean {
   return url.includes('.m3u8');
 }
@@ -276,10 +269,10 @@ const StreamPlayer: React.FC<{ url: string }> = ({ url }) => {
     );
   }
 
-  // Regular embed page — route embed.st through the ad-stripping proxy
+  // Regular embed page — use iframe
   return (
     <iframe
-      src={proxyEmbedUrl(url)}
+      src={url}
       width="100%"
       height="100%"
       frameBorder={0}

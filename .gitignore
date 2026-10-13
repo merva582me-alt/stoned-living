@@ -23,12 +23,7 @@ sports-image-enrichment-plan.md
 sports-live-fixes-plan.md
 sports-player-redesign-plan.md
 streaming-overhaul-plan.md
-sports-ad-stripping-plan.md
-local-testing-pipeline-plan.md
 *.plan.md
-
-# HAR capture files -- local only
-*.har
 
 # Editor and OS
 .DS_Store

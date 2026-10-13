@@ -1,12 +1,3 @@
 # Cloudflare Pages SPA fallback routing
 # All paths that don't match a static asset serve index.html (React Router / client-side routing)
-
-# Exclude proxy function paths from the SPA rewrite so they hit the CF Pages Function:
-# /embedst-proxy/* — served by functions/embedst-proxy/[[path]].ts
-# /vidcore-proxy/*  — served by functions/vidcore-proxy/[[path]].ts
-# /embed/*          — rewritten target after history.replaceState in the embedst-proxy page;
-#                     must pass through to the embedst-proxy function on reload
-/embedst-proxy/*   /embedst-proxy/:splat   200
-/embed/*           /embedst-proxy/embed/:splat   200
-/vidcore-proxy/*   /vidcore-proxy/:splat   200
 /*    /index.html    200
