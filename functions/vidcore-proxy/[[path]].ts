@@ -18,6 +18,10 @@ const AD_DOMAINS = [
   'workdeadlinededicate.com',
   'indirectlyrawpick.com',
   'pushcrew.com',
+  'biomanos.org',
+  'show-creative1.com',
+  'holdbitter.com',
+  'apiguinee.org',
   'onesignal.com',
 ];
 
