@@ -106,7 +106,7 @@ function injectBaseTag(html: string): string {
 
 /**
  * Build a combined runtime-injection script for mobile playback fixes,
- * fullscreen polyfills, and active runtime ad/popup blocking.
+ * fullscreen polyfills, and active runtime ad/popup/script blocking.
  */
 function buildMobilePatchScript(): string {
   const adDomainsJson = JSON.stringify(AD_DOMAINS);
@@ -114,7 +114,6 @@ function buildMobilePatchScript(): string {
 (function() {
   'use strict';
 
-  // ── Runtime Adblocker (Intercepts fetch, XHR, window.open, and dynamic scripts) ──
   var BLOCKED_DOMAINS = ${adDomainsJson};
   function isAdUrl(url) {
     if (!url) return false;
@@ -125,13 +124,54 @@ function buildMobilePatchScript(): string {
     return false;
   }
 
+  // ── Intercept Dynamic Script/Iframe/Link Creation ──────────────
+  var _origCreateElement = document.createElement;
+  document.createElement = function(tagName) {
+    var el = _origCreateElement.apply(this, arguments);
+    var tag = (tagName || '').toLowerCase();
+    if (tag === 'script' || tag === 'iframe' || tag === 'link') {
+      var origSetAttribute = el.setAttribute;
+      el.setAttribute = function(name, value) {
+        if ((name === 'src' || name === 'href') && isAdUrl(value)) {
+          console.warn('[Proxy Adblock] Blocked dynamic ' + tag + ' attr:', value);
+          return;
+        }
+        return origSetAttribute.apply(this, arguments);
+      };
+      if (tag === 'script') {
+        Object.defineProperty(el, 'src', {
+          set: function(url) {
+            if (isAdUrl(url)) {
+              console.warn('[Proxy Adblock] Blocked script.src:', url);
+              return;
+            }
+            this.setAttribute('src', url);
+          },
+          get: function() { return this.getAttribute('src'); },
+          configurable: true
+        });
+      }
+    }
+    return el;
+  };
+
+  // ── Intercept DOM Node Append/Insertion ──────────────
+  var _origAppend = Node.prototype.appendChild;
+  Node.prototype.appendChild = function(child) {
+    if (child && child.nodeType === 1) {
+      var src = child.src || child.href || (child.getAttribute && (child.getAttribute('src') || child.getAttribute('href')));
+      if (isAdUrl(src)) {
+        console.warn('[Proxy Adblock] Blocked node append:', src);
+        return child;
+      }
+    }
+    return _origAppend.apply(this, arguments);
+  };
+
   // Block window.open popups to ad domains
   var _origOpen = window.open;
   window.open = function(url) {
-    if (isAdUrl(url)) {
-      console.warn('[Proxy Adblock] Blocked popup:', url);
-      return null;
-    }
+    if (isAdUrl(url)) return null;
     return _origOpen.apply(this, arguments);
   };
 
@@ -148,16 +188,12 @@ function buildMobilePatchScript(): string {
   // Block XMLHttpRequest to ad domains
   var _origXhrOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url) {
-    if (isAdUrl(url)) {
-      this.__isBlockedAd = true;
-    }
+    if (isAdUrl(url)) { this.__isBlockedAd = true; }
     return _origXhrOpen.apply(this, arguments);
   };
   var _origXhrSend = XMLHttpRequest.prototype.send;
   XMLHttpRequest.prototype.send = function() {
-    if (this.__isBlockedAd) {
-      return;
-    }
+    if (this.__isBlockedAd) return;
     return _origXhrSend.apply(this, arguments);
   };
 
