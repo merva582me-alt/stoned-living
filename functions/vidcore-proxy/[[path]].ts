@@ -5,7 +5,7 @@
  *
  * Fetches VidCore HTML, strips known ad/tracker scripts server-side,
  * rewrites nested iframes so they also go through the proxy,
- * injects a runtime ad-blocker, and returns clean HTML.
+ * injects a safer runtime ad-blocker + robot-overlay remover.
  */
 
 const VIDCORE_BASE = 'https://vidcore.org';
@@ -139,8 +139,8 @@ function injectBaseTag(html: string): string {
 }
 
 /**
- * Runtime ad-blocker that stops dynamically created scripts / fetch / XHR
- * to any domain in AD_DOMAINS.
+ * Safer runtime ad-blocker.
+ * Only blocks known ad domains. Does not break legitimate createElement usage.
  */
 function buildRuntimeAdBlocker(): string {
   const domains = AD_DOMAINS.map(d => `"${d}"`).join(',');
@@ -152,56 +152,78 @@ function buildRuntimeAdBlocker(): string {
   function isBlocked(url) {
     if (!url) return false;
     try {
-      var host = (typeof url === 'string' ? url : (url.url || url.href || '')).toLowerCase();
-      return BLOCKED.some(function(d) { return host.indexOf(d) !== -1; });
+      var str = (typeof url === 'string' ? url : (url.url || url.href || '')).toLowerCase();
+      return BLOCKED.some(function(d) { return str.indexOf(d) !== -1; });
     } catch(e) { return false; }
   }
 
-  // Block dynamic <script> and <link>
+  // Block only when src/href is set to an ad domain
   var origCreate = Document.prototype.createElement;
-  Document.prototype.createElement = function(tag) {
-    var el = origCreate.call(this, tag);
-    if (tag && (tag.toLowerCase() === 'script' || tag.toLowerCase() === 'link')) {
-      var origSetAttribute = el.setAttribute;
+  Document.prototype.createElement = function(tagName, options) {
+    var el = origCreate.call(this, tagName, options);
+    var tag = (tagName || '').toLowerCase();
+    if (tag === 'script' || tag === 'link' || tag === 'iframe' || tag === 'img') {
+      var desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'src') ||
+                 Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+      // Safer: only intercept setAttribute
+      var origSet = el.setAttribute.bind(el);
       el.setAttribute = function(name, value) {
         if ((name === 'src' || name === 'href') && isBlocked(value)) {
-          console.log('[adblock] blocked', value);
+          console.log('[adblock] blocked setAttribute', value);
           return;
         }
-        return origSetAttribute.call(this, name, value);
+        return origSet(name, value);
       };
-      Object.defineProperty(el, 'src', {
-        set: function(v) { if (!isBlocked(v)) el.setAttribute('src', v); },
-        get: function() { return el.getAttribute('src'); }
-      });
-      Object.defineProperty(el, 'href', {
-        set: function(v) { if (!isBlocked(v)) el.setAttribute('href', v); },
-        get: function() { return el.getAttribute('href'); }
-      });
     }
     return el;
   };
 
-  // Block fetch
-  var origFetch = window.fetch;
-  window.fetch = function(input, init) {
-    if (isBlocked(input)) {
-      console.log('[adblock] fetch blocked', input);
-      return Promise.reject(new Error('blocked'));
-    }
-    return origFetch.apply(this, arguments);
-  };
+  // Block fetch to ad domains
+  if (window.fetch) {
+    var origFetch = window.fetch;
+    window.fetch = function(input, init) {
+      if (isBlocked(input)) {
+        console.log('[adblock] fetch blocked', input);
+        return Promise.reject(new TypeError('Blocked by ad blocker'));
+      }
+      return origFetch.apply(this, arguments);
+    };
+  }
 
-  // Block XHR
+  // Block XHR to ad domains
   var origOpen = XMLHttpRequest.prototype.open;
   XMLHttpRequest.prototype.open = function(method, url) {
     if (isBlocked(url)) {
       console.log('[adblock] xhr blocked', url);
-      this.abort = function() {};
+      // Make it a no-op
+      this.send = function() {};
       return;
     }
     return origOpen.apply(this, arguments);
   };
+
+  // Extra safety: remove the "I'm not a robot" overlay if it ever appears
+  function removeRobotOverlay() {
+    var texts = ['I\\'m not a robot', 'CHECK THE BOX', 'not a robot'];
+    document.querySelectorAll('div, section, aside').forEach(function(el) {
+      var t = (el.textContent || '').trim();
+      if (texts.some(function(s) { return t.indexOf(s) !== -1; }) && el.querySelector('input[type="checkbox"]')) {
+        el.style.display = 'none';
+        el.remove();
+      }
+    });
+  }
+
+  // Run once on load + watch for late injection
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', removeRobotOverlay);
+  } else {
+    removeRobotOverlay();
+  }
+  new MutationObserver(removeRobotOverlay).observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
 })();
 <\/script>`;
 }
@@ -302,7 +324,7 @@ function buildMobilePatchScript(): string {
 
 const RESPONSE_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
-  'cache-control': 'public, max-age=120',
+  'cache-control': 'public, max-age=60',   // shorter cache while testing
   'x-proxy': 'vidcore-ad-stripped',
   'x-frame-options': 'ALLOWALL',
   'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
@@ -342,7 +364,7 @@ async function fetchWithRetry(vidcoreUrl: string, maxAttempts = 3): Promise<Resp
 
 export async function onRequest(context: { request: Request; waitUntil?: (p: Promise<any>) => void }): Promise<Response> {
   const url = new URL(context.request.url);
-  const proxyOrigin = url.origin; // e.g. https://stoned.living
+  const proxyOrigin = url.origin;
 
   const vidcorePath = url.pathname.replace(/^\/vidcore-proxy/, '');
   const vidcoreUrl = `${VIDCORE_BASE}${vidcorePath}${url.search}`;
@@ -351,13 +373,14 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     return new Response('Not found', { status: 404 });
   }
 
-  const cache = caches.default;
-  const cacheKey = new Request(vidcoreUrl);
-  const cached = await cache.match(cacheKey);
-  if (cached) {
-    const body = await cached.text();
-    return new Response(body, { status: 200, headers: RESPONSE_HEADERS });
-  }
+  // Skip cache while debugging – force fresh response
+  // const cache = caches.default;
+  // const cacheKey = new Request(vidcoreUrl);
+  // const cached = await cache.match(cacheKey);
+  // if (cached) {
+  //   const body = await cached.text();
+  //   return new Response(body, { status: 200, headers: RESPONSE_HEADERS });
+  // }
 
   try {
     const upstream = await fetchWithRetry(vidcoreUrl);
@@ -386,7 +409,7 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     html = rewriteAssetUrls(html);
     html = html.replace(/<meta[^>]+http-equiv=["']?(?:x-frame-options|content-security-policy)["']?[^>]*>/gi, '<!-- meta-security stripped -->');
 
-    // Rewrite nested iframes so they also go through the proxy
+    // Rewrite nested iframes (vidcore / alwaysdata → our proxy)
     html = rewriteNestedIframes(html, proxyOrigin);
 
     // Inject <base>
@@ -480,7 +503,7 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       html += buildMobilePatchScript() + autoNextScript;
     }
 
-    // Pathname patch (must run first) + runtime ad-blocker
+    // Pathname patch (must run first)
     const pathnamePatch = `<script>
 (function() {
   try {
@@ -519,17 +542,11 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
 })();
 <\/script>`;
 
-    // Inject pathname patch + runtime ad-blocker as the very first things in <head>
+    // Inject pathname patch + safer runtime ad-blocker at the very top of <head>
     html = html.replace(
       /<head([^>]*)>/i,
       `<head$1>${pathnamePatch}${buildRuntimeAdBlocker()}`
     );
-
-    const processed = new Response(html, {
-      status: 200,
-      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=120' },
-    });
-    context.waitUntil?.(cache.put(cacheKey, processed.clone()));
 
     return new Response(html, { status: 200, headers: RESPONSE_HEADERS });
   } catch (err: any) {
