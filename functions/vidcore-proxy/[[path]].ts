@@ -32,13 +32,11 @@ const AD_DOMAINS = [
 function stripExternalAdScripts(html: string): string {
   for (const domain of AD_DOMAINS) {
     const esc = domain.replace(/\./g, '\\.');
-    // Matches: <script ... src="(https?:|//)?...domain..." ...>...</script>
     const re = new RegExp(
       `<script[^>]+src=["']?(?:https?:)?//[^"'\\s>]*${esc}[^"'\\s>]*["']?[^>]*>[\\s\\S]*?</script>`,
       'gi'
     );
     html = html.replace(re, '<!-- ad-script blocked -->');
-    // Also catch self-closing / no body variant
     const reSelf = new RegExp(
       `<script[^>]+src=["']?(?:https?:)?//[^"'\\s>]*${esc}[^"'\\s>]*["']?[^>]*/?>`,
       'gi'
@@ -50,27 +48,22 @@ function stripExternalAdScripts(html: string): string {
 
 /**
  * Remove inline <script> blocks that are ad re-injection scripts.
- * These are small scripts (< 25kb) that assign an ad domain URL to a variable
- * and dynamically re-inject it. We deliberately avoid stripping large scripts
- * (the player itself) that merely reference ad domains as detection strings.
  */
 function stripInlineAdScripts(html: string): string {
   const domainPattern = AD_DOMAINS.map(d => d.replace(/\./g, '\\.')).join('|');
-  // Only match inline scripts where an ad domain appears as an assigned string value
   const re = new RegExp(
     `<script(?:\\s[^>]*)?>([\\s\\S]{0,25000}(?:${domainPattern})[\\s\\S]{0,25000}?)</script>`,
     'gi'
   );
   return html.replace(re, (match) => {
-    // Extra safety: don't strip if it looks like the main player (has CONFIG or SERVER_IDS)
-    if (/SERVER_IDS|TMDB_KEY|parsePath|hls\.js/i.test(match)) return match;
+    // Extra safety: never strip scripts containing player configuration or core libraries
+    if (/SERVER_IDS|TMDB_KEY|parsePath|hls\.js|player|config|sources/i.test(match)) return match;
     return '<!-- ad-inline blocked -->';
   });
 }
 
 /**
  * Remove <link rel="preconnect|dns-prefetch|preload|prefetch"> tags pointing to ad domains.
- * These are used to warm up connections even before the script tag fires.
  */
 function stripAdLinkTags(html: string): string {
   for (const domain of AD_DOMAINS) {
@@ -86,7 +79,6 @@ function stripAdLinkTags(html: string): string {
 
 /**
  * Strip the devtools-detection + YouTube redirect script VidCore injects.
- * It reads sessionStorage and calls window.top.location.replace(youtubeUrl).
  */
 function stripDevtoolsScript(html: string): string {
   return html.replace(
@@ -96,32 +88,94 @@ function stripDevtoolsScript(html: string): string {
 }
 
 /**
- * Rewrite protocol-relative asset URLs (//cdn.foo.com/…) to https://
- * so they still load when served from a different origin.
- * Skip any that belong to ad domains.
+ * Rewrite protocol-relative asset URLs to https:// using full domain matching
+ * so legitimate CDNs (like jsdelivr) are never accidentally blocked.
  */
 function rewriteAssetUrls(html: string): string {
-  const adFragment = AD_DOMAINS.map(d => d.split('.')[0]).join('|');
-  const re = new RegExp(`(src|href)="//(?!(?:${adFragment}))`, 'g');
+  const domainPattern = AD_DOMAINS.map(d => d.replace(/\./g, '\\.')).join('|');
+  const re = new RegExp(`(src|href)="//(?!(?:${domainPattern}))`, 'g');
   return html.replace(re, '$1="https://');
 }
 
 /**
- * Inject a <base href="https://vidcore44.alwaysdata.net/"> tag so all relative sub-resource
- * URLs (scripts, stylesheets, fetch calls using relative paths) resolve back to
- * VidCore's origin rather than the proxy's origin.
+ * Inject a <base> tag.
  */
 function injectBaseTag(html: string): string {
   return html.replace(/<head([^>]*)>/i, `<head$1><base href="${VIDCORE_BASE}/">`);
 }
 
 /**
- * Build a runtime-injection script that fixes mobile playback.
+ * Build a combined runtime-injection script for mobile playback fixes,
+ * fullscreen polyfills, and active runtime ad/popup blocking.
  */
 function buildMobilePatchScript(): string {
+  const adDomainsJson = JSON.stringify(AD_DOMAINS);
   return `<script>
 (function() {
   'use strict';
+
+  // ── Runtime Adblocker (Intercepts fetch, XHR, window.open, and dynamic scripts) ──
+  var BLOCKED_DOMAINS = ${adDomainsJson};
+  function isAdUrl(url) {
+    if (!url) return false;
+    var lower = String(url).toLowerCase();
+    for (var i = 0; i < BLOCKED_DOMAINS.length; i++) {
+      if (lower.indexOf(BLOCKED_DOMAINS[i]) !== -1) return true;
+    }
+    return false;
+  }
+
+  // Block window.open popups to ad domains
+  var _origOpen = window.open;
+  window.open = function(url) {
+    if (isAdUrl(url)) {
+      console.warn('[Proxy Adblock] Blocked popup:', url);
+      return null;
+    }
+    return _origOpen.apply(this, arguments);
+  };
+
+  // Block fetch requests to ad domains
+  var _origFetch = window.fetch;
+  window.fetch = function(resource, init) {
+    var url = (resource instanceof Request) ? resource.url : resource;
+    if (isAdUrl(url)) {
+      return Promise.reject(new TypeError('Blocked by proxy adblock'));
+    }
+    return _origFetch.apply(this, arguments);
+  };
+
+  // Block XMLHttpRequest to ad domains
+  var _origXhrOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    if (isAdUrl(url)) {
+      this.__isBlockedAd = true;
+    }
+    return _origXhrOpen.apply(this, arguments);
+  };
+  var _origXhrSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.send = function() {
+    if (this.__isBlockedAd) {
+      return;
+    }
+    return _origXhrSend.apply(this, arguments);
+  };
+
+  // Remove transparent clickjack overlays over the player
+  setInterval(function() {
+    var overlays = document.querySelectorAll('div, a');
+    for (var i = 0; i < overlays.length; i++) {
+      var el = overlays[i];
+      if (el.tagName === 'A' && el.getAttribute('href') && el.getAttribute('href') !== '#') {
+        var style = window.getComputedStyle(el);
+        if (style.position === 'absolute' || style.position === 'fixed') {
+          if (parseFloat(style.opacity) < 0.1 || style.zIndex > 999) {
+            el.remove();
+          }
+        }
+      }
+    }
+  }, 1000);
 
   // ── 1. Status-badge retry watcher ───────────────────────────────────────
   var _retried = false;
@@ -296,10 +350,8 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     html = rewriteAssetUrls(html);
     html = html.replace(/<meta[^>]+http-equiv=["']?(?:x-frame-options|content-security-policy)["']?[^>]*>/gi, '<!-- meta-security stripped -->');
 
-    // Inject <base> so all relative sub-resource URLs resolve to vidcore44.alwaysdata.net
     html = injectBaseTag(html);
 
-    // Raise SSE scrape timeout from 10s to 30s
     html = html.replace(/,\s*10000\s*\)/g, ', 30000)');
 
     const autoNextScript = `<script>
