@@ -1,0 +1,6 @@
+# Cloudflare Pages — stoned.living
+# https://developers.cloudflare.com/pages/configuration/wrangler-configuration/
+
+name = "stoned-living"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-09-23"

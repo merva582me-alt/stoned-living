@@ -1,0 +1,3 @@
+# Cloudflare Pages SPA fallback routing
+# All paths that don't match a static asset serve index.html (React Router / client-side routing)
+/*    /index.html    200

@@ -1,0 +1,6 @@
+{
+  "name": "Stoned Living",
+  "description": "Chill entertainment & media streaming platform with strain pairing, AI recommendations, anime, movies, TV, and interactive player.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

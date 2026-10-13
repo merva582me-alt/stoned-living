@@ -1,0 +1,29 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Security headers for all Cloudflare Pages responses
+# ─────────────────────────────────────────────────────────────────────────────
+
+# VidCore proxy pages are served inside an iframe and must be able to fetch
+# from arbitrary streaming/scraper origins. Give them a fully open CSP so the
+# player's SSE and fetch calls are never blocked by the parent-page policy.
+# This must come BEFORE the /* rule so it takes precedence.
+/vidcore-proxy/*
+  Content-Security-Policy: default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;
+  X-Frame-Options: ALLOWALL
+  Permissions-Policy: fullscreen=*, autoplay=*
+
+/*
+  # Prevent MIME sniffing
+  X-Content-Type-Options: nosniff
+  # Disallow embedding in external iframes
+  X-Frame-Options: DENY
+  # Strict referrer policy
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Enable HSTS
+  Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+  # Permissions policy — disable unused browser features
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  # Content-Security-Policy
+  # frame-src is 'https:' to allow stream embed iframes from any HTTPS host
+  # (sportsrc.org, movie embed providers, etc.) without needing to whitelist
+  # every CDN/streaming domain individually.
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; media-src 'self' blob: https:; connect-src 'self' https://api.themoviedb.org https://image.tmdb.org https://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://graphql.anilist.co https://streamed.pk https://www.thesportsdb.com; font-src 'self' data:; frame-src https:; frame-ancestors 'none';

@@ -1,0 +1,34 @@
+# Build output � Cloudflare Pages builds this from source
+dist/
+
+# Local environment variables � never commit secrets
+.env
+.env.local
+
+# Dependencies
+node_modules/
+
+# Wrangler / Cloudflare -- all locations
+.wrangler/
+**/.wrangler/
+workers/resolver/node_modules/
+workers/resolver/.wrangler/
+
+# Bob agent scratch space
+.bob/
+
+# Planning / notes docs -- local only
+sports-enrichment-plan.md
+sports-image-enrichment-plan.md
+sports-live-fixes-plan.md
+sports-player-redesign-plan.md
+streaming-overhaul-plan.md
+*.plan.md
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+
+# Playwright test artifacts
+.playwright-mcp/
+"*.har" 
