@@ -20,7 +20,6 @@ const AD_DOMAINS = [
   'holdbitter.com',
   'apiguinee.org',
   'onesignal.com',
-  'tinyagle.top',
 ];
 
 function stripExternalAdScripts(html: string): string {
