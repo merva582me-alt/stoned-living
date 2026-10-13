@@ -4,7 +4,7 @@
  *        /vidcore-proxy/embed/movie/:id
  *
  * Fetches VidCore HTML, strips known ad/tracker scripts server-side,
- * and injects client-side runtime protection to block dynamic ad injections.
+ * and injects safe client-side runtime protection to block dynamic ad injections.
  */
 
 const VIDCORE_BASE = 'https://vidcore.org';
@@ -102,8 +102,8 @@ function injectBaseTag(html: string): string {
 }
 
 /**
- * Build a runtime interception script that overrides document.createElement
- * and DOM insertion methods to block dynamic ad script/iframe injection.
+ * Build a safe prototype-level runtime interception script.
+ * Safely intercepts script and iframe .src property assignments without breaking player initialization.
  */
 function buildRuntimeAdBlockerScript(): string {
   return `<script>
@@ -123,59 +123,45 @@ function buildRuntimeAdBlockerScript(): string {
     });
   }
 
-  var origCreateElement = document.createElement;
-  document.createElement = function(tagName) {
-    var el = origCreateElement.call(document, tagName);
-    var tag = (tagName || '').toLowerCase();
-
-    if (tag === 'script' || tag === 'iframe' || tag === 'link') {
-      var urlProp = (tag === 'link') ? 'href' : 'src';
-      
-      Object.defineProperty(el, urlProp, {
-        set: function(val) {
-          if (isAdUrl(val)) {
-            el.setAttribute(urlProp, 'about:blank');
-            return;
-          }
-          el.setAttribute(urlProp, val);
-        },
-        get: function() {
-          return el.getAttribute(urlProp);
-        },
-        configurable: true
-      });
-
-      var origSetAttribute = el.setAttribute;
-      el.setAttribute = function(name, value) {
-        if ((name === 'src' || name === 'href') && isAdUrl(value)) {
-          return origSetAttribute.call(this, name, 'about:blank');
+  // Safely patch HTMLScriptElement.prototype.src
+  var scriptDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
+  if (scriptDesc && scriptDesc.set) {
+    Object.defineProperty(HTMLScriptElement.prototype, 'src', {
+      set: function(url) {
+        if (isAdUrl(url)) {
+          return scriptDesc.set.call(this, 'about:blank');
         }
-        return origSetAttribute.apply(this, arguments);
-      };
-    }
-    return el;
-  };
-
-  function checkNode(node) {
-    if (!node || !node.tagName) return false;
-    var tag = node.tagName.toLowerCase();
-    if (tag === 'script' || tag === 'iframe') {
-      var src = node.src || node.getAttribute('src');
-      if (isAdUrl(src)) return true;
-    }
-    return false;
+        return scriptDesc.set.call(this, url);
+      },
+      get: scriptDesc.get,
+      configurable: true,
+      enumerable: true
+    });
   }
 
-  var origAppendChild = Element.prototype.appendChild;
-  Element.prototype.appendChild = function(child) {
-    if (checkNode(child)) return child;
-    return origAppendChild.call(this, child);
-  };
+  // Safely patch HTMLIFrameElement.prototype.src
+  var iframeDesc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+  if (iframeDesc && iframeDesc.set) {
+    Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+      set: function(url) {
+        if (isAdUrl(url)) {
+          return iframeDesc.set.call(this, 'about:blank');
+        }
+        return iframeDesc.set.call(this, url);
+      },
+      get: iframeDesc.get,
+      configurable: true,
+      enumerable: true
+    });
+  }
 
-  var origInsertBefore = Element.prototype.insertBefore;
-  Element.prototype.insertBefore = function(newNode, referenceNode) {
-    if (checkNode(newNode)) return newNode;
-    return origInsertBefore.call(this, newNode, referenceNode);
+  // Catch dynamic setAttribute attempts for src/href
+  var origSetAttribute = Element.prototype.setAttribute;
+  Element.prototype.setAttribute = function(name, value) {
+    if ((name === 'src' || name === 'href') && isAdUrl(value)) {
+      return origSetAttribute.call(this, name, 'about:blank');
+    }
+    return origSetAttribute.apply(this, arguments);
   };
 })();
 <\\/script>`;
@@ -280,7 +266,7 @@ const RESPONSE_HEADERS = {
   'cache-control': 'public, max-age=120',
   'x-proxy': 'vidcore-ad-stripped',
   'x-frame-options': 'ALLOWALL',
-  'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; connect-src * https://*.holdbitter.com 'none';",
+  'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
   'permissions-policy': 'fullscreen=*, autoplay=*',
 };
 
@@ -488,7 +474,6 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
 })();
 <\\/script>`;
 
-    // Inject the runtime ad blocker and pathname patch at the top of <head>
     const runtimeBlockerScript = buildRuntimeAdBlockerScript();
     html = html.replace(/<head([^>]*)>/i, `<head$1>${runtimeBlockerScript}${pathnamePatch}`);
 
