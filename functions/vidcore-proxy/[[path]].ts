@@ -4,7 +4,8 @@
  *        /vidcore-proxy/embed/movie/:id
  *
  * Fetches VidCore HTML, strips known ad/tracker scripts server-side,
- * returns clean HTML served from your own domain so the iframe is same-origin.
+ * rewrites nested iframes so they also go through the proxy,
+ * injects a runtime ad-blocker, and returns clean HTML.
  */
 
 const VIDCORE_BASE = 'https://vidcore.org';
@@ -21,27 +22,25 @@ const AD_DOMAINS = [
   'pushcrew.com',
   'onesignal.com',
 
-  // new (biomanos / social-bar / chaturbate style ads)
+  // current ads
   'biomanos.org',
   'show-creative1.com',
   'holdbitter.com',
   'apiguinee.org',
+  'benchform.org',
 ];
 
 /**
  * Remove <script src="...adDomain...">...</script> tags.
- * Handles single/double quotes, protocol-relative URLs, and self-closing tags.
  */
 function stripExternalAdScripts(html: string): string {
   for (const domain of AD_DOMAINS) {
     const esc = domain.replace(/\./g, '\\.');
-    // Matches: <script ... src="(https?:|//)?...domain..." ...>...</script>
     const re = new RegExp(
       `<script[^>]+src=["']?(?:https?:)?//[^"'\\s>]*${esc}[^"'\\s>]*["']?[^>]*>[\\s\\S]*?</script>`,
       'gi'
     );
     html = html.replace(re, '<!-- ad-script blocked -->');
-    // Also catch self-closing / no body variant
     const reSelf = new RegExp(
       `<script[^>]+src=["']?(?:https?:)?//[^"'\\s>]*${esc}[^"'\\s>]*["']?[^>]*/?>`,
       'gi'
@@ -53,31 +52,21 @@ function stripExternalAdScripts(html: string): string {
 
 /**
  * Remove inline <script> blocks that are ad re-injection scripts.
- * These are small scripts (< 20kb) that assign an ad domain URL to a variable
- * and dynamically re-inject it. We deliberately avoid stripping large scripts
- * (the player itself) that merely reference ad domains as detection strings.
  */
 function stripInlineAdScripts(html: string): string {
   const domainPattern = AD_DOMAINS.map(d => d.replace(/\./g, '\\.')).join('|');
-  // Only match inline scripts where an ad domain appears as an assigned string value:
-  //   const AD_SRC = 'https://ferocitycandour.com/...'
-  //   s.src = "//alaphoid.com/..."
-  //   document.createElement('script')...src = '//alaphoid.com'
-  // Use a size cap: replace only if match is under 25,000 chars (player is 110k+)
   const re = new RegExp(
     `<script(?:\\s[^>]*)?>([\\s\\S]{0,25000}(?:${domainPattern})[\\s\\S]{0,25000}?)</script>`,
     'gi'
   );
   return html.replace(re, (match) => {
-    // Extra safety: don't strip if it looks like the main player (has CONFIG or SERVER_IDS)
     if (/SERVER_IDS|TMDB_KEY|parsePath|hls\.js/i.test(match)) return match;
     return '<!-- ad-inline blocked -->';
   });
 }
 
 /**
- * Remove <link rel="preconnect|dns-prefetch|preload|prefetch"> tags pointing to ad domains.
- * These are used to warm up connections even before the script tag fires.
+ * Remove <link> tags pointing to ad domains.
  */
 function stripAdLinkTags(html: string): string {
   for (const domain of AD_DOMAINS) {
@@ -92,31 +81,26 @@ function stripAdLinkTags(html: string): string {
 }
 
 /**
- * Extra pattern-based stripper for social-bar / chaturbate-style ads
- * that keep rotating domains.
+ * Extra pattern-based stripper for social-bar / chaturbate-style ads.
  */
 function stripCommonAdPatterns(html: string): string {
-  // Block any script that references the known ad networks by keyword
   html = html.replace(
-    /<script[^>]+src=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|chaturbate)[^"'\s>]*["']?[^>]*>[\s\S]*?<\/script>/gi,
+    /<script[^>]+src=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|benchform|chaturbate)[^"'\s>]*["']?[^>]*>[\s\S]*?<\/script>/gi,
     '<!-- ad-pattern blocked -->'
   );
-  // Self-closing / no-body variant
   html = html.replace(
-    /<script[^>]+src=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|chaturbate)[^"'\s>]*["']?[^>]*\/?>/gi,
+    /<script[^>]+src=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|benchform|chaturbate)[^"'\s>]*["']?[^>]*\/?>/gi,
     '<!-- ad-pattern blocked -->'
   );
-  // Link tags
   html = html.replace(
-    /<link[^>]+href=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee)[^"'\s>]*["']?[^>]*>/gi,
+    /<link[^>]+href=["']?(?:https?:)?\/\/[^"'\s>]*(?:biomanos|show-creative|holdbitter|apiguinee|benchform)[^"'\s>]*["']?[^>]*>/gi,
     '<!-- ad-link-pattern blocked -->'
   );
   return html;
 }
 
 /**
- * Strip the devtools-detection + YouTube redirect script VidCore injects.
- * It reads sessionStorage and calls window.top.location.replace(youtubeUrl).
+ * Strip the devtools-detection + YouTube redirect script.
  */
 function stripDevtoolsScript(html: string): string {
   return html.replace(
@@ -126,9 +110,7 @@ function stripDevtoolsScript(html: string): string {
 }
 
 /**
- * Rewrite protocol-relative asset URLs (//cdn.foo.com/…) to https://
- * so they still load when served from a different origin.
- * Skip any that belong to ad domains.
+ * Rewrite protocol-relative asset URLs to https://
  */
 function rewriteAssetUrls(html: string): string {
   const adFragment = AD_DOMAINS.map(d => d.split('.')[0]).join('|');
@@ -137,35 +119,101 @@ function rewriteAssetUrls(html: string): string {
 }
 
 /**
- * Inject a <base href="https://vidcore.org/"> tag so all relative sub-resource
- * URLs (scripts, stylesheets, fetch calls using relative paths) resolve back to
- * VidCore's origin rather than the proxy's origin.
+ * Rewrite nested iframes that point to vidcore / alwaysdata
+ * so they also go through our ad-stripping proxy.
+ */
+function rewriteNestedIframes(html: string, proxyOrigin: string): string {
+  return html.replace(
+    /(<iframe[^>]+src=["'])(https?:)?\/\/(?:www\.)?(?:vidcore\.org|[^"'\/]+\.alwaysdata\.net)(\/embed\/[^"']*)(["'][^>]*>)/gi,
+    (_match, start, _protocol, path, end) => {
+      return `${start}${proxyOrigin}/vidcore-proxy${path}${end}`;
+    }
+  );
+}
+
+/**
+ * Inject <base href="https://vidcore.org/">
  */
 function injectBaseTag(html: string): string {
   return html.replace(/<head([^>]*)>/i, `<head$1><base href="https://vidcore.org/">`);
 }
 
 /**
- * Build a runtime-injection script that fixes mobile playback.
- *
- * Works for BOTH movies and TV:
- *  1. Watch the status badge: auto-retry once when "All sources failed" appears.
- *     Uses player.reload(true) if available; falls back to page reload.
- *  2. On loadedmetadata call video.play() so autoplay works on iOS/Android
- *     (the native HLS path never calls play() itself).
- *  3. 20 s stall watchdog: if the video hasn't reached canplay/playing/error,
- *     try player.switch(next) if the API is present, or reload if not.
- *
- * All player API calls are guarded so the script never throws on movies where
- * the TV-specific player API shape isn't available.
+ * Runtime ad-blocker that stops dynamically created scripts / fetch / XHR
+ * to any domain in AD_DOMAINS.
+ */
+function buildRuntimeAdBlocker(): string {
+  const domains = AD_DOMAINS.map(d => `"${d}"`).join(',');
+  return `<script>
+(function() {
+  'use strict';
+  var BLOCKED = [${domains}];
+
+  function isBlocked(url) {
+    if (!url) return false;
+    try {
+      var host = (typeof url === 'string' ? url : (url.url || url.href || '')).toLowerCase();
+      return BLOCKED.some(function(d) { return host.indexOf(d) !== -1; });
+    } catch(e) { return false; }
+  }
+
+  // Block dynamic <script> and <link>
+  var origCreate = Document.prototype.createElement;
+  Document.prototype.createElement = function(tag) {
+    var el = origCreate.call(this, tag);
+    if (tag && (tag.toLowerCase() === 'script' || tag.toLowerCase() === 'link')) {
+      var origSetAttribute = el.setAttribute;
+      el.setAttribute = function(name, value) {
+        if ((name === 'src' || name === 'href') && isBlocked(value)) {
+          console.log('[adblock] blocked', value);
+          return;
+        }
+        return origSetAttribute.call(this, name, value);
+      };
+      Object.defineProperty(el, 'src', {
+        set: function(v) { if (!isBlocked(v)) el.setAttribute('src', v); },
+        get: function() { return el.getAttribute('src'); }
+      });
+      Object.defineProperty(el, 'href', {
+        set: function(v) { if (!isBlocked(v)) el.setAttribute('href', v); },
+        get: function() { return el.getAttribute('href'); }
+      });
+    }
+    return el;
+  };
+
+  // Block fetch
+  var origFetch = window.fetch;
+  window.fetch = function(input, init) {
+    if (isBlocked(input)) {
+      console.log('[adblock] fetch blocked', input);
+      return Promise.reject(new Error('blocked'));
+    }
+    return origFetch.apply(this, arguments);
+  };
+
+  // Block XHR
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url) {
+    if (isBlocked(url)) {
+      console.log('[adblock] xhr blocked', url);
+      this.abort = function() {};
+      return;
+    }
+    return origOpen.apply(this, arguments);
+  };
+})();
+<\/script>`;
+}
+
+/**
+ * Mobile playback fixes (auto-retry, autoplay, stall watchdog).
  */
 function buildMobilePatchScript(): string {
   return `<script>
 (function() {
   'use strict';
 
-  // ── 1. Status-badge retry watcher ───────────────────────────────────────
-  // Works without __player — only watches DOM text so it fires on movies too.
   var _retried = false;
   function watchBadge() {
     var badge = document.getElementById('status-badge') ||
@@ -176,14 +224,13 @@ function buildMobilePatchScript(): string {
       var txt = (badge.textContent || '').trim();
       if (txt.indexOf('All sources failed') !== -1 && !_retried) {
         _retried = true;
-        badge.textContent = 'All sources failed \u2014 retrying\u2026';
+        badge.textContent = 'All sources failed \\u2014 retrying\\u2026';
         setTimeout(function() {
           _retried = false;
           var p = window.__player;
           if (p && !p.state.isDestroying) {
             p.reload(true);
           } else {
-            // Fallback: reload the page (inside the iframe) to restart the scrape
             try { window.location.reload(); } catch(e) {}
           }
         }, 2500);
@@ -194,25 +241,21 @@ function buildMobilePatchScript(): string {
     }).observe(badge, { childList: true, characterData: true, subtree: true });
   }
 
-  // ── 2 & 3. Video-level patches (autoplay + stall watchdog) ──────────────
   function patchVideo(video) {
     if (video.__mobilePatchApplied) return;
     video.__mobilePatchApplied = true;
 
-    // 2. Autoplay: native HLS path resolves loadedmetadata but never calls play().
     video.addEventListener('loadedmetadata', function() {
       if (video.paused) video.play().catch(function() {});
     });
 
-    // 3. Stall watchdog: 20 s without canplay/playing/error = source is hung.
     var _stall = null;
     function armStall() {
       clearTimeout(_stall);
       _stall = setTimeout(function() {
-        if (video.readyState >= 3) return; // HAVE_FUTURE_DATA — already buffering fine
+        if (video.readyState >= 3) return;
         var p = window.__player;
         if (p && p.state && !p.state.isDestroying) {
-          // TV-style player with source switching
           var sources = p.state.sources;
           if (sources && sources.length > 0) {
             var next = (p.state.sourceIdx || 0) + 1;
@@ -224,13 +267,11 @@ function buildMobilePatchScript(): string {
             }
             return;
           }
-          // Movie-style player — just reload
           if (!p.state.__autoRetried) {
             p.state.__autoRetried = true;
             p.reload(true);
           }
         } else if (!_retried) {
-          // No player API — reload the page inside the iframe
           _retried = true;
           try { window.location.reload(); } catch(e) {}
         }
@@ -256,28 +297,22 @@ function buildMobilePatchScript(): string {
     init();
   }
 })();
-<\\/script>`;
+<\/script>`;
 }
 
 const RESPONSE_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
-  // Cache for 2 minutes only — TV show episode changes need fresh scrape results.
-  // No stale-while-revalidate: a stale response with exhausted sources would
-  // immediately show "All sources failed" to the next viewer of the same episode.
   'cache-control': 'public, max-age=120',
   'x-proxy': 'vidcore-ad-stripped',
   'x-frame-options': 'ALLOWALL',
   'content-security-policy': "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;",
-  // Allow fullscreen from within the iframe (required for Permissions Policy on modern browsers)
   'permissions-policy': 'fullscreen=*, autoplay=*',
 };
 
-/** Fetch from VidCore with up to `maxAttempts` retries on non-200 or network error. */
 async function fetchWithRetry(vidcoreUrl: string, maxAttempts = 3): Promise<Response> {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController();
-    // Give each attempt 12 s; total wall time stays well under CF's 30 s limit.
     const timeout = setTimeout(() => controller.abort(), 12_000);
     try {
       const res = await fetch(vidcoreUrl, {
@@ -289,20 +324,17 @@ async function fetchWithRetry(vidcoreUrl: string, maxAttempts = 3): Promise<Resp
           'Origin': 'https://vidcore.org',
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.9',
-          // Cache-bust on retry so VidCore doesn't serve a stale/errored page
           ...(attempt > 1 ? { 'Cache-Control': 'no-cache' } : {}),
         },
       });
       clearTimeout(timeout);
       if (res.ok) return res;
-      // 5xx from VidCore — worth retrying; 4xx are definitive
       if (res.status < 500) return res;
       lastErr = new Error(`HTTP ${res.status}`);
     } catch (err) {
       clearTimeout(timeout);
       lastErr = err;
     }
-    // Brief back-off before retry (200 ms, 400 ms)
     if (attempt < maxAttempts) await new Promise(r => setTimeout(r, attempt * 200));
   }
   throw lastErr;
@@ -310,20 +342,15 @@ async function fetchWithRetry(vidcoreUrl: string, maxAttempts = 3): Promise<Resp
 
 export async function onRequest(context: { request: Request; waitUntil?: (p: Promise<any>) => void }): Promise<Response> {
   const url = new URL(context.request.url);
+  const proxyOrigin = url.origin; // e.g. https://stoned.living
 
-  // Strip the /vidcore-proxy prefix to get the actual VidCore path.
-  // Also strip any query params we added (e.g. autoplay=1) — VidCore uses
-  // URL params directly so we keep them, but we must not double-encode them.
   const vidcorePath = url.pathname.replace(/^\/vidcore-proxy/, '');
   const vidcoreUrl = `${VIDCORE_BASE}${vidcorePath}${url.search}`;
 
-  // Only proxy /embed/ paths
   if (!vidcorePath.startsWith('/embed/')) {
     return new Response('Not found', { status: 404 });
   }
 
-  // Cache key uses the full URL including query string (autoplay=1 etc.) so
-  // different param combos get separate cache entries.
   const cache = caches.default;
   const cacheKey = new Request(vidcoreUrl);
   const cached = await cache.match(cacheKey);
@@ -341,7 +368,6 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
 
     const contentType = upstream.headers.get('content-type') || 'text/html';
 
-    // Pass non-HTML content (JS, CSS, images, etc.) straight through
     if (!contentType.includes('text/html')) {
       return new Response(upstream.body, {
         status: upstream.status,
@@ -351,40 +377,33 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
 
     let html = await upstream.text();
 
-    // --- Ad removal pipeline (order matters) ---
-    html = stripExternalAdScripts(html); // <script src="ad.com/...">
-    html = stripInlineAdScripts(html);   // inline blocks mentioning ad domains
-    html = stripAdLinkTags(html);        // <link preconnect/dns-prefetch href="ad.com">
-    html = stripCommonAdPatterns(html);  // keyword-based social-bar / chaturbate ads
-    html = stripDevtoolsScript(html);    // devtools → youtube redirect
-    html = rewriteAssetUrls(html);       // fix protocol-relative asset URLs
-    // Strip any <meta http-equiv="X-Frame-Options"> or CSP meta tags VidCore injects
+    // ── Ad removal pipeline ──────────────────────────────────────────────
+    html = stripExternalAdScripts(html);
+    html = stripInlineAdScripts(html);
+    html = stripAdLinkTags(html);
+    html = stripCommonAdPatterns(html);
+    html = stripDevtoolsScript(html);
+    html = rewriteAssetUrls(html);
     html = html.replace(/<meta[^>]+http-equiv=["']?(?:x-frame-options|content-security-policy)["']?[^>]*>/gi, '<!-- meta-security stripped -->');
 
-    // Inject <base> so all relative sub-resource URLs (JS, CSS, fetch) resolve to vidcore.org
+    // Rewrite nested iframes so they also go through the proxy
+    html = rewriteNestedIframes(html, proxyOrigin);
+
+    // Inject <base>
     html = injectBaseTag(html);
 
-    // ── Raise the SSE scrape timeout from 10 s to 30 s ──────────────────────
-    // VidCore's player fires: setTimeout(() => { timedOut = true; evtSource.close(); reject(...); }, 10000);
-    // We replace ALL bare occurrences of ", 10000)" in setTimeout calls with ", 30000)"
-    // so slow networks (mobile, proxy hop) get enough time to receive the source URL.
+    // Raise SSE scrape timeout 10s → 30s
     html = html.replace(/,\s*10000\s*\)/g, ', 30000)');
 
-    // Inject auto-next-episode bridge + mobile fullscreen polyfill
+    // ── Inject scripts ───────────────────────────────────────────────────
     const autoNextScript = `<script>
 (function(){
-  // ── Mobile fullscreen polyfill ───────────────────────────────────────────
-  // iOS Safari only supports fullscreen via HTMLVideoElement.webkitEnterFullscreen.
-  // Patch Element.prototype.requestFullscreen so any player code that calls it
-  // on a non-video element still triggers native fullscreen on the video.
   (function patchFullscreen() {
     var _orig = Element.prototype.requestFullscreen;
     Element.prototype.requestFullscreen = function() {
-      // If native fullscreen is supported, use it
       if (_orig && document.fullscreenEnabled !== false) {
         try { return _orig.call(this); } catch(e) {}
       }
-      // Fallback: find the nearest video element and use webkitEnterFullscreen
       var video = (this.tagName === 'VIDEO' ? this : this.querySelector('video')) ||
                   document.getElementById('main-video') ||
                   document.querySelector('video');
@@ -393,7 +412,6 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       }
       return Promise.resolve();
     };
-    // Also patch webkitRequestFullscreen / mozRequestFullScreen aliases
     Element.prototype.webkitRequestFullscreen = Element.prototype.requestFullscreen;
     Element.prototype.mozRequestFullScreen = Element.prototype.requestFullscreen;
     Element.prototype.msRequestFullscreen = Element.prototype.requestFullscreen;
@@ -407,13 +425,10 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
     if (video.__patchBound) return;
     video.__patchBound = true;
 
-    // playsinline is required for inline playback on iOS — never remove it.
     video.setAttribute('playsinline', '');
     video.setAttribute('webkit-playsinline', '');
     video.setAttribute('x-webkit-airplay', 'allow');
 
-    // Patch requestFullscreen directly on the video element to use
-    // webkitEnterFullscreen when the standard API is unavailable
     if (!document.fullscreenEnabled && video.webkitEnterFullscreen) {
       video.requestFullscreen = function() {
         try { video.webkitEnterFullscreen(); } catch(e) {}
@@ -422,27 +437,18 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       video.webkitRequestFullscreen = video.requestFullscreen;
     }
 
-    // Auto-next bridge
     if (!video.__endedBound) {
       video.__endedBound = true;
-
-      // Primary: native ended event
       video.addEventListener('ended', notifyEnded);
-
-      // Fallback: timeupdate-based detection for HLS/DASH players that never
-      // fire 'ended' because they manage segments themselves. Fire when the
-      // playhead is within 1.5 s of the duration and the video is not paused.
       video.addEventListener('timeupdate', function() {
         if (video.__endedFired) return;
         var dur = video.duration;
-        if (!dur || !isFinite(dur) || dur < 10) return; // ignore ads / short clips
+        if (!dur || !isFinite(dur) || dur < 10) return;
         if (!video.paused && (dur - video.currentTime) <= 1.5) {
           video.__endedFired = true;
           notifyEnded();
         }
       });
-
-      // Reset the fired flag whenever the video src changes (new episode src)
       video.addEventListener('emptied', function() { video.__endedFired = false; });
       video.addEventListener('loadstart', function() { video.__endedFired = false; });
     }
@@ -466,10 +472,7 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
   }
 })();
 <\/script>`;
-    // Inject mobile patch BEFORE autoNext so the badge watcher and video patching
-    // are in place before the player finishes initialising.
-    // Use lastIndexOf so we insert before the final </body> even if VidCore's
-    // HTML has multiple partial occurrences earlier in the markup.
+
     const bodyClose = html.lastIndexOf('</body>');
     if (bodyClose !== -1) {
       html = html.slice(0, bodyClose) + buildMobilePatchScript() + autoNextScript + html.slice(bodyClose);
@@ -477,15 +480,7 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       html += buildMobilePatchScript() + autoNextScript;
     }
 
-    // ── Fix parsePath() so it works under the /vidcore-proxy prefix ──────────
-    // VidCore's parsePath() checks parts[0] === 'embed' but when served via the
-    // proxy the pathname is /vidcore-proxy/embed/... so parts[0] is 'vidcore-proxy'
-    // and parsePath() returns null immediately → "All sources failed" before any
-    // source is even tried.
-    //
-    // Strategy: inject a <script> that runs BEFORE the player JS and overrides
-    // window.location so parsePath() sees the correct /embed/... path.
-    // We use Object.defineProperty to make window.location.pathname read-only-safe.
+    // Pathname patch (must run first) + runtime ad-blocker
     const pathnamePatch = `<script>
 (function() {
   try {
@@ -498,8 +493,6 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
       });
     }
   } catch(e) {
-    // Object.defineProperty on window.location may be restricted in some browsers —
-    // fall back to patching parsePath directly after it is defined.
     document.addEventListener('DOMContentLoaded', function() {
       if (typeof parsePath === 'function') {
         var _orig = parsePath;
@@ -525,9 +518,12 @@ export async function onRequest(context: { request: Request; waitUntil?: (p: Pro
   }
 })();
 <\/script>`;
-    // Inject the pathname patch as the FIRST thing inside <head> so it runs
-    // before any other script — especially before parsePath() is called.
-    html = html.replace(/<head([^>]*)>/i, `<head$1>${pathnamePatch}`);
+
+    // Inject pathname patch + runtime ad-blocker as the very first things in <head>
+    html = html.replace(
+      /<head([^>]*)>/i,
+      `<head$1>${pathnamePatch}${buildRuntimeAdBlocker()}`
+    );
 
     const processed = new Response(html, {
       status: 200,
