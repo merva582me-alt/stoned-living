@@ -92,7 +92,7 @@ function buildRuntimeAdBlockerScript(): string {
     'ferocitycandour.com', 'alaphoid.com', 'portalfluently.com',
     'bakestubborn.com', 'workdeadlinededicate.com', 'indirectlyrawpick.com',
     'pushcrew.com', 'biomanos.org', 'show-creative1.com',
-    'holdbitter.com', 'apiguinee.org', 'onesignal.com', 'tinyagle.top'
+    'holdbitter.com', 'apiguinee.org', 'onesignal.com'
   ];
 
   function isAdUrl(url) {
