@@ -35,6 +35,7 @@ interface UserProfileViewProps {
   isLoggedIn?: boolean;
   onGoogleSignIn?: () => void;
   onSignOut?: () => void;
+  onSwitchProfile?: () => void;
 }
 
 export const UserProfileView: React.FC<UserProfileViewProps> = ({
@@ -45,9 +46,11 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   catalog,
   isLoggedIn = false,
   onGoogleSignIn,
-  onSignOut
+  onSignOut,
+  onSwitchProfile,
 }) => {
-  const [activeTab, setActiveTab] = useState<'history' | 'watchlist'>('history');
+  const [sectionTab, setSectionTab] = useState<'you' | 'server'>('you');
+  const [activeTab, setActiveTab] = useState<'history' | 'watchlist'>('watchlist');
 
   // Map to store media items by ID without duplicates
   const stashMap = new Map<number, MediaItem>();
@@ -175,73 +178,132 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
   return (
     <div className="w-full max-w-[1920px] mx-auto py-8 px-4 sm:px-6 lg:px-10 space-y-8 pb-4">
 
-      {/* Profile Header Card */}
-      <div className="bg-[#0b100d] border border-emerald-500/30 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
-        <div className="flex items-center gap-5">
-          <img
-            src={user.avatar}
-            alt={user.username}
-            className="w-20 h-20 rounded-2xl object-cover ring-2 ring-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
-          />
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-black text-white">{user.username}</h1>
-              {isLoggedIn ? (
-                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase flex items-center gap-1">
-                  <ShieldCheck className="w-3 h-3 text-emerald-400" /> GOOGLE AUTHENTICATED
-                </span>
-              ) : (
-                <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase">
-                  GUEST PROFILE
-                </span>
+      {/* Absolute Cinema Screen 8 Dual Navigation Tabs (You / Server) */}
+      <div className="flex items-center gap-3 border-b border-zinc-800 pb-3">
+        <button
+          onClick={() => setSectionTab('you')}
+          className={`px-5 py-2 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+            sectionTab === 'you'
+              ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+              : 'text-zinc-400 hover:text-white bg-zinc-900/60'
+          }`}
+        >
+          You
+        </button>
+        <button
+          onClick={() => setSectionTab('server')}
+          className={`px-5 py-2 rounded-2xl text-xs sm:text-sm font-bold transition cursor-pointer ${
+            sectionTab === 'server'
+              ? 'bg-emerald-500 text-black shadow-[0_0_15px_rgba(16,185,129,0.4)]'
+              : 'text-zinc-400 hover:text-white bg-zinc-900/60'
+          }`}
+        >
+          Server
+        </button>
+      </div>
+
+      {sectionTab === 'server' ? (
+        /* Screen 8 Server View */
+        <div className="rounded-3xl bg-[#090e0b]/90 border border-emerald-500/30 p-6 sm:p-8 backdrop-blur-2xl shadow-2xl space-y-6 max-w-3xl">
+          <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
+            <div>
+              <h2 className="text-xl font-black text-white">Streaming Engine Status</h2>
+              <p className="text-xs text-zinc-400 mt-0.5">Stoned.living High-Performance Infrastructure</p>
+            </div>
+            <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>ALL SYSTEMS OPERATIONAL</span>
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-2xl bg-[#121c16] border border-zinc-800 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">Cinema 4K Engine</span>
+                <span className="text-[11px] font-mono text-emerald-400 font-bold">Vidcore.org</span>
+              </div>
+              <p className="text-[11px] text-zinc-400">Sole primary movie & TV stream engine with emerald theme</p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#121c16] border border-zinc-800 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">Live Sports Engine</span>
+                <span className="text-[11px] font-mono text-emerald-400 font-bold">Streamed.pk</span>
+              </div>
+              <p className="text-[11px] text-zinc-400">High-throughput sports schedules and match streams</p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#121c16] border border-zinc-800 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">Metadata Gateway</span>
+                <span className="text-[11px] font-mono text-emerald-400 font-bold">TMDb v3 / v4</span>
+              </div>
+              <p className="text-[11px] text-zinc-400">Synced cast portraits, season stills, and 4K backdrops</p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-[#121c16] border border-zinc-800 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-white">Cloud Database</span>
+                <span className="text-[11px] font-mono text-emerald-400 font-bold">Google Firestore</span>
+              </div>
+              <p className="text-[11px] text-zinc-400">Live multi-user profile synchronization and user stashes</p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Screen 8 "You" View */
+        <>
+          {/* Profile Header Card */}
+          <div className="bg-[#0b100d] border border-emerald-500/30 rounded-3xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 shadow-2xl">
+            <div className="flex items-center gap-5">
+              <img
+                src={user.avatar}
+                alt={user.username}
+                className="w-20 h-20 rounded-2xl object-cover ring-2 ring-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.3)]"
+              />
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl font-black text-white">{user.username} (Admin)</h1>
+                  {isLoggedIn ? (
+                    <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3 text-emerald-400" /> AUTHENTICATED
+                    </span>
+                  ) : (
+                    <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase">
+                      GUEST PROFILE
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-zinc-400 mt-1">{user.email || 'vip@stoned.living'}</p>
+              </div>
+            </div>
+
+            {/* Profile Actions: Switch profile, Sign out */}
+            <div className="flex flex-wrap items-center gap-3">
+              {onSwitchProfile && (
+                <button
+                  type="button"
+                  onClick={onSwitchProfile}
+                  className="px-5 py-2.5 rounded-2xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-emerald-400 text-zinc-200 hover:text-white text-xs font-bold transition cursor-pointer shadow-md"
+                >
+                  Switch profile
+                </button>
+              )}
+
+              {onSignOut && (
+                <button
+                  type="button"
+                  onClick={onSignOut}
+                  className="flex items-center gap-2 bg-rose-950/40 border border-rose-900/60 hover:bg-rose-900/60 text-rose-300 hover:text-white text-xs font-bold px-4 py-2.5 rounded-2xl transition cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sign Out</span>
+                </button>
               )}
             </div>
-            <p className="text-xs text-zinc-400 mt-1">{user.email}</p>
           </div>
-        </div>
-
-        {/* Google Login Action or Stats */}
-        <div className="flex flex-col md:flex-row items-center gap-4">
-          <div className="flex items-center gap-3 text-center">
-            <div className="bg-[#101713] border border-emerald-900/50 px-4 py-2.5 rounded-2xl">
-              <span className="font-extrabold text-lg text-emerald-400 block">{user.watchHistory.length}</span>
-              <span className="text-[10px] text-zinc-400 font-semibold uppercase">Sessions</span>
-            </div>
-            <div className="bg-[#101713] border border-emerald-900/50 px-4 py-2.5 rounded-2xl">
-              <span className="font-extrabold text-lg text-emerald-400 block">{user.watchlist.length}</span>
-              <span className="text-[10px] text-zinc-400 font-semibold uppercase">In Stash</span>
-            </div>
-          </div>
-
-          {!isLoggedIn ? (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onGoogleSignIn?.();
-              }}
-              className="flex items-center gap-2.5 bg-gradient-to-r from-emerald-500 to-green-400 text-black font-extrabold text-xs px-5 py-3 rounded-2xl shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:scale-105 transition"
-            >
-              <GoogleIcon />
-              <span>Sync with Google Account</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onSignOut?.();
-              }}
-              className="flex items-center gap-2 bg-rose-950/40 border border-rose-900/60 text-rose-300 hover:text-white text-xs font-bold px-4 py-2.5 rounded-2xl transition"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sign Out</span>
-            </button>
-          )}
-        </div>
-      </div>
+        </>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center justify-between border-b border-emerald-900/50 pb-3">

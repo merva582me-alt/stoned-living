@@ -15,6 +15,28 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "email"]
+    },
+    "settings": {
+      "title": "Site Settings",
+      "description": "Global application configuration and announcement text",
+      "type": "object",
+      "properties": {
+        "announcementText": { "type": "string" },
+        "announcementActive": { "type": "boolean" },
+        "featuredHeroIds": { "type": "array", "items": { "type": "number" } },
+        "maintenanceMode": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "users",
+      "description": "User profile documents keyed by Firebase Auth UID"
+    },
+    "/settings/{document}": {
+      "schema": "settings",
+      "description": "Global settings documents accessible publicly"
     }
   }
 }

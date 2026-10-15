@@ -18,6 +18,14 @@ export const DEFAULT_USER: UserProfile = {
   watchHistory: [],
   customLists: [],
   settings: {
+    language: 'English',
+    autoplay: true,
+    nextEpisode: true,
+    defaultVolume: 100,
+    subtitleLanguage: 'English',
+    autoSubtitles: false,
+    theme: 'dark',
+    accentColor: 'emerald',
     autoplayNext: true,
     autoSkipIntro: false,
     darkCanvasMode: true,
@@ -54,9 +62,11 @@ export function loadUserProfile(): UserProfile {
     const raw = localStorage.getItem(STORAGE_KEY_USER);
     if (raw) {
       const parsed = JSON.parse(raw);
+      const isGuest = !parsed.id || parsed.id === 'guest_user';
       return {
         ...DEFAULT_USER,
         ...parsed,
+        watchHistory: isGuest ? [] : (parsed.watchHistory || []),
         watchlist: sanitizeWatchlist(parsed.watchlist || []),
         stashDetails: parsed.stashDetails || {},
         settings: {
@@ -73,6 +83,13 @@ export function loadUserProfile(): UserProfile {
   return DEFAULT_USER;
 }
 
+type ProfileSyncListener = (profile: UserProfile) => void;
+let profileSyncListener: ProfileSyncListener | null = null;
+
+export function registerProfileSyncListener(listener: ProfileSyncListener) {
+  profileSyncListener = listener;
+}
+
 export function saveUserProfile(user: UserProfile) {
   try {
     const cleanUser: UserProfile = {
@@ -81,6 +98,13 @@ export function saveUserProfile(user: UserProfile) {
       stashDetails: user.stashDetails || {}
     };
     localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(cleanUser));
+    if (profileSyncListener) {
+      try {
+        profileSyncListener(cleanUser);
+      } catch (err) {
+        console.warn('Profile sync listener error:', err);
+      }
+    }
   } catch (e) {
     console.warn('Storage write error:', e);
   }
@@ -88,6 +112,10 @@ export function saveUserProfile(user: UserProfile) {
 
 export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedAt'>): UserProfile {
   const profile = loadUserProfile();
+  // Do not track any playback progress until user is logged in
+  if (!profile.id || profile.id === 'guest_user') {
+    return profile;
+  }
   const history = profile.watchHistory || [];
   
   const targetMediaId = Number(item.mediaId);
@@ -118,8 +146,32 @@ export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedA
   return profile;
 }
 
-export function toggleFavorite(mediaId: number): boolean {
-  return false;
+export function toggleFavorite(mediaId: number): { isFav: boolean; updatedProfile: UserProfile } {
+  const profile = loadUserProfile();
+  const targetId = Number(mediaId);
+  if (isNaN(targetId) || targetId <= 0) {
+    return { isFav: false, updatedProfile: profile };
+  }
+  const favs = [...(profile.favorites || [])];
+  const idx = favs.indexOf(targetId);
+  let isFav = false;
+  if (idx >= 0) {
+    favs.splice(idx, 1);
+    isFav = false;
+  } else {
+    favs.push(targetId);
+    isFav = true;
+  }
+  const updatedProfile: UserProfile = { ...profile, favorites: favs };
+  saveUserProfile(updatedProfile);
+  return { isFav, updatedProfile };
+}
+
+export function clearWatchHistory(): UserProfile {
+  const profile = loadUserProfile();
+  const updatedProfile: UserProfile = { ...profile, watchHistory: [] };
+  saveUserProfile(updatedProfile);
+  return updatedProfile;
 }
 
 export function toggleWatchlist(mediaInput: MediaItem | number): { inList: boolean; updatedProfile: UserProfile } {
@@ -172,5 +224,10 @@ export function toggleWatchlist(mediaInput: MediaItem | number): { inList: boole
 
   saveUserProfile(updatedProfile);
   return { inList, updatedProfile };
+}
+
+export function isItemInWatchlist(mediaId: number): boolean {
+  const profile = loadUserProfile();
+  return (profile.watchlist || []).includes(mediaId);
 }
 

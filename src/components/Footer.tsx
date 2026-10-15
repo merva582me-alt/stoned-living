@@ -60,18 +60,18 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate, userRole }) => {
               onClick={() => onNavigate('home')}
               className="flex items-center gap-2 group text-left cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-green-700 p-0.5 shadow-[0_0_15px_rgba(16,185,129,0.3)] group-hover:scale-105 transition">
-                <div className="w-full h-full bg-[#030604] rounded-[10px] flex items-center justify-center">
-                  <Cannabis className="w-4 h-4 text-emerald-400" />
-                </div>
+              <div className="w-8 h-8 rounded-xl bg-[#060c08] border-2 border-[#00df82] flex items-center justify-center shadow-[0_0_12px_rgba(0,223,130,0.35)] group-hover:scale-105 group-hover:shadow-[0_0_18px_rgba(0,223,130,0.55)] transition-all shrink-0">
+                <Cannabis className="w-4 h-4 text-[#00df82] group-hover:rotate-12 transition-transform duration-300" />
               </div>
-              <span className="font-black text-xl text-white tracking-wider">
-                STONED<span className="text-emerald-400">.LIVING</span>
+              <span className="font-black text-xl tracking-tight select-none transition-colors duration-200">
+                <span className="text-white group-hover:text-[#00df82] transition-colors duration-200">STONED</span>
+                <span className="text-[#00df82] group-hover:text-white transition-colors duration-200">.</span>
+                <span className="text-[#00df82] group-hover:text-white transition-colors duration-200">LIVING</span>
               </span>
             </button>
             <span className="hidden sm:inline-block w-1.5 h-1.5 rounded-full bg-emerald-900" />
-            <span className="hidden sm:inline-block text-[11px] text-zinc-400 font-medium">
-              High Definition Streaming
+            <span className="hidden sm:inline-block text-[11px] font-mono tracking-widest text-[#00df82] uppercase font-semibold">
+              HIGH DEFINITION STREAMING
             </span>
           </div>
 

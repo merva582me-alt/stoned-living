@@ -1,6 +1,5 @@
-import { MediaItem, Season, Comment, SiteSettings } from '../types';
+import { MediaItem, Season, Comment, SiteSettings, CastMember, PaginatedMediaResult } from '../types';
 import { StrainDatabase } from '../data/strainDatabase';
-import { MOCK_MOVIES } from '../data/mockTmdbData';
 import {
   cleanAndFilterMediaList
 } from '../utils/mediaUtils';
@@ -52,12 +51,28 @@ export function enrichListClient(
 // In-memory + localStorage cache
 // ---------------------------------------------------------------------------
 
+const CACHE_PREFIX = 'stoned_cache_v3_';
+
+// Purge obsolete v1/v2 cache keys to immediately clear unreleased titles from local browser storage
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('stoned_cache_v2_') || k.startsWith('stoned_cache_v1_'))) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  }
+} catch (_) {}
+
 const apiCache = new Map<string, Promise<any>>();
 const syncCache = new Map<string, any>();
 
 function getLocalStorageCache(key: string): any {
   try {
-    const raw = localStorage.getItem(`stoned_cache_v2_${key}`);
+    const raw = localStorage.getItem(`${CACHE_PREFIX}${key}`);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed?.data && parsed?.timestamp && Date.now() - parsed.timestamp < 86400000) {
@@ -70,7 +85,7 @@ function getLocalStorageCache(key: string): any {
 
 function setLocalStorageCache(key: string, data: any) {
   try {
-    localStorage.setItem(`stoned_cache_v2_${key}`, JSON.stringify({ timestamp: Date.now(), data }));
+    localStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ timestamp: Date.now(), data }));
   } catch (_) { /* quota */ }
 }
 
@@ -201,7 +216,12 @@ export async function discoverMedia(
   sortBy = 'popularity.desc'
 ) {
   try {
-    const params: Record<string, string> = { sort_by: sortBy, with_original_language: 'en' };
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dateParam =
+      type === 'movie'
+        ? { 'primary_release_date.lte': todayStr }
+        : { 'first_air_date.lte': todayStr };
+    const params: Record<string, string> = { sort_by: sortBy, with_original_language: 'en', ...dateParam };
     if (genreId) params.with_genres = String(genreId);
     const url = tmdbUrl(`/discover/${type}`, params);
     const data = await cachedFetch<any>(url);
@@ -218,11 +238,16 @@ export async function discoverMediaAdvanced(
   params: Record<string, string> = {}
 ) {
   try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dateParam =
+      type === 'movie'
+        ? { 'primary_release_date.lte': todayStr }
+        : { 'first_air_date.lte': todayStr };
     const isAnime =
       params.with_genres?.includes('16') && params.with_original_language === 'ja';
     const extra: Record<string, string> =
       !isAnime && !params.with_original_language ? { with_original_language: 'en' } : {};
-    const url = tmdbUrl(`/discover/${type}`, { ...extra, ...params });
+    const url = tmdbUrl(`/discover/${type}`, { ...dateParam, ...extra, ...params });
     const data = await cachedFetch<any>(url);
     const raw = (data.results || []).map((item: any) => ({ ...item, media_type: item.media_type || type }));
     const cleaned = cleanAndFilterMediaList(raw, {
@@ -234,6 +259,69 @@ export async function discoverMediaAdvanced(
     return [] as MediaItem[];
   }
 }
+
+export async function discoverMediaPaginated(
+  type: 'movie' | 'tv',
+  params: Record<string, string> = {},
+  page = 1
+): Promise<PaginatedMediaResult> {
+  try {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const dateParam =
+      type === 'movie'
+        ? { 'primary_release_date.lte': todayStr }
+        : { 'first_air_date.lte': todayStr };
+    const queryParams: Record<string, string> = {
+      page: String(page),
+      sort_by: params.sort_by || 'popularity.desc',
+      ...dateParam,
+      ...params
+    };
+
+    // If sorting by rating, ensure a minimum vote count to prevent 1-vote anomalies
+    if (queryParams.sort_by?.startsWith('vote_average') && !queryParams['vote_count.gte']) {
+      queryParams['vote_count.gte'] = type === 'movie' ? '50' : '20';
+    }
+
+    // Default language filter if none provided
+    const isAnime =
+      queryParams.with_genres?.includes('16') && queryParams.with_original_language === 'ja';
+    if (!queryParams.with_original_language && !isAnime) {
+      queryParams.with_original_language = 'en';
+    }
+    // If 'all' language is explicitly selected, remove the param so all languages show
+    if (queryParams.with_original_language === 'all') {
+      delete queryParams.with_original_language;
+    }
+
+    const url = tmdbUrl(`/discover/${type}`, queryParams);
+    const data = await cachedFetch<any>(url);
+    const raw = (data.results || []).map((item: any) => ({
+      ...item,
+      media_type: item.media_type || type
+    }));
+
+    const cleaned = cleanAndFilterMediaList(raw, {
+      englishOnly: queryParams.with_original_language === 'en',
+      prioritizeNew: false
+    });
+
+    return {
+      results: cleaned as MediaItem[],
+      page: data.page || page,
+      totalPages: data.total_pages || 1,
+      totalResults: data.total_results || 1000
+    };
+  } catch (_) {
+    return {
+      results: [],
+      page,
+      totalPages: 1,
+      totalResults: 0
+    };
+  }
+}
+
 
 export async function fetchTopRated(type: 'movie' | 'tv') {
   try {
@@ -347,11 +435,61 @@ export async function postComment(payload: {
   return newComment;
 }
 
+export async function fetchCredits(type: 'movie' | 'tv', id: number): Promise<{ cast: CastMember[]; totalCastCount: number }> {
+  try {
+    const url = tmdbUrl(`/${type}/${id}/credits`);
+    const data = await cachedFetch<any>(url);
+    const cast: CastMember[] = (data.cast || []).map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      character: c.character || '',
+      profile_path: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : null,
+      order: c.order
+    }));
+    return { cast: cast.slice(0, 10), totalCastCount: data.cast?.length || 0 };
+  } catch (_) {
+    return { cast: [], totalCastCount: 0 };
+  }
+}
+
+export async function fetchRecommendations(type: 'movie' | 'tv', id: number): Promise<MediaItem[]> {
+  try {
+    const url = tmdbUrl(`/${type}/${id}/recommendations`);
+    const data = await cachedFetch<any>(url);
+    const raw = (data.results || []).map((item: any) => ({ ...item, media_type: type }));
+    return enrichListClient(raw.slice(0, 12));
+  } catch (_) {
+    return [];
+  }
+}
+
+export async function fetchPopularSearchKeywords(): Promise<string[]> {
+  try {
+    const trending = await fetchTrending('all', 'day');
+    if (trending && trending.length) {
+      const titles = trending
+        .map((m) => m.title || m.name)
+        .filter((t): t is string => Boolean(t && t.length > 1));
+      return Array.from(new Set(titles)).slice(0, 14);
+    }
+  } catch (_) {}
+  return [
+    'Spider-Man: Brand New Day',
+    'Resident Evil',
+    'Reacher',
+    'One Piece',
+    'Ted Lasso',
+    'The Odyssey',
+    'Fall 2: Deadpoint',
+    'Other Mommy',
+    'Matchbox the Movie',
+    'Pinocchio'
+  ];
+}
+
 export async function fetchAiStrainMatch(strainOrMood: string, genrePreference?: string) {
-  // AI matchmaker is not available on static deployment — return an offline result
   const randomIndex = Math.floor(Math.random() * StrainDatabase.STRAINS.length);
   const recommendation = StrainDatabase.STRAINS[randomIndex];
-  const mediaSample = MOCK_MOVIES[Math.floor(Math.random() * MOCK_MOVIES.length)];
   return {
     success: true,
     recommendation: {
@@ -360,12 +498,9 @@ export async function fetchAiStrainMatch(strainOrMood: string, genrePreference?:
       thcContent: recommendation.thc,
       effects: [recommendation.vibeCategory, 'Euphoric', 'Relaxing'],
       flavorNotes: recommendation.flavor.split('&').map((f: string) => f.trim()),
-      reasoning: `Based on your request "${strainOrMood}", ${recommendation.name} (${recommendation.type}) provides the perfect balance of relaxation and mental clarity for watching movies.`,
-      suggestedTitle: mediaSample.title,
-      suggestedType: 'movie',
-      suggestedMediaId: mediaSample.id,
-      suggestedOverview: mediaSample.overview,
-      suggestedPoster: mediaSample.poster_path
+      reasoning: `Based on your request "${strainOrMood}", ${recommendation.name} (${recommendation.type}) provides the perfect balance of relaxation and mental clarity for streaming.`,
+      suggestedTitle: 'Trending Cinema Release',
+      suggestedType: 'movie'
     }
   };
 }
@@ -378,7 +513,7 @@ export async function fetchSiteSettings(): Promise<SiteSettings> {
 
   return {
     announcementText: '🌿 WELCOME TO STONED.LIVING 4K STREAMING — TAP A MOVIE & ENJOY THE CHILL SESSIONS!',
-    announcementActive: true,
+    announcementActive: false,
     featuredHeroIds: [11130, 157336, 545611, 693134, 60625],
     maintenanceMode: false
   };

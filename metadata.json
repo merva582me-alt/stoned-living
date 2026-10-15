@@ -1,6 +1,8 @@
 {
-  "name": "Stoned Living",
-  "description": "Chill entertainment & media streaming platform with strain pairing, AI recommendations, anime, movies, TV, and interactive player.",
+  "name": "Remix stoned-living",
+  "description": "Imported from GitHub: merva582me-alt/stoned-living",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

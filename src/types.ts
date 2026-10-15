@@ -175,6 +175,21 @@ export interface CustomList {
   createdAt: string;
 }
 
+export interface UserSettings {
+  language: string;
+  autoplay: boolean;
+  nextEpisode: boolean;
+  defaultVolume: number;
+  subtitleLanguage: string;
+  autoSubtitles: boolean;
+  theme?: 'dark' | 'midnight';
+  accentColor?: 'emerald' | 'red' | 'cyan' | 'violet';
+  autoplayNext?: boolean;
+  autoSkipIntro?: boolean;
+  darkCanvasMode?: boolean;
+  smokeEffects?: boolean;
+}
+
 export interface UserProfile {
   id: string;
   username: string;
@@ -187,12 +202,7 @@ export interface UserProfile {
   ratings: Record<number, number>; // media ID -> rating 1-10
   watchHistory: WatchHistoryItem[];
   customLists: CustomList[];
-  settings: {
-    autoplayNext: boolean;
-    autoSkipIntro: boolean;
-    darkCanvasMode: boolean;
-    smokeEffects: boolean;
-  };
+  settings: UserSettings;
 }
 
 export interface Comment {
@@ -238,3 +248,68 @@ export interface SiteSettings {
   maintenanceMode: boolean;
   customLogoUrl?: string;
 }
+
+export interface AdvanceFilters {
+  sortBy: string;
+  year: string;
+  minRating: number;
+  maxRating: number;
+  companyId: string;
+  language: string;
+}
+
+export const DEFAULT_ADVANCE_FILTERS: AdvanceFilters = {
+  sortBy: 'popularity.desc',
+  year: '',
+  minRating: 0,
+  maxRating: 10,
+  companyId: '',
+  language: 'en'
+};
+
+export interface PaginatedMediaResult {
+  results: MediaItem[];
+  page: number;
+  totalPages: number;
+  totalResults: number;
+}
+
+// ── Streamed.pk Official Sports API Types ──
+export interface APIMatch {
+  id: string;
+  title: string;
+  category: string;
+  date: number; // Unix timestamp in ms
+  poster?: string;
+  popular?: boolean;
+  teams?: {
+    home?: {
+      name: string;
+      badge: string;
+    };
+    away?: {
+      name: string;
+      badge: string;
+    };
+  };
+  sources: {
+    source: string;
+    id: string;
+  }[];
+}
+
+export interface StreamedStream {
+  id: string;
+  streamNo: number;
+  language: string;
+  hd: boolean;
+  embedUrl: string;
+  source: string;
+}
+
+export interface SportCategory {
+  id: string;
+  name: string;
+}
+
+

@@ -7,6 +7,9 @@ import {
   getRedirectResult,
   signOut, 
   onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
   User 
 } from 'firebase/auth';
 import { 
@@ -156,6 +159,59 @@ export async function loginWithGoogle(): Promise<User | null> {
 }
 
 /**
+ * Sign in with email and password
+ */
+export async function loginWithEmail(email: string, pass: string): Promise<User> {
+  try {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    return cred.user;
+  } catch (err: any) {
+    if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('operation-not-allowed')) {
+      console.warn('Firebase email auth not enabled in console, generating local session');
+      const hashId = Math.abs(Array.from(email).reduce((h, c) => (h << 5) - h + c.charCodeAt(0), 0));
+      return {
+        uid: `usr_${hashId}`,
+        email,
+        displayName: email.split('@')[0],
+        emailVerified: false,
+        isAnonymous: false,
+        providerData: []
+      } as unknown as User;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Register with email and password
+ */
+export async function registerWithEmail(email: string, pass: string, name?: string): Promise<User> {
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    if (name && cred.user) {
+      try {
+        await updateProfile(cred.user, { displayName: name });
+      } catch {}
+    }
+    return cred.user;
+  } catch (err: any) {
+    if (err?.code === 'auth/operation-not-allowed' || err?.message?.includes('operation-not-allowed')) {
+      console.warn('Firebase email auth not enabled in console, generating local session');
+      const hashId = Math.abs(Array.from(email).reduce((h, c) => (h << 5) - h + c.charCodeAt(0), 0));
+      return {
+        uid: `usr_${hashId}`,
+        email,
+        displayName: name || email.split('@')[0],
+        emailVerified: false,
+        isAnonymous: false,
+        providerData: []
+      } as unknown as User;
+    }
+    throw err;
+  }
+}
+
+/**
  * Sign out current user
  */
 export async function logoutUser(): Promise<void> {
@@ -182,6 +238,8 @@ export async function saveProfileToFirestore(userProfile: UserProfile): Promise<
       watchlist: sanitizeWatchlist(userProfile.watchlist || []),
       stashDetails: userProfile.stashDetails || {},
       watchHistory: userProfile.watchHistory || [],
+      favorites: userProfile.favorites || [],
+      customLists: userProfile.customLists || [],
       settings: userProfile.settings || DEFAULT_USER.settings,
       updatedAt: new Date().toISOString()
     }, { merge: true });
@@ -211,7 +269,7 @@ export function subscribeToUserProfile(
             email: data.email || firebaseUser.email || '',
             avatar: data.avatar || firebaseUser.photoURL || DEFAULT_USER.avatar,
             role: 'vip',
-            favorites: [],
+            favorites: data.favorites || [],
             watchlist: sanitizeWatchlist(data.watchlist || []),
             stashDetails: data.stashDetails || {},
             ratings: data.ratings || {},

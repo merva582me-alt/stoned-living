@@ -1,463 +1,767 @@
 import React, { useState, useEffect, useRef } from 'react';
-import {
-  Film,
-  Flame,
-  Tv,
-  Sparkles,
-  Star,
-  Trophy,
-  Zap,
-  Clock,
-  Rocket,
-  Crown,
-  Gem,
-  Ghost,
-  Swords,
-  Smile,
-  Atom,
-  ShieldAlert,
-  Shield,
-  Wand2,
-  Palette,
-  HeartHandshake,
-  Compass,
-  LucideIcon
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, Play } from 'lucide-react';
 import { MediaItem, UserProfile } from '../types';
 import { HeroSlider } from './HeroSlider';
-import { MediaCarousel } from './MediaCarousel';
+import { MediaCard } from './MediaCard';
 import {
   fetchTrending,
-  fetchCategoryList,
   fetchTopRated,
-  fetchAnime,
   discoverMedia,
-  discoverMediaAdvanced
 } from '../services/api';
 
 interface HomeViewProps {
   user: UserProfile;
+  isLoggedIn?: boolean;
   onPlayMedia: (item: MediaItem, season?: number, episode?: number) => void;
   onInspectItem: (item: MediaItem) => void;
   onNavigateTab: (tab: string) => void;
 }
 
-interface SectionConfig {
-  id: string;
-  title: string;
-  subtitle: string;
-  icon: LucideIcon;
-  fetcher: () => Promise<MediaItem[]>;
-}
-
-// Global in-memory cache for fast tab switches
-const homeCache: Record<string, MediaItem[]> = {};
-
-// Helper to interleave Movies, TV Shows, and Anime into a balanced mixed list
-async function mixMedia(
-  fetchMovies: () => Promise<MediaItem[]>,
-  fetchTv: () => Promise<MediaItem[]>,
-  fetchAnime: () => Promise<MediaItem[]>
-): Promise<MediaItem[]> {
-  const [mList, tvList, aList] = await Promise.all([
-    fetchMovies().catch(() => []),
-    fetchTv().catch(() => []),
-    fetchAnime().catch(() => [])
-  ]);
-
-  const movies = mList.map((i) => ({ ...i, media_type: 'movie' as const }));
-  const tvs = tvList.map((i) => ({ ...i, media_type: 'tv' as const }));
-  const animes = aList.map((i) => ({
-    ...i,
-    media_type: (i.media_type || (i.first_air_date ? 'tv' : 'movie')) as 'movie' | 'tv',
-    is_anime: true
-  }));
-
-  const combined: MediaItem[] = [];
-  const seen = new Set<number>();
-  const maxLen = Math.max(movies.length, tvs.length, animes.length);
-
-  for (let i = 0; i < maxLen; i++) {
-    if (i < movies.length && !seen.has(movies[i].id)) {
-      seen.add(movies[i].id);
-      combined.push(movies[i]);
-    }
-    if (i < tvs.length && !seen.has(tvs[i].id)) {
-      seen.add(tvs[i].id);
-      combined.push(tvs[i]);
-    }
-    if (i < animes.length && !seen.has(animes[i].id)) {
-      seen.add(animes[i].id);
-      combined.push(animes[i]);
-    }
-  }
-
-  return combined;
-}
+// ── Streaming Providers List (Screenshot 2) ──
+const STREAMING_PROVIDERS = [
+  { id: '213', name: 'Netflix', type: 'TV Network', logoType: 'netflix' },
+  { id: '1024', name: 'Amazon MGM Studios', type: 'Movie Studio', logoType: 'mgm' },
+  { id: '3172', name: 'Shudder', type: 'Movie Studio', logoType: 'shudder' },
+  { id: '2739', name: 'Disney+', type: 'TV Network', logoType: 'disney' },
+  { id: '2552', name: 'Apple TV+', type: 'TV Network', logoType: 'apple' },
+  { id: '3172_b', name: 'Blumhouse', type: 'Movie Studio', logoType: 'blumhouse' },
+  { id: '178464', name: 'Vivamax', type: 'Movie Studio', logoType: 'vivamax' },
+  { id: '4330', name: 'Paramount+', type: 'TV Network', logoType: 'paramount' },
+  { id: '49', name: 'Max', type: 'TV Network', logoType: 'max' },
+  { id: '174', name: 'Warner Bros.', type: 'Movie Studio', logoType: 'wb' },
+];
 
 export const HomeView: React.FC<HomeViewProps> = ({
   user,
+  isLoggedIn = false,
   onPlayMedia,
   onInspectItem,
-  onNavigateTab
+  onNavigateTab,
 }) => {
-  const [sectionData, setSectionData] = useState<Record<string, MediaItem[]>>(homeCache);
-  const [loadingMap, setLoadingMap] = useState<Record<string, boolean>>({});
-  const isMountedRef = useRef(true);
-  const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // Live State for all 1:1 shelves
+  const [heroItems, setHeroItems] = useState<MediaItem[]>([]);
+  const [top10Items, setTop10Items] = useState<MediaItem[]>([]);
+  const [top10Filter, setTop10Filter] = useState<'all' | 'movies' | 'tv'>('all');
+  const [trendingMovies, setTrendingMovies] = useState<MediaItem[]>([]);
+  const [trendingShows, setTrendingShows] = useState<MediaItem[]>([]);
 
-  // 21 Exact Horizontal Sections in exact required order
-  const sections: SectionConfig[] = [
-    {
-      id: '1_new_movies',
-      title: 'New Movies',
-      subtitle: 'Fresh theatrical and 4K digital movie releases',
-      icon: Film,
-      fetcher: async () => {
-        const raw = await fetchCategoryList('movie', 'now_playing');
-        // Filter for movies released in 2025 or 2026
-        const recent = raw.filter((item) => {
-          if (!item.release_date) return false;
-          const year = parseInt(item.release_date.slice(0, 4), 10);
-          return year >= 2025;
-        });
+  // Genre Shelves (Screenshots 3 - 6)
+  const [horrorItems, setHorrorItems] = useState<MediaItem[]>([]);
+  const [actionItems, setActionItems] = useState<MediaItem[]>([]);
+  const [comedyItems, setComedyItems] = useState<MediaItem[]>([]);
+  const [romanceItems, setRomanceItems] = useState<MediaItem[]>([]);
+  const [scifiItems, setScifiItems] = useState<MediaItem[]>([]);
+  const [thrillerItems, setThrillerItems] = useState<MediaItem[]>([]);
+  const [animationItems, setAnimationItems] = useState<MediaItem[]>([]);
+  const [documentaryItems, setDocumentaryItems] = useState<MediaItem[]>([]);
 
-        if (recent.length >= 10) {
-          return recent.sort((a, b) => new Date(b.release_date!).getTime() - new Date(a.release_date!).getTime());
-        }
+  // TV Shelves (Screenshots 7 - 8)
+  const [popularTvItems, setPopularTvItems] = useState<MediaItem[]>([]);
+  const [tvActionItems, setTvActionItems] = useState<MediaItem[]>([]);
+  const [tvComedyItems, setTvComedyItems] = useState<MediaItem[]>([]);
+  const [tvDramaItems, setTvDramaItems] = useState<MediaItem[]>([]);
 
-        // Supplemental discover for latest 2025/2026 releases
-        const todayStr = new Date().toISOString().split('T')[0];
-        const discoverNew = await discoverMediaAdvanced('movie', {
-          'primary_release_date.lte': todayStr,
-          'primary_release_date.gte': '2025-01-01',
-          sort_by: 'primary_release_date.desc'
-        });
+  // Curated Shelves (Screenshots 9 - 12)
+  const [topRatedMovies, setTopRatedMovies] = useState<MediaItem[]>([]);
+  const [popularWeekItems, setPopularWeekItems] = useState<MediaItem[]>([]);
+  const [highlyRated, setHighlyRated] = useState<MediaItem[]>([]);
 
-        const combined = [...recent, ...discoverNew];
-        const uniqueMap = new Map<number, MediaItem>();
-        combined.forEach((m) => uniqueMap.set(m.id, m));
-        return Array.from(uniqueMap.values()).sort(
-          (a, b) => new Date(b.release_date || 0).getTime() - new Date(a.release_date || 0).getTime()
-        );
-      }
-    },
-    {
-      id: '2_trending_movies',
-      title: 'Trending Movies',
-      subtitle: 'The most watched feature films of the week',
-      icon: Flame,
-      fetcher: () => fetchTrending('movie', 'week')
-    },
-    {
-      id: '3_trending_tv',
-      title: 'Trending TV Shows',
-      subtitle: 'Most popular series currently streaming today',
-      icon: Tv,
-      fetcher: () => fetchTrending('tv', 'week')
-    },
-    {
-      id: '4_trending_anime',
-      title: 'Trending Anime',
-      subtitle: 'Top Japanese animated series & feature films',
-      icon: Sparkles,
-      fetcher: () =>
-        discoverMediaAdvanced('tv', {
-          with_genres: '16',
-          with_original_language: 'ja',
-          sort_by: 'popularity.desc'
-        })
-    },
-    {
-      id: '5_top_rated_movies',
-      title: 'Top Rated Movies',
-      subtitle: 'Highest rated critically acclaimed cinema masterpieces',
-      icon: Star,
-      fetcher: () => fetchTopRated('movie')
-    },
-    {
-      id: '6_top_rated_tv',
-      title: 'Top Rated TV Shows',
-      subtitle: 'All-time highest rated television series',
-      icon: Trophy,
-      fetcher: () => fetchTopRated('tv')
-    },
-    {
-      id: '7_popular_movies',
-      title: 'Popular Movies',
-      subtitle: 'Crowd-pleasing blockbusters around the globe',
-      icon: Zap,
-      fetcher: () => fetchCategoryList('movie', 'popular')
-    },
-    {
-      id: '8_popular_tv',
-      title: 'Popular TV Shows',
-      subtitle: 'Binge-worthy series trending across all networks',
-      icon: Clock,
-      fetcher: () => fetchCategoryList('tv', 'popular')
-    },
-    {
-      id: '9_upcoming_movies',
-      title: 'Upcoming Movies',
-      subtitle: 'Highly anticipated upcoming theatrical feature releases',
-      icon: Rocket,
-      fetcher: async () => {
-        const upcoming = await fetchCategoryList('movie', 'upcoming');
-        const todayStr = new Date().toISOString().split('T')[0];
-        const discoverUpcoming = await discoverMediaAdvanced('movie', {
-          'primary_release_date.gte': todayStr,
-          sort_by: 'popularity.desc'
-        });
-        const combined = [...upcoming, ...discoverUpcoming];
-        const uniqueMap = new Map<number, MediaItem>();
-        combined.forEach((m) => uniqueMap.set(m.id, m));
-        return Array.from(uniqueMap.values());
-      }
-    },
-    {
-      id: '10_all_time_classics',
-      title: 'All-Time Classics',
-      subtitle: 'Timeless masterpiece movies, legendary TV series & classic anime',
-      icon: Crown,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMediaAdvanced('movie', { 'primary_release_date.lte': '2004-12-31', 'vote_count.gte': '1000', sort_by: 'vote_average.desc' }),
-          () => discoverMediaAdvanced('tv', { 'first_air_date.lte': '2012-12-31', 'vote_count.gte': '500', sort_by: 'vote_average.desc' }),
-          () => fetchAnime('tv', { sort_by: 'vote_average.desc', 'vote_count.gte': '300' })
-        )
-    },
-    {
-      id: '11_hidden_gems',
-      title: 'Hidden Gems',
-      subtitle: 'High-scoring, underrated movies, series & anime waiting to be discovered',
-      icon: Gem,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMediaAdvanced('movie', { 'vote_average.gte': '7.5', 'vote_count.gte': '100', 'vote_count.lte': '1500', sort_by: 'vote_average.desc' }),
-          () => discoverMediaAdvanced('tv', { 'vote_average.gte': '7.8', 'vote_count.gte': '50', 'vote_count.lte': '1000', sort_by: 'vote_average.desc' }),
-          () => discoverMediaAdvanced('tv', { with_genres: '16', with_original_language: 'ja', 'vote_average.gte': '8.0', 'vote_count.gte': '50', 'vote_count.lte': '1200', sort_by: 'vote_average.desc' })
-        )
-    },
-    {
-      id: '12_horror',
-      title: 'Horror',
-      subtitle: 'Supernatural chills, horror series & dark thriller anime',
-      icon: Ghost,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 27),
-          () => discoverMediaAdvanced('tv', { with_genres: '9648', sort_by: 'popularity.desc' }),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,9648', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '13_action',
-      title: 'Action',
-      subtitle: 'High-octane films, action series & epic shonen anime',
-      icon: Swords,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 28),
-          () => discoverMedia('tv', 10759),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,10759', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '14_comedy',
-      title: 'Comedy',
-      subtitle: 'Hilarious comedy movies, sitcoms & slice-of-life anime',
-      icon: Smile,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 35),
-          () => discoverMedia('tv', 35),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,35', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '15_sci_fi',
-      title: 'Sci-Fi',
-      subtitle: 'Cosmic films, sci-fi TV series & futuristic anime',
-      icon: Atom,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 878),
-          () => discoverMedia('tv', 10765),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,10765', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '16_thriller',
-      title: 'Thriller',
-      subtitle: 'Edge-of-your-seat films, mystery thrillers & psychological suspense anime',
-      icon: ShieldAlert,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 53),
-          () => discoverMediaAdvanced('tv', { with_genres: '9648,80', sort_by: 'popularity.desc' }),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,9648', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '17_crime',
-      title: 'Crime',
-      subtitle: 'Gritty mob movies, crime procedural series & detective anime',
-      icon: Shield,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 80),
-          () => discoverMedia('tv', 80),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,80', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '18_fantasy',
-      title: 'Fantasy',
-      subtitle: 'Magical movies, epic fantasy series & isekai anime realms',
-      icon: Wand2,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 14),
-          () => discoverMedia('tv', 10765),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,10765', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '19_animation',
-      title: 'Animation',
-      subtitle: 'Stunning animated films, global cartoon series & masterpiece anime',
-      icon: Palette,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 16),
-          () => discoverMediaAdvanced('tv', { with_genres: '16', without_original_language: 'ja', sort_by: 'popularity.desc' }),
-          () => discoverMediaAdvanced('tv', { with_genres: '16', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '20_family',
-      title: 'Family',
-      subtitle: 'Wholesome family films, youth series & heartwarming anime',
-      icon: HeartHandshake,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 10751),
-          () => discoverMedia('tv', 10762),
-          () => discoverMediaAdvanced('tv', { with_genres: '16,10762', with_original_language: 'ja', sort_by: 'popularity.desc' })
-        )
-    },
-    {
-      id: '21_documentary',
-      title: 'Documentary',
-      subtitle: 'Investigative documentaries, docuseries & true-story animated sagas',
-      icon: Compass,
-      fetcher: () =>
-        mixMedia(
-          () => discoverMedia('movie', 99),
-          () => discoverMedia('tv', 99),
-          () => discoverMediaAdvanced('tv', { with_genres: '99', sort_by: 'popularity.desc' })
-        )
-    }
-  ];
+  const [loading, setLoading] = useState(true);
+  const [showScrollTop, setShowScrollTop] = useState(false);
 
-  const fetchSection = (sec: SectionConfig) => {
-    if (homeCache[sec.id] && homeCache[sec.id].length > 0) return;
-    setLoadingMap((prev) => ({ ...prev, [sec.id]: true }));
-    sec.fetcher()
-      .then((items) => {
-        if (!isMountedRef.current) return;
-        if (items && items.length > 0) {
-          homeCache[sec.id] = items;
-          setSectionData((prev) => ({ ...prev, [sec.id]: items }));
-        }
-      })
-      .catch((err) => {
-        console.warn(`Error fetching home section ${sec.id}:`, err);
-      })
-      .finally(() => {
-        if (isMountedRef.current) {
-          setLoadingMap((prev) => ({ ...prev, [sec.id]: false }));
-        }
-      });
-  };
+  const continueWatchingScrollRef = useRef<HTMLDivElement>(null);
+  const top10ScrollRef = useRef<HTMLDivElement>(null);
+  const providersScrollRef = useRef<HTMLDivElement>(null);
 
+  // Monitor scroll position for floating Scroll to top button (Screenshots 3–12)
   useEffect(() => {
-    isMountedRef.current = true;
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 350);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
-    // First 6 sections load immediately (covers above the fold + one scroll)
-    sections.slice(0, 6).forEach(fetchSection);
+  // Fetch live media catalog from TMDb
+  useEffect(() => {
+    let isMounted = true;
 
-    // Remaining sections use IntersectionObserver — fetch when near viewport
-    const observers: IntersectionObserver[] = [];
-    sections.slice(6).forEach((sec) => {
-      const el = sectionRefs.current[sec.id];
-      if (!el) return;
-      const obs = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) {
-            fetchSection(sec);
-            obs.disconnect();
-          }
-        },
-        { rootMargin: '200px' }
-      );
-      obs.observe(el);
-      observers.push(obs);
-    });
+    async function loadData() {
+      setLoading(true);
+      try {
+        // Primary visible shelves loaded in fast parallel batch
+        const [
+          trendingAll,
+          movies,
+          tv,
+          horror,
+          action,
+          comedy,
+          romance,
+          scifi,
+          thriller,
+        ] = await Promise.all([
+          fetchTrending('all', 'day').catch(() => []),
+          fetchTrending('movie', 'day').catch(() => []),
+          fetchTrending('tv', 'day').catch(() => []),
+          discoverMedia('movie', 27).catch(() => []),
+          discoverMedia('movie', 28).catch(() => []),
+          discoverMedia('movie', 35).catch(() => []),
+          discoverMedia('movie', 10749).catch(() => []),
+          discoverMedia('movie', 878).catch(() => []),
+          discoverMedia('movie', 53).catch(() => []),
+        ]);
 
+        if (!isMounted) return;
+
+        setHeroItems(trendingAll.slice(0, 8));
+        setTrendingMovies(movies);
+        setTrendingShows(tv);
+        setHorrorItems(horror);
+        setActionItems(action);
+        setComedyItems(comedy);
+        setRomanceItems(romance);
+        setScifiItems(scifi);
+        setThrillerItems(thriller);
+
+        // Secondary shelves loaded immediately after
+        const [
+          anim,
+          doc,
+          pTv,
+          tAction,
+          tCom,
+          tDrama,
+          topM,
+          popW,
+          highR,
+        ] = await Promise.all([
+          discoverMedia('movie', 16).catch(() => []),
+          discoverMedia('movie', 99).catch(() => []),
+          fetchTrending('tv', 'day').catch(() => []),
+          discoverMedia('tv', 10759).catch(() => []),
+          discoverMedia('tv', 35).catch(() => []),
+          discoverMedia('tv', 18).catch(() => []),
+          fetchTopRated('movie').catch(() => []),
+          fetchTrending('movie', 'week').catch(() => []),
+          fetchTopRated('tv').catch(() => []),
+        ]);
+
+        if (!isMounted) return;
+        setAnimationItems(anim);
+        setDocumentaryItems(doc);
+        setPopularTvItems(pTv);
+        setTvActionItems(tAction);
+        setTvComedyItems(tCom);
+        setTvDramaItems(tDrama);
+        setTopRatedMovies(topM);
+        setPopularWeekItems(popW);
+        setHighlyRated(highR);
+      } catch (err) {
+        console.error('Failed to load catalog shelves:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadData();
     return () => {
-      isMountedRef.current = false;
-      observers.forEach((o) => o.disconnect());
+      isMounted = false;
     };
   }, []);
 
-  // Build featured items mix: interleave top trending new movies, trending TV shows, and trending anime
-  const trendingMovies = sectionData['2_trending_movies'] || sectionData['1_new_movies'] || [];
-  const trendingTv = sectionData['3_trending_tv'] || [];
-  const trendingAnime = sectionData['4_trending_anime'] || [];
+  // Update Top 10 based on filter (All, Movies, TV)
+  useEffect(() => {
+    if (top10Filter === 'movies') {
+      setTop10Items(trendingMovies.slice(0, 10));
+    } else if (top10Filter === 'tv') {
+      setTop10Items(trendingShows.slice(0, 10));
+    } else {
+      const combined: MediaItem[] = [];
+      const maxLen = Math.max(trendingMovies.length, trendingShows.length);
+      for (let i = 0; i < maxLen; i++) {
+        if (trendingMovies[i]) combined.push(trendingMovies[i]);
+        if (trendingShows[i]) combined.push(trendingShows[i]);
+      }
+      setTop10Items(combined.slice(0, 10));
+    }
+  }, [top10Filter, trendingMovies, trendingShows]);
 
-  const heroItems: MediaItem[] = [];
-  const maxHeroCount = Math.max(trendingMovies.length, trendingTv.length, trendingAnime.length);
-  for (let i = 0; i < maxHeroCount && heroItems.length < 9; i++) {
-    if (trendingMovies[i]) heroItems.push({ ...trendingMovies[i], media_type: trendingMovies[i].media_type || 'movie' });
-    if (trendingTv[i]) heroItems.push({ ...trendingTv[i], media_type: 'tv' });
-    if (trendingAnime[i]) heroItems.push({ ...trendingAnime[i], media_type: 'tv' });
-  }
-
-  // Flatten all available catalog items for matching watch history
-  const combinedCatalog: MediaItem[] = (Object.values(sectionData) as MediaItem[][]).reduce<MediaItem[]>((acc, list) => acc.concat(list || []), []);
+  const scrollShelf = (ref: React.RefObject<HTMLDivElement | null>, direction: 'left' | 'right') => {
+    if (ref.current) {
+      const scrollAmount = (direction === 'left' ? -1 : 1) * Math.max(ref.current.clientWidth * 0.75, 320);
+      ref.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   return (
-    <div className="space-y-10 px-4 sm:px-6 lg:px-10 w-full max-w-[1920px] mx-auto pt-4 pb-4">
-      {/* Hero Banner Slider */}
+    <div className="w-full min-h-screen bg-black text-white pb-28 selection:bg-red-600 selection:text-white">
+      {/* ── 1. Widescreen Hero Billboard (Fills 100% to Right Edge, Screenshot 1) ── */}
       <HeroSlider
         items={heroItems}
-        onPlay={onPlayMedia}
-        onOpenDetails={onInspectItem}
+        onPlay={(item) => onPlayMedia(item)}
+        onOpenDetails={(item) => onInspectItem(item)}
       />
 
-      {/* Render All 21 Horizontal Category Carousels in Exact Sequence */}
-      {sections.map((sec, idx) => {
-        const items = sectionData[sec.id] || [];
-        const isLoading = Boolean(loadingMap[sec.id] && !items.length);
+      {/* ── 2. Content Shelves (Bleeds to Both Left and Right Edges when Scrolled) ── */}
+      <div className="w-full px-0 pt-6 relative z-20 space-y-12">
+        {/* ─────────────────────────────────────────────────────────────
+            CONTINUE WATCHING SHELF (Only visible to authenticated logged-in users)
+        ─────────────────────────────────────────────────────────────── */}
+        {isLoggedIn && user?.watchHistory && user.watchHistory.length > 0 && (
+          <div className="space-y-8 sm:space-y-10">
+            <section className="space-y-4">
+              <div className="flex items-center justify-between px-6 sm:px-8 lg:px-10">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+                    <span>Continue Watching</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-600/20 text-red-400 font-bold border border-red-500/30">
+                      {user.watchHistory.length}
+                    </span>
+                  </h2>
+                </div>
 
-        return (
-          <div
-            key={sec.id}
-            ref={idx >= 4 ? (el) => { sectionRefs.current[sec.id] = el; } : undefined}
-          >
-            <MediaCarousel
-              title={sec.title}
-              subtitle={sec.subtitle}
-              icon={sec.icon}
-              items={items}
-              loading={isLoading}
-              onPlay={onPlayMedia}
-              onOpenDetails={onInspectItem}
-            />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => scrollShelf(continueWatchingScrollRef, 'left')}
+                    className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+                    title="Scroll left"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => scrollShelf(continueWatchingScrollRef, 'right')}
+                    className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+                    title="Scroll right"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div
+                ref={continueWatchingScrollRef}
+                className="flex gap-4 sm:gap-5 overflow-x-auto no-scrollbar scroll-smooth pb-3 w-full"
+              >
+                <div className="shrink-0 w-2 sm:w-3 lg:w-5 pointer-events-none" aria-hidden="true" />
+                {user.watchHistory.map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => onPlayMedia({
+                      id: item.mediaId,
+                      title: item.title,
+                      overview: '',
+                      poster_path: item.posterPath,
+                      backdrop_path: item.backdropPath,
+                      vote_average: 8.5,
+                      vote_count: 100,
+                      popularity: 10,
+                      media_type: item.mediaType,
+                    }, item.season, item.episode)}
+                    className="w-64 sm:w-72 md:w-80 shrink-0 group cursor-pointer select-none"
+                  >
+                    <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:border-zinc-700 transition-all shadow-lg group-hover:scale-[1.02]">
+                      <img
+                        src={item.backdropPath || item.posterPath || ''}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+                      
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
+                        <div className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-2xl">
+                          <Play className="w-5 h-5 fill-current ml-0.5" />
+                        </div>
+                      </div>
+
+                      <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-zinc-800">
+                        <div
+                          className="h-full bg-red-600 shadow-[0_0_8px_#ef4444]"
+                          style={{ width: `${Math.min(Math.max(item.progressPercent || 5, 5), 100)}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-2.5 px-0.5">
+                      <h3 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-red-500 transition-colors">
+                        {item.title}
+                      </h3>
+                      <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
+                        <span className="text-red-400 font-semibold">{item.progressPercent || 5}% watched</span>
+                        <span>·</span>
+                        <span>{item.mediaType === 'tv' ? `S${item.season || 1} E${item.episode || 1}` : 'Feature Film'}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div className="shrink-0 w-8 sm:w-12 pointer-events-none" aria-hidden="true" />
+              </div>
+            </section>
+
+            {/* Section Separator */}
+            <div className="px-6 sm:px-8 lg:px-10" aria-hidden="true">
+              <div className="border-t border-zinc-800/80" />
+            </div>
           </div>
-        );
-      })}
+        )}
+
+        {/* ─────────────────────────────────────────────────────────────
+            TOP 10 SHELF (Screenshot 2)
+            Features: [All] [Movies] [TV] & Giant Outline Stroke Rank Numbers
+        ─────────────────────────────────────────────────────────────── */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between px-6 sm:px-8 lg:px-10">
+            <div className="flex items-center gap-4">
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                TOP 10
+              </h2>
+
+              {/* Segmented Filter: All | Movies | TV */}
+              <div className="flex items-center p-0.5 rounded-xl bg-[#141414] border border-zinc-800 text-xs font-semibold">
+                <button
+                  onClick={() => setTop10Filter('all')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    top10Filter === 'all'
+                      ? 'bg-zinc-800 text-white font-bold'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setTop10Filter('movies')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    top10Filter === 'movies'
+                      ? 'bg-zinc-800 text-white font-bold'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  Movies
+                </button>
+                <button
+                  onClick={() => setTop10Filter('tv')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    top10Filter === 'tv'
+                      ? 'bg-zinc-800 text-white font-bold'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  TV
+                </button>
+              </div>
+            </div>
+
+            {/* Scroll Navigation Arrows */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => scrollShelf(top10ScrollRef, 'left')}
+                className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => scrollShelf(top10ScrollRef, 'right')}
+                className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Top 10 Carousel with Giant Outline Numbers (Bleeds to Right Edge) */}
+          <div
+            ref={top10ScrollRef}
+            className="flex gap-2 sm:gap-4 overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth pb-3 pt-1 w-full top10-carousel"
+          >
+            <div className="shrink-0 w-4 sm:w-4 lg:w-6 pointer-events-none" aria-hidden="true" />
+            {loading && !top10Items.length ? (
+              Array.from({ length: 8 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="w-48 sm:w-56 shrink-0 aspect-[2/3] rounded-xl bg-zinc-900/60 animate-pulse border border-zinc-800"
+                />
+              ))
+            ) : (
+              top10Items.map((item, index) => (
+                <div 
+                  key={item.id} 
+                  className="flex items-end shrink-0 cursor-pointer group"
+                >
+                  {/* Giant Outline Hollow Rank Number (Fills completely white on hover; aligned with poster above titles) */}
+                  <span
+                    className="top10-rank-number text-[7.5rem] sm:text-[9rem] font-black leading-[0.72] select-none tracking-tighter shrink-0 z-0 self-end mr-[-0.75rem] sm:mr-[-1rem] mb-11 sm:mb-12 pointer-events-none"
+                  >
+                    {index + 1}
+                  </span>
+
+                  {/* Poster Card overlapping number */}
+                  <div className="w-36 sm:w-44 md:w-48 shrink-0 z-10 relative">
+                    <MediaCard
+                      item={item}
+                      isRecentlyAdded={index === 4 || index === 5 || index === 6}
+                      onOpenDetails={onInspectItem}
+                      onPlay={onPlayMedia}
+                    />
+                  </div>
+                </div>
+              ))
+            )}
+            <div className="shrink-0 w-8 sm:w-12 pointer-events-none" aria-hidden="true" />
+          </div>
+        </section>
+
+        {/* ─────────────────────────────────────────────────────────────
+            STREAMING PROVIDERS SHELF (Screenshot 2)
+            Features: Netflix, Amazon MGM, Shudder, Disney+, Apple TV+, etc.
+        ─────────────────────────────────────────────────────────────── */}
+        <div className="space-y-8 sm:space-y-10">
+          {/* Section Separator */}
+          <div className="px-6 sm:px-8 lg:px-10" aria-hidden="true">
+            <div className="border-t border-zinc-800/80" />
+          </div>
+
+          <section className="space-y-4">
+            <div className="flex items-center justify-between px-6 sm:px-8 lg:px-10">
+              <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                Streaming Providers
+              </h2>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => scrollShelf(providersScrollRef, 'left')}
+                  className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => scrollShelf(providersScrollRef, 'right')}
+                  className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div
+              ref={providersScrollRef}
+              className="flex gap-4 sm:gap-5 overflow-x-auto no-scrollbar scroll-smooth pb-3 w-full"
+            >
+              <div className="shrink-0 w-2 sm:w-3 lg:w-5 pointer-events-none" aria-hidden="true" />
+              {STREAMING_PROVIDERS.map((provider) => (
+                <div
+                  key={provider.id}
+                  onClick={() => onNavigateTab('movies')}
+                  className="shrink-0 group cursor-pointer"
+                >
+                  {/* Logo Box */}
+                  <div className="w-56 sm:w-64 h-28 sm:h-32 rounded-2xl bg-[#121212] border border-zinc-800/80 group-hover:border-zinc-700 flex items-center justify-center p-4 transition-transform group-hover:scale-[1.02]">
+                    {provider.logoType === 'netflix' && (
+                      <span className="text-2xl sm:text-3xl font-black text-[#E50914] tracking-tighter uppercase font-serif">
+                        NETFLIX
+                      </span>
+                    )}
+                    {provider.logoType === 'mgm' && (
+                      <div className="text-center">
+                        <span className="text-xs sm:text-sm font-black tracking-widest text-zinc-300 uppercase block">
+                          AMAZON
+                        </span>
+                        <span className="text-[10px] sm:text-xs font-semibold tracking-wider text-zinc-400 uppercase block">
+                          MGM STUDIOS
+                        </span>
+                      </div>
+                    )}
+                    {provider.logoType === 'shudder' && (
+                      <span className="text-xl sm:text-2xl font-black text-red-600 tracking-wider uppercase font-mono">
+                        SHUDDER
+                      </span>
+                    )}
+                    {provider.logoType === 'disney' && (
+                      <span className="text-2xl sm:text-3xl font-black text-[#3ea6ff] italic tracking-tight font-serif">
+                        Disney<span className="text-base font-bold not-italic">+</span>
+                      </span>
+                    )}
+                    {provider.logoType === 'apple' && (
+                      <span className="text-2xl sm:text-3xl font-black text-white tracking-tight">
+                        tv+
+                      </span>
+                    )}
+                    {provider.logoType === 'blumhouse' && (
+                      <div className="text-center">
+                        <span className="text-xs sm:text-sm font-black tracking-widest text-white uppercase block font-serif">
+                          BLUMHOUSE
+                        </span>
+                        <span className="text-[9px] tracking-widest text-zinc-400 uppercase block">
+                          PRODUCTIONS
+                        </span>
+                      </div>
+                    )}
+                    {provider.logoType === 'vivamax' && (
+                      <span className="text-xl sm:text-2xl font-black text-[#f5a623] tracking-tight">
+                        viva<span className="text-blue-500">max</span>
+                      </span>
+                    )}
+                    {provider.logoType === 'paramount' && (
+                      <span className="text-xl sm:text-2xl font-black text-[#0064ff] tracking-tight italic">
+                        Paramount<span className="not-italic">+</span>
+                      </span>
+                    )}
+                    {provider.logoType === 'max' && (
+                      <span className="text-2xl sm:text-3xl font-black text-white tracking-widest uppercase">
+                        MAX
+                      </span>
+                    )}
+                    {provider.logoType === 'wb' && (
+                      <span className="text-sm sm:text-base font-black text-zinc-300 tracking-wider uppercase">
+                        WARNER BROS.
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Subtitle Details */}
+                  <div className="mt-2">
+                    <h3 className="text-white font-bold text-xs sm:text-sm group-hover:text-red-500 transition-colors">
+                      {provider.name}
+                    </h3>
+                    <p className="text-zinc-500 text-[11px] font-medium mt-0.5">
+                      {provider.type}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <div className="shrink-0 w-8 sm:w-12 pointer-events-none" aria-hidden="true" />
+            </div>
+          </section>
+        </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            GENRE SHELVES (Screenshots 3 - 6)
+        ─────────────────────────────────────────────────────────────── */}
+        <ShelfSection
+          title="Horror"
+          items={horrorItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Action"
+          items={actionItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Comedy"
+          items={comedyItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Romance"
+          items={romanceItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Sci-Fi"
+          items={scifiItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Thriller"
+          items={thrillerItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Animation"
+          items={animationItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Documentary"
+          items={documentaryItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        {/* ─────────────────────────────────────────────────────────────
+            TV SERIES SHELVES (Screenshots 7 - 8)
+        ─────────────────────────────────────────────────────────────── */}
+        <ShelfSection
+          title="Popular TV"
+          items={popularTvItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="TV Action"
+          items={tvActionItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="TV Comedy"
+          items={tvComedyItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="TV Drama"
+          items={tvDramaItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        {/* ─────────────────────────────────────────────────────────────
+            TOP RATED & RECENTS SHELVES (Screenshots 9 - 12)
+        ─────────────────────────────────────────────────────────────── */}
+        <ShelfSection
+          title="Top Rated Movies"
+          items={topRatedMovies}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Popular This Week"
+          items={popularWeekItems}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+
+        <ShelfSection
+          title="Highly Rated"
+          items={highlyRated}
+          onOpenDetails={onInspectItem}
+          onPlay={onPlayMedia}
+          loading={loading}
+        />
+      </div>
+
+      {/* ─────────────────────────────────────────────────────────────
+          FLOATING 'SCROLL TO TOP' BUTTON (Screenshots 3 - 12)
+      ─────────────────────────────────────────────────────────────── */}
+      {showScrollTop && (
+        <button
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 rounded-xl bg-[#181818]/90 hover:bg-[#252525] border border-zinc-700/60 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all cursor-pointer hover:scale-105 select-none"
+        >
+          <ChevronUp className="w-3.5 h-3.5" />
+          <span>Scroll to top</span>
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ── Shelf Section Component (Bleeds to Right Edge) ──
+interface ShelfSectionProps {
+  title: string;
+  items: MediaItem[];
+  onOpenDetails: (item: MediaItem) => void;
+  onPlay: (item: MediaItem) => void;
+  loading: boolean;
+}
+
+const ShelfSection: React.FC<ShelfSectionProps> = ({
+  title,
+  items,
+  onOpenDetails,
+  onPlay,
+  loading,
+}) => {
+  const shelfRef = useRef<HTMLDivElement>(null);
+
+  const scroll = (direction: 'left' | 'right') => {
+    if (shelfRef.current) {
+      const amount = (direction === 'left' ? -1 : 1) * Math.max(shelfRef.current.clientWidth * 0.75, 300);
+      shelfRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+    }
+  };
+
+  return (
+    <div className="space-y-8 sm:space-y-10">
+      {/* Section Separator */}
+      <div className="px-6 sm:px-8 lg:px-10" aria-hidden="true">
+        <div className="border-t border-zinc-800/80" />
+      </div>
+
+      <section className="space-y-4">
+        {/* Header with Title and Scroll Arrows */}
+        <div className="flex items-center justify-between px-6 sm:px-8 lg:px-10">
+          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+            {title}
+          </h2>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => scroll('left')}
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => scroll('right')}
+              className="w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Carousel Track: Bleeds to Both Left and Right Edges when Scrolled */}
+        <div
+          ref={shelfRef}
+          className="flex gap-4 sm:gap-5 overflow-x-auto no-scrollbar scroll-smooth pb-3 w-full"
+        >
+          <div className="shrink-0 w-2 sm:w-3 lg:w-5 pointer-events-none" aria-hidden="true" />
+          {loading && !items.length ? (
+            Array.from({ length: 8 }).map((_, i) => (
+              <div
+                key={i}
+                className="w-36 sm:w-44 md:w-48 lg:w-52 shrink-0 aspect-[2/3] rounded-xl bg-zinc-900/60 animate-pulse border border-zinc-800"
+              />
+            ))
+          ) : (
+            items.map((item, idx) => (
+              <div key={item.id} className="w-36 sm:w-44 md:w-48 lg:w-52 shrink-0">
+                <MediaCard
+                  item={item}
+                  isRecentlyAdded={idx === 1 || idx === 5}
+                  onOpenDetails={onOpenDetails}
+                  onPlay={onPlay}
+                />
+              </div>
+            ))
+          )}
+          <div className="shrink-0 w-8 sm:w-12 pointer-events-none" aria-hidden="true" />
+        </div>
+      </section>
     </div>
   );
 };

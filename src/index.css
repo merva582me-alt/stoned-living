@@ -8,7 +8,6 @@ html {
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
-  scrollbar-gutter: stable;
 }
 
 body {
@@ -18,7 +17,7 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  background-color: #0d1813;
+  background-color: #000000;
 }
 
 #root {
@@ -28,35 +27,45 @@ body {
   overflow-x: hidden;
 }
 
-/* Custom Floating Overlay Scrollbars */
-html, body {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(16, 185, 129, 0.6) transparent;
+/* ── Hide All Visible Scrollbars (No Scrollbars Visible Anywhere) ── */
+html, body, #root, * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
-/* Webkit Scrollbars (Chrome, Safari, Edge) */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+.no-scrollbar::-webkit-scrollbar,
+.scrollbar-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.5);
-  border-radius: 9999px;
-  border: transparent;
+.no-scrollbar,
+.scrollbar-none {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.9);
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.8);
+/* Top 10 Giant Rank Numbers: Outline by default, solid white fill on hover */
+.top10-rank-number {
+  -webkit-text-stroke: 3px rgba(255, 255, 255, 0.75);
+  color: transparent;
+  transition: color 0.2s ease, -webkit-text-stroke 0.2s ease;
 }
 
-::-webkit-scrollbar-corner {
-  background: transparent;
+.group:hover .top10-rank-number {
+  color: #ffffff !important;
+  -webkit-text-stroke: 3px #ffffff !important;
+}
+
+.top10-carousel {
+  overflow-y: hidden !important;
 }
 
 :fullscreen, :-webkit-full-screen, :-moz-full-screen, :-ms-fullscreen {
@@ -66,5 +75,22 @@ html, body {
   max-height: none !important;
   background-color: #0d1813 !important;
 }
+
+@keyframes stream-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.animate-stream-shimmer {
+  animation: stream-shimmer 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
 
 

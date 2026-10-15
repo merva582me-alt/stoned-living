@@ -117,6 +117,73 @@ export function isEnglishMedia(item: Partial<MediaItem> | any): boolean {
 }
 
 /**
+ * Checks if a media item is already released (excludes future release dates and unreleased production statuses).
+ */
+export function isReleasedMedia(item: Partial<MediaItem> | any): boolean {
+  if (!item) return false;
+
+  // Non-media results (e.g. person results in multi-search)
+  if (item.media_type === 'person') return false;
+
+  const dateStr = item.release_date || item.first_air_date || item.air_date;
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  if (dateStr && typeof dateStr === 'string' && dateStr.trim().length > 0) {
+    const trimmed = dateStr.trim();
+    if (trimmed.length >= 10) {
+      const datePart = trimmed.slice(0, 10);
+      if (datePart > todayStr) {
+        return false;
+      }
+    } else if (trimmed.length === 4 && /^\d{4}$/.test(trimmed)) {
+      const currentYear = new Date().getUTCFullYear();
+      if (parseInt(trimmed, 10) > currentYear) {
+        return false;
+      }
+    } else {
+      const parsedTime = Date.parse(trimmed);
+      if (!isNaN(parsedTime) && parsedTime > Date.now()) {
+        return false;
+      }
+    }
+  } else {
+    // If no release date is provided, check status and engagement
+    const status = String(item.status || item.airing_status || '').trim().toLowerCase();
+    if (status === 'released' || status === 'ended' || status === 'returning series') {
+      return true;
+    }
+    // High community engagement indicates it has already aired / released
+    if (typeof item.vote_count === 'number' && item.vote_count > 10) {
+      return true;
+    }
+    // Otherwise, untitled / unannounced projects with 0 votes and no release date are unreleased
+    return false;
+  }
+
+  // Check production/airing status
+  const status = String(item.status || item.airing_status || '').trim().toLowerCase();
+  if (status) {
+    const unreleasedStatuses = [
+      'in production',
+      'post production',
+      'planned',
+      'rumored',
+      'upcoming',
+      'not_yet_released'
+    ];
+    if (unreleasedStatuses.includes(status)) {
+      return false;
+    }
+  }
+
+  if (item.upcoming === true) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Prioritizes new release dates (2026, 2025, 2024...) in descending order.
  */
 export function prioritizeNewReleases(items: MediaItem[]): MediaItem[] {
@@ -143,6 +210,7 @@ export function cleanAndFilterMediaList(
   for (const item of items) {
     if (!item || !item.id || seen.has(item.id)) continue;
     if (!isAppropriateMedia(item)) continue;
+    if (!isReleasedMedia(item)) continue;
     if (englishOnly && !isEnglishMedia(item)) continue;
 
     seen.add(item.id);

@@ -8,6 +8,7 @@
  */
 
 import type { MediaItem } from '../types';
+import { isReleasedMedia } from '../utils/mediaUtils';
 
 const ANILIST_ENDPOINT = 'https://graphql.anilist.co';
 
@@ -121,6 +122,11 @@ type AniListMedia = {
 export function anilistToMediaItem(m: AniListMedia): MediaItem {
   const title = m.title.english || m.title.romaji;
   const year = m.startDate?.year;
+  const month = m.startDate?.month;
+  const day = m.startDate?.day;
+  const dateStr = year
+    ? `${year}-${String(month || 1).padStart(2, '0')}-${String(day || 1).padStart(2, '0')}`
+    : undefined;
   const studios = m.studios?.nodes?.map((s) => s.name) ?? [];
 
   return {
@@ -134,9 +140,10 @@ export function anilistToMediaItem(m: AniListMedia): MediaItem {
     vote_count: m.popularity ?? 0,
     popularity: m.popularity ?? 0,
     media_type: 'tv',
-    release_date: year ? `${year}-01-01` : undefined,
-    first_air_date: year ? `${year}-01-01` : undefined,
+    release_date: dateStr,
+    first_air_date: dateStr,
     genre_ids: [16],                        // TMDb animation genre ID
+    status: m.status,
     // AniList-specific extensions
     ...({
       anilist_id: m.id,
@@ -163,7 +170,7 @@ export async function fetchAniListTrending(): Promise<MediaItem[]> {
       }
     `;
     const data = await cachedGqlFetch<{ Page: { media: AniListMedia[] } }>('trending', query);
-    return data.Page.media.map(anilistToMediaItem);
+    return data.Page.media.map(anilistToMediaItem).filter(isReleasedMedia);
   } catch {
     return [];
   }
@@ -184,7 +191,7 @@ export async function fetchAniListSeasonal(
       }
     `;
     const data = await cachedGqlFetch<{ Page: { media: AniListMedia[] } }>(`seasonal_${season}_${year}`, query, { season, year });
-    return data.Page.media.map(anilistToMediaItem);
+    return data.Page.media.map(anilistToMediaItem).filter(isReleasedMedia);
   } catch {
     return [];
   }
@@ -204,7 +211,7 @@ export async function fetchAniListSearch(query: string): Promise<MediaItem[]> {
     `;
     // Search results are not cached (user-specific and short-lived)
     const data = await gqlFetch<{ Page: { media: AniListMedia[] } }>(gql, { search: query });
-    return data.Page.media.map(anilistToMediaItem);
+    return data.Page.media.map(anilistToMediaItem).filter(isReleasedMedia);
   } catch {
     return [];
   }

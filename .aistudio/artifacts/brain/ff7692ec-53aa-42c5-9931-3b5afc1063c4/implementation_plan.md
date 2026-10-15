@@ -1,105 +1,83 @@
-# Migrate Streaming Players Exclusively to Vidstuck (vidstuck.xyz)
+# Vidstuck Ad-Blocking Sandbox & GitHub Repository Sync Plan
 
-Consolidate all movie, TV show, and anime streaming solely into Vidstuck's official embed player. Strip away external multi-server switchers, custom external episode skip controls, theater mode toggles, comments sections, and watch history tracking to deliver a fast, clutter-free viewing interface powered directly by Vidstuck's native player features.
+Implement browser-enforced popup and redirect suppression on the Vidstuck iframe player, and provide step-by-step local Git terminal workflows to sync and overwrite a remote GitHub repository.
 
-## User Review & Critical Decisions
+### User Review & Critical Decisions
 
 > [!IMPORTANT]
-> - **Sole Streaming Provider**: All movies, TV shows, and anime will strictly use `https://vidstuck.xyz/embed/...` with TMDb identifiers. All legacy providers, proxies (`functions/vidcore-proxy`), and alternative embeds are removed.
-> - **Stripped Outer Player Controls**: Per your requirement, external theater mode, external episode skip controls, the comments section, and watch history tracking are decommissioned.
-> - **Native Vidstuck Feature Integration**: Vidstuck's built-in parameters will be enabled directly on the embed URL:
->   - `color=10B981` (Stoned.living emerald brand accent)
->   - `branding=STONED.LIVING` (Custom loading screen branding)
->   - `episodeSelector=true` (Vidstuck's built-in season/episode browser)
->   - `nextEpisode=true` (Vidstuck's native next episode button)
->   - `autoplayNextEpisode=true` (Vidstuck's native binge autoplay)
->   - `overlay=true` (Netflix-style pause overlay)
->   - `subtitle=english` (Default subtitle track)
+> - **Ad Suppression Choice**: Confirmed by user — apply a strict HTML5 `sandbox` on the Vidstuck player iframe (`allow-scripts allow-same-origin allow-forms`) while intentionally omitting `allow-popups`, `allow-popups-to-escape-sandbox`, and `allow-top-navigation`. This completely prevents popup windows, background tab spawns, and parent frame hijack redirects without breaking video streaming playback.
+> - **GitHub Push Workflow**: Confirmed by user — provide clear, production-tested local Git terminal commands to initialize, add remote, and force-push the current state to overwrite all existing files in the remote GitHub repository.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Does**: Transforms the `WatchPlayer` component into a streamlined, high-performance cinema player powered 100% by Vidstuck.
-- **Target Audience / Persona**: Users who want uninterrupted, full-screen playback with zero interface bloat, native episodic switching inside the player, and instantaneous video startup.
-- **Key Value**: Drastically reduces code complexity, eliminates external script injection risks, cleans up the DOM, and provides a sleek player experience using Vidstuck's official parameters.
+- **What It Does**:
+  1. Hardens the Vidstuck cinema embed player with HTML5 iframe sandbox attributes that neuter ad-network popup triggers, tab-under spam, and redirect hijacks while maintaining fluid video stream playback, fullscreen, and audio playback.
+  2. Outlines the exact sequence of Git commands needed to push the complete codebase to GitHub and overwrite existing remote files.
+- **Target Audience**: Users streaming movies, TV shows, and anime on Stoned.living who want an uninterrupted, clean cinema experience free of intrusive popups and unexpected browser tabs.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-- **Streamlined User Flow**:
-  1. User selects any movie, TV series, or anime from the platform.
-  2. The watch player view opens directly into a focused cinema layout with a "← Back" button and title header.
-  3. The Vidstuck player loads instantly with the emerald branding (`STONED.LIVING`), custom theme (`#10B981`), and pause overlay.
-  4. For TV shows and anime series, users browse seasons and episodes directly inside Vidstuck's native overlay/menu controls (`episodeSelector=true`).
-  5. Closing the player returns immediately to the previous browsing view.
-
-- **Visual Identity & Theme**:
-  - *Palette*: Deep stealth canvas (`#060907` / `#0d1813`) with subtle emerald border framing (`border-emerald-500/30`).
-  - *Minimalist Shell*: Uncluttered layout without extraneous server pills, comment forms, or secondary watch tracking cards.
+- **Player Experience**:
+  - The cinema player remains responsive in full 16:9 aspect ratio with glowing emerald accents and cannabis pairing sommelier metadata.
+  - Clicking play, seek bar, audio, or subtitle options within the player will not trigger rogue popup windows or redirect the viewer off-site.
+  - Fullscreen, picture-in-picture, and native Vidstuck episode navigation remain fully operational.
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Offloading Episodic Navigation to Vidstuck's Native Player**
-  - *Chosen Approach*: Pass `episodeSelector=true`, `nextEpisode=true`, and `autoplayNextEpisode=true` in the iframe URL instead of maintaining complex external React episode carousels.
-  - *Why*: Reduces redundant UI, prevents desynchronization between outer state and iframe state, and honors the directive to remove outer episode skip controls.
+- **Decision 1: HTML5 Sandbox Policy Selection**:
+  - *Chosen Approach*: `sandbox="allow-scripts allow-same-origin allow-forms"` combined with `allow="autoplay; encrypted-media; picture-in-picture; fullscreen; web-share"`.
+  - *Why*: Free video hosting embeds rely on `window.open` or synthesized anchor clicks with `target="_blank"` to spawn ad tabs. By omitting `allow-popups` and `allow-popups-to-escape-sandbox`, the browser's sandbox engine suppresses these calls at the browser level.
+  - *Trade-off*: Certain third-party ad scripts may log harmless console warnings when denied permission to open windows; video stream playback remains unaffected.
 
-- **Decision 2: Elimination of Theater Mode, Comments, and Watch History Tracking**
-  - *Chosen Approach*: Completely remove the comments feed tab, theater mode state, and watch history tracking listeners from the player.
-  - *Why*: Directly aligns with user requirements for a focused, lightweight video player experience.
-
-- **Decision 3: Universal TMDb Routing**
-  - *Movie URL*: `https://vidstuck.xyz/embed/movie/{tmdbId}?branding=STONED.LIVING&color=10B981&overlay=true&subtitle=english`
-  - *TV & Anime URL*: `https://vidstuck.xyz/embed/tv/{tmdbId}/{season}/{episode}?episodeSelector=true&nextEpisode=true&autoplayNextEpisode=true&branding=STONED.LIVING&color=10B981&overlay=true&subtitle=english`
+- **Decision 2: Safe Git Overwrite Instructions**:
+  - *Chosen Approach*: Standard `git init`, clean staging, and `git push --force -u origin main` instructions with token/SSH authentication guidance.
+  - *Why*: Gives the user direct local control to overwrite their GitHub repository without risk of cloud credential leakage.
 
 ---
 
-## 4. Technical Architecture & Component Mapping
+## 4. Technical Architecture & Component Flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                       WatchPlayer.tsx                       │
-│                                                             │
-│  ┌─────────────────────────┐     ┌───────────────────────┐  │
-│  │   Active Media Item     │     │ Initial S & Ep Offset │  │
-│  │   (TMDb ID, Type)       │     │ (defaults to S1:E1)   │  │
-│  └────────────┬────────────┘     └───────────┬───────────┘  │
-│               │                              │              │
-│               └──────────────┬───────────────┘              │
-│                              ▼                              │
-│               ┌─────────────────────────────┐               │
-│               │  Vidstuck Embed URL Builder │               │
-│               │                             │               │
-│               │ Parameters:                 │               │
-│               │ • branding=STONED.LIVING    │               │
-│               │ • color=10B981              │               │
-│               │ • overlay=true              │               │
-│               │ • subtitle=english          │               │
-│               │ • episodeSelector=true (TV) │               │
-│               │ • nextEpisode=true (TV)     │               │
-│               │ • autoplayNextEpisode=true  │               │
-│               └──────────────┬──────────────┘               │
-│                              │                              │
-│                              ▼                              │
-│               ┌─────────────────────────────┐               │
-│               │   Focused 16:9 Cinema iFrame│               │
-│               │   (Vidstuck Player Engine)  │               │
-│               └─────────────────────────────┘               │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│                   Stoned.living UI                     │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ WatchPlayer Component                            │  │
+│  │  ┌────────────────────────────────────────────┐  │  │
+│  │  │ <iframe src="https://vidstuck.xyz/embed/.. │  │  │
+│  │  │   sandbox="allow-scripts allow-same-origin"│  │  │
+│  │  │   allow="fullscreen; autoplay; ..."        │  │  │
+│  │  └──────────────────┬─────────────────────────┘  │  │
+│  │                     │                            │  │
+│  │                     ▼                            │  │
+│  │       [Browser Security Boundary]                │  │
+│  │       - window.open() ──> BLOCKED                │  │
+│  │       - target="_blank" ─> BLOCKED               │  │
+│  │       - top redirect ───> BLOCKED                │  │
+│  │       - video / HLS / audio ──> ALLOWED          │  │
+│  └──────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────┘
 ```
 
-### Detailed Execution Steps
-1. **Refactor `src/components/WatchPlayer.tsx`**:
-   - Delete all legacy server arrays (`vidsrcme`, `vidlink`, `vidup`, `vidcore-proxy`).
-   - Remove `serverIndex` state and the `Server: 1 2 3 4` button group.
-   - Remove `theaterMode`, `lightsOff`, and custom episode skip controls (`Prev Ep`, `Next Ep`).
-   - Remove the `comments` state, API calls (`fetchComments`, `postComment`), and the entire comments UI/form.
-   - Remove watch history auto-syncing (`updateWatchHistory`, `saveProfileToFirestore`).
-   - Remove the ad-blocking DOM observer tailored for the old VidCore proxy.
-   - Implement clean Vidstuck URL builder with parameters: `branding=STONED.LIVING`, `color=10B981`, `overlay=true`, `subtitle=english`, `episodeSelector=true`, `nextEpisode=true`, and `autoplayNextEpisode=true`.
-2. **Clean up `index.html`**:
-   - Update DNS preconnect and prefetch headers to `https://vidstuck.xyz`.
-   - Update metadata tags to spotlight the VidStuck player integration.
+### Git Overwrite Sequence (Reference)
+```bash
+git init
+git branch -M main
+git add .
+git commit -m "feat: complete Stoned.living streaming platform with Vidstuck cinema embed"
+git remote add origin https://github.com/<USERNAME>/<REPO_NAME>.git
+git push -u origin main --force
+```
+
+---
+
+## 5. Verification Plan
+
+- Verify `WatchPlayer.tsx` sandbox configuration compiles cleanly with TypeScript.
+- Verify dev server build completes without runtime errors.
+- Test that iframe renders correctly and player controls remain accessible.

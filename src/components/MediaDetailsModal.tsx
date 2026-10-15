@@ -1,726 +1,516 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Play,
-  Heart,
+  Bookmark,
+  Check,
   X,
   Star,
   Cannabis,
-  Info,
-  ExternalLink,
-  Users,
-  Building2,
-  Tag,
   Clock,
-  DollarSign,
-  Globe,
-  Sparkles,
-  Tv,
-  Shield
+  Calendar,
+  ChevronDown,
+  Eye,
+  EyeOff
 } from 'lucide-react';
-
-function getAgeRating(detail: any): { rating: string; label: string } {
-  if (!detail) return { rating: 'PG-13', label: 'Parents Strongly Cautioned (13+)' };
-
-  if (detail.adult) {
-    return { rating: '18+', label: 'Adults Only' };
-  }
-
-  // Check movie release_dates certification
-  if (detail.release_dates?.results && Array.isArray(detail.release_dates.results)) {
-    const usEntry = detail.release_dates.results.find((r: any) => r.iso_3166_1 === 'US') || detail.release_dates.results[0];
-    if (usEntry?.release_dates && Array.isArray(usEntry.release_dates)) {
-      for (const rd of usEntry.release_dates) {
-        if (rd.certification && typeof rd.certification === 'string' && rd.certification.trim() !== '') {
-          const cert = rd.certification.trim().toUpperCase();
-          if (cert === 'R') return { rating: 'R', label: 'Restricted (17+)' };
-          if (cert === 'PG-13') return { rating: 'PG-13', label: 'Parents Cautioned (13+)' };
-          if (cert === 'PG') return { rating: 'PG', label: 'Parental Guidance' };
-          if (cert === 'G') return { rating: 'G', label: 'General Audiences (All Ages)' };
-          if (cert === 'NC-17') return { rating: 'NC-17', label: 'Adults Only (18+)' };
-          return { rating: cert, label: `Rated ${cert}` };
-        }
-      }
-    }
-  }
-
-  // Check TV content_ratings
-  if (detail.content_ratings?.results && Array.isArray(detail.content_ratings.results)) {
-    const usTv = detail.content_ratings.results.find((r: any) => r.iso_3166_1 === 'US') || detail.content_ratings.results[0];
-    if (usTv?.rating && typeof usTv.rating === 'string' && usTv.rating.trim() !== '') {
-      const rating = usTv.rating.trim().toUpperCase();
-      if (rating === 'TV-MA') return { rating: 'TV-MA', label: 'Mature Audiences (17+)' };
-      if (rating === 'TV-14') return { rating: 'TV-14', label: 'Parents Cautioned (14+)' };
-      if (rating === 'TV-PG') return { rating: 'TV-PG', label: 'Parental Guidance' };
-      if (rating === 'TV-G' || rating === 'TV-Y') return { rating: rating, label: 'All Ages' };
-      if (rating === 'TV-Y7') return { rating: 'TV-Y7', label: 'Older Children (7+)' };
-      return { rating: rating, label: `Rated ${rating}` };
-    }
-  }
-
-  // Fallback rating based on genres or adult content
-  const genres: number[] = Array.isArray(detail.genres)
-    ? detail.genres.map((g: any) => (typeof g === 'number' ? g : g.id))
-    : Array.isArray(detail.genre_ids) ? detail.genre_ids : [];
-
-  const isHorrorOrDark = genres.some((id: number) => [27, 80, 53].includes(id));
-  const isFamily = genres.some((id: number) => [10751, 16].includes(id));
-
-  if (isHorrorOrDark) {
-    return detail.title ? { rating: 'R', label: 'Restricted (17+)' } : { rating: 'TV-MA', label: 'Mature Audiences (17+)' };
-  }
-  if (isFamily) {
-    return { rating: 'PG', label: 'Parental Guidance' };
-  }
-
-  return detail.title ? { rating: 'PG-13', label: 'Parents Cautioned (13+)' } : { rating: 'TV-14', label: 'Parents Cautioned (14+)' };
-}
-import { MediaItem, CastMember, CrewMember } from '../types';
-import { fetchMediaDetail } from '../services/api';
-import { StrainDatabase } from '../data/strainDatabase';
-import { getEffectiveMediaType, isAnimeItem, formatMediaStatus } from '../utils/mediaUtils';
+import { MediaItem, CastMember, Episode } from '../types';
+import { fetchMediaDetail, fetchCredits, fetchRecommendations, fetchTvSeason } from '../services/api';
+import { toggleWatchlist, isItemInWatchlist } from '../services/storage';
+import { MediaCard } from './MediaCard';
+import { toast } from 'sonner';
 
 interface MediaDetailsModalProps {
   item: MediaItem;
   onClose: () => void;
-  onPlay: (item: MediaItem) => void;
+  onPlay: (item: MediaItem, season?: number, episode?: number) => void;
   onSelectMedia?: (item: MediaItem) => void;
+}
+
+function formatAirDate(dateStr?: string): string {
+  if (!dateStr) return '';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
 }
 
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   item,
   onClose,
   onPlay,
-  onSelectMedia
+  onSelectMedia,
 }) => {
-  const mediaType = getEffectiveMediaType(item);
-  const [fullDetail, setFullDetail] = useState<MediaItem | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'cast' | 'details' | 'similar'>('overview');
+  const isTv = item.media_type === 'tv' || Boolean(item.first_air_date);
+  const effectiveType: 'movie' | 'tv' = isTv ? 'tv' : 'movie';
 
-  // Prevent background page scrolling while modal is open
-  useEffect(() => {
-    const originalBodyStyle = document.body.style.overflow;
-    const originalDocStyle = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = originalBodyStyle || '';
-      document.documentElement.style.overflow = originalDocStyle || '';
-    };
-  }, []);
+  const [detail, setDetail] = useState<MediaItem>(item);
+  const [cast, setCast] = useState<CastMember[]>([]);
+  const [totalCastCount, setTotalCastCount] = useState<number>(0);
+  const [recommendations, setRecommendations] = useState<MediaItem[]>([]);
+  const [inWatchlist, setInWatchlist] = useState(() => isItemInWatchlist(item.id));
+  const [synopsisExpanded, setSynopsisExpanded] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Close on Escape key
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  // ── Episodic State for TV Series (Screenshots 1 - 3) ──
+  const [selectedSeason, setSelectedSeason] = useState<number>(1);
+  const [seasonEpisodes, setSeasonEpisodes] = useState<Episode[]>([]);
+  const [loadingEpisodes, setLoadingEpisodes] = useState<boolean>(false);
+  const [showAllEpisodes, setShowAllEpisodes] = useState<boolean>(false);
+  const [hideSpoilers, setHideSpoilers] = useState<boolean>(false);
 
-  // Fetch complete details from TMDB when modal mounts or item changes
   useEffect(() => {
-    let isMounted = true;
-    setLoadingDetail(true);
-    fetchMediaDetail(mediaType, item.id).then((data) => {
-      if (isMounted) {
-        if (data) {
-          setFullDetail(data);
-        }
-        setLoadingDetail(false);
-      }
+    let mounted = true;
+    setLoading(true);
+
+    Promise.all([
+      fetchMediaDetail(effectiveType, item.id),
+      fetchCredits(effectiveType, item.id),
+      fetchRecommendations(effectiveType, item.id)
+    ]).then(([d, c, r]) => {
+      if (!mounted) return;
+      if (d) setDetail(d);
+      setCast(c.cast);
+      setTotalCastCount(c.totalCastCount);
+      setRecommendations(r);
+      setLoading(false);
     });
 
     return () => {
-      isMounted = false;
+      mounted = false;
     };
-  }, [item.id, mediaType]);
+  }, [item.id, effectiveType]);
 
-  const detail = fullDetail || item;
+  // Available seasons list
+  const availableSeasons: { season_number: number; name: string }[] = useMemo(() => {
+    if (detail.seasons && detail.seasons.length > 0) {
+      const regular = detail.seasons
+        .filter((s) => s.season_number > 0)
+        .map((s) => ({ season_number: s.season_number, name: s.name || `Season ${s.season_number}` }));
+      if (regular.length > 0) return regular;
+      return detail.seasons.map((s) => ({ season_number: s.season_number, name: s.name || `Season ${s.season_number}` }));
+    }
+    if (detail.number_of_seasons && detail.number_of_seasons > 0) {
+      return Array.from({ length: detail.number_of_seasons }, (_, i) => ({
+        season_number: i + 1,
+        name: `Season ${i + 1}`,
+      }));
+    }
+    return [{ season_number: 1, name: 'Season 1' }];
+  }, [detail.seasons, detail.number_of_seasons]);
 
+  // Fetch episodes when selectedSeason or detail.id changes
+  useEffect(() => {
+    const isActuallyTv = detail.media_type === 'tv' || Boolean(detail.first_air_date) || Boolean(detail.number_of_seasons);
+    if (!isActuallyTv) return;
+
+    let active = true;
+    setLoadingEpisodes(true);
+
+    fetchTvSeason(detail.id, selectedSeason)
+      .then((seasonData) => {
+        if (!active) return;
+        setSeasonEpisodes(seasonData?.episodes || []);
+        setLoadingEpisodes(false);
+      })
+      .catch((err) => {
+        console.warn('Error fetching TV season episodes:', err);
+        if (active) setLoadingEpisodes(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [detail.id, detail.media_type, detail.first_air_date, detail.number_of_seasons, selectedSeason]);
+
+  // Lock background body and HTML scroll completely while card is open
+  useEffect(() => {
+    const origBodyOverflow = document.body.style.overflow;
+    const origHtmlOverflow = document.documentElement.style.overflow;
+    const origBodyTouchAction = document.body.style.touchAction;
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+
+    return () => {
+      document.body.style.overflow = origBodyOverflow;
+      document.documentElement.style.overflow = origHtmlOverflow;
+      document.body.style.touchAction = origBodyTouchAction;
+    };
+  }, []);
+
+  const isActuallyTv = detail.media_type === 'tv' || Boolean(detail.first_air_date) || Boolean(detail.number_of_seasons);
   const title = detail.title || detail.name || 'Untitled';
-  const originalTitle = detail.original_title || detail.original_name;
-  const releaseDate = detail.release_date || detail.first_air_date || '';
-  const year = releaseDate ? new Date(releaseDate).getFullYear() : '';
+  const releaseYear = (detail.release_date || detail.first_air_date)?.split('-')[0] || '2026';
+  const rating = (detail.vote_average || 8.0).toFixed(1);
+  const runtimeMinutes = detail.runtime || (detail.episode_run_time?.[0]) || 120;
+  const hours = Math.floor(runtimeMinutes / 60);
+  const mins = runtimeMinutes % 60;
+  const runtimeFormatted = hours > 0 ? `${hours}H ${mins}M` : `${mins}M`;
+
+  // TV stats string matching Screenshot 1 (e.g. S14E2426)
+  const totalSeasonsCount = detail.number_of_seasons || availableSeasons.length || 1;
+  const totalEpisodesCount = detail.number_of_episodes || seasonEpisodes.length || 1;
+  const tvStatsFormatted = `S${totalSeasonsCount}E${totalEpisodesCount}`;
 
   const backdropUrl = detail.backdrop_path
-    ? `https://image.tmdb.org/t/p/original${detail.backdrop_path}`
-    : 'https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=1600&auto=format&fit=crop&q=80';
+    ? (detail.backdrop_path.startsWith('http') ? detail.backdrop_path : `https://image.tmdb.org/t/p/original${detail.backdrop_path}`)
+    : detail.poster_path
+    ? (detail.poster_path.startsWith('http') ? detail.poster_path : `https://image.tmdb.org/t/p/original${detail.poster_path}`)
+    : '';
 
-  const posterUrl = detail.poster_path
-    ? `https://image.tmdb.org/t/p/w500${detail.poster_path}`
-    : 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&auto=format&fit=crop&q=80';
-
-  // Cast & Crew
-  const castList: CastMember[] =
-    detail.credits?.cast ||
-    detail.aggregate_credits?.cast ||
-    detail.cast ||
-    [];
-
-  const crewList: CrewMember[] =
-    detail.credits?.crew ||
-    detail.aggregate_credits?.crew ||
-    detail.crew ||
-    [];
-
-  const directors = crewList.filter((c) => c.job === 'Director' || c.job === 'Co-Director');
-  const writers = crewList.filter((c) => c.job === 'Screenplay' || c.job === 'Writer' || c.department === 'Writing').slice(0, 4);
-
-  // Format financial values
-  const formatMoney = (amount?: number) => {
-    if (!amount || amount === 0) return 'N/A';
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
+  const handleToggleList = () => {
+    const res = toggleWatchlist(detail);
+    setInWatchlist(res.inList);
+    toast(res.inList ? 'Added to your List' : 'Removed from your List');
   };
 
-  // Recommendations / Similar
-  const recommendationsList: MediaItem[] = [
-    ...(detail.recommendations?.results || []),
-    ...(detail.similar?.results || [])
-  ].filter((v, idx, self) => self.findIndex((t) => t.id === v.id) === idx).slice(0, 10);
-
-  // Keywords
-  const keywordsList =
-    detail.keywords?.keywords ||
-    detail.keywords?.results ||
-    [];
+  const visibleEpisodes = showAllEpisodes ? seasonEpisodes : seasonEpisodes.slice(0, 6);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-1.5 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto overscroll-contain animate-in fade-in duration-200"
+    <div 
       onClick={onClose}
+      onWheel={(e) => {
+        // Prevent background scroll when hovering backdrop
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+        }
+      }}
+      onTouchMove={(e) => {
+        if (e.target === e.currentTarget) {
+          e.preventDefault();
+        }
+      }}
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden overscroll-none animate-fadeIn select-none"
     >
+      {/* Modal Dialog Card (Screenshots 1 - 4) */}
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="relative w-full max-w-6xl bg-[#0a0f0c] border border-emerald-500/30 rounded-2xl sm:rounded-3xl overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.95)] max-h-[92dvh] sm:max-h-[95vh] flex flex-col my-auto"
         onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-3xl rounded-3xl bg-[#090e0b] border border-emerald-500/25 overflow-hidden shadow-[0_25px_80px_rgba(0,0,0,0.95)] my-auto max-h-[92vh] flex flex-col overscroll-contain select-text"
       >
-        
-        {/* Close Button */}
+        {/* Top Close Button */}
         <button
           onClick={onClose}
-          aria-label="Close details"
-          className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 p-2.5 rounded-full bg-black/70 hover:bg-emerald-950 text-white border border-emerald-500/40 transition-all shadow-lg"
+          className="absolute top-4 right-4 z-30 w-9 h-9 rounded-full bg-black/60 hover:bg-black/90 backdrop-blur-md border border-white/20 text-white flex items-center justify-center transition cursor-pointer hover:scale-105"
         >
-          <X className="w-5 h-5 text-emerald-400" />
+          <X className="w-5 h-5" />
         </button>
 
-        {/* Hero Backdrop & Quick Actions Header */}
-        <div className="relative min-h-[220px] sm:h-52 md:h-56 lg:h-60 w-full shrink-0 flex flex-col justify-between p-3.5 sm:p-6 overflow-hidden">
-          <img src={backdropUrl} alt={title} className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0a0f0c] via-[#0a0f0c]/60 to-transparent pointer-events-none" />
-
-          {/* Top Rating & Media Badges */}
-          <div className="relative z-10 flex flex-wrap items-center gap-1.5 sm:gap-2 pr-10">
-            <span className="bg-gradient-to-r from-emerald-600 to-green-700 text-white font-extrabold text-[10px] sm:text-xs px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full uppercase tracking-wider border border-emerald-400/40 shadow-md">
-              {isAnimeItem(detail || item)
-                ? (getEffectiveMediaType(detail || item) === 'movie' ? '🌸 Anime Film' : '🌸 Anime Series')
-                : (getEffectiveMediaType(detail || item) === 'movie' ? '🎬 Feature Film' : '📺 TV Series')}
-            </span>
-            <span className="bg-black/70 backdrop-blur-md text-amber-400 font-extrabold text-[10px] sm:text-xs px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full border border-amber-500/40 flex items-center gap-1 shadow-md">
-              <Star className="w-3 h-3 sm:w-3.5 sm:h-3.5 fill-amber-400" />
-              {detail.vote_average?.toFixed(1) || '8.2'}
-              {detail.vote_count ? <span className="text-zinc-400 text-[9px] hidden xs:inline">({detail.vote_count.toLocaleString()})</span> : null}
-            </span>
-            {detail.status && (
-              <span className="bg-black/70 backdrop-blur-md text-emerald-300 font-semibold text-[10px] sm:text-xs px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border border-emerald-500/30">
-                {formatMediaStatus(detail.status)}
-              </span>
+        {/* Smooth Internal Scrollable Container (Only card scrolls, never background) */}
+        <div className="overflow-y-auto overscroll-contain no-scrollbar flex-1 scroll-smooth">
+          {/* ── Top Half: 16:9 Backdrop with Overlay Billboard (Screenshot 1) ── */}
+          <div className="relative aspect-video w-full overflow-hidden bg-black select-none">
+            {backdropUrl && (
+              <img
+                src={backdropUrl}
+                alt={title}
+                className="w-full h-full object-cover object-center filter brightness-[0.85]"
+              />
             )}
-          </div>
+            <div className="absolute inset-0 bg-gradient-to-t from-[#090e0b] via-[#090e0b]/40 to-transparent" />
 
-          {/* Floating Action Bar */}
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-2.5 sm:gap-3 pt-2">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-lg sm:text-3xl md:text-4xl font-black text-white tracking-tight drop-shadow-md leading-tight">
-                {title} {year ? <span className="text-zinc-400 font-normal text-sm sm:text-2xl">({year})</span> : null}
-              </h1>
+            {/* Backdrop Center / Bottom Overlay Content */}
+            <div className="absolute inset-0 p-6 sm:p-8 flex flex-col justify-end">
               {detail.tagline && (
-                <p className="text-emerald-400 text-[11px] sm:text-sm font-semibold italic mt-0.5 sm:mt-1 drop-shadow line-clamp-1">
-                  "{detail.tagline}"
+                <p className="text-xs sm:text-sm text-zinc-300 italic mb-1.5 drop-shadow">
+                  &ldquo;{detail.tagline}&rdquo;
                 </p>
               )}
-            </div>
+              <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight uppercase drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)]">
+                {title}
+              </h2>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => {
-                  onClose();
-                  onPlay(detail);
-                }}
-                className="flex items-center gap-1.5 sm:gap-2 bg-gradient-to-r from-emerald-500 via-green-500 to-emerald-400 hover:from-emerald-400 hover:to-green-300 text-black font-black text-xs sm:text-sm px-4 sm:px-7 py-2 sm:py-3.5 rounded-xl sm:rounded-2xl shadow-[0_0_25px_rgba(16,185,129,0.6)] transition-all hover:scale-105"
-              >
-                <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-black" />
-                <span>STREAM NOW</span>
-              </button>
+              {/* Action Buttons: [ ▶ Play Now ]   [ 📁 Add to List ] */}
+              <div className="pt-4 flex items-center gap-3">
+                <button
+                  onClick={() => onPlay(detail, isActuallyTv ? selectedSeason : undefined, isActuallyTv ? 1 : undefined)}
+                  className="px-6 py-2.5 rounded-full bg-white hover:bg-zinc-200 text-black font-extrabold text-xs sm:text-sm flex items-center gap-2 shadow-2xl transition-all cursor-pointer hover:scale-105"
+                >
+                  <Play className="w-4 h-4 fill-black ml-0.5" />
+                  <span>Play Now</span>
+                </button>
 
+                <button
+                  onClick={handleToggleList}
+                  className="px-6 py-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white font-semibold text-xs sm:text-sm flex items-center gap-2 backdrop-blur-md border border-white/20 transition-all cursor-pointer hover:scale-105"
+                >
+                  {inWatchlist ? <Check className="w-4 h-4 text-emerald-400" /> : <Bookmark className="w-4 h-4" />}
+                  <span>{inWatchlist ? 'In List' : 'Add to List'}</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Navigation Tabs Header */}
-        <div className="border-b border-emerald-500/20 bg-[#070b08] px-4 sm:px-8 py-2 flex items-center gap-1 sm:gap-3 overflow-x-auto scrollbar-none shrink-0">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-              activeTab === 'overview'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                : 'text-zinc-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Info className="w-4 h-4 text-emerald-400" />
-            <span>Overview</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('cast')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-              activeTab === 'cast'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                : 'text-zinc-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Users className="w-4 h-4 text-emerald-400" />
-            <span>Cast & Crew ({castList.length})</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('details')}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-              activeTab === 'details'
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                : 'text-zinc-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Building2 className="w-4 h-4 text-emerald-400" />
-            <span>Production & Financials</span>
-          </button>
-
-          {recommendationsList.length > 0 && (
-            <button
-              onClick={() => setActiveTab('similar')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-                activeTab === 'similar'
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.2)]'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <Sparkles className="w-4 h-4 text-emerald-400" />
-              <span>More Like This ({recommendationsList.length})</span>
-            </button>
-          )}
-        </div>
-
-        {/* Tab Body Content */}
-        <div className="p-3.5 sm:p-6 space-y-4 sm:space-y-5 flex-1 min-h-0 overflow-y-auto pb-12 sm:pb-8">
-          {loadingDetail && (
-            <div className="flex items-center justify-center py-4 gap-2 text-emerald-400 text-xs font-semibold animate-pulse">
-              <Sparkles className="w-4 h-4 animate-spin" />
-              <span>Fetching live TMDB cast & crew data...</span>
-            </div>
-          )}
-
-          {/* TAB 1: OVERVIEW */}
-          {activeTab === 'overview' && (
-            <div className="flex flex-col md:flex-row gap-5 md:gap-6 items-start">
-              {/* Left Poster */}
-              <div className="w-32 sm:w-40 md:w-48 max-w-[200px] shrink-0 aspect-[2/3] rounded-2xl overflow-hidden border border-emerald-500/30 shadow-2xl bg-zinc-900 mx-auto md:mx-0">
-                <img src={posterUrl} alt={title} className="w-full h-full object-cover" />
+          {/* ── Bottom Half: Details, Casts, Season Episodes, Similar (Screenshots 1 - 3) ── */}
+          <div className="p-6 sm:p-8 space-y-6">
+            {/* Rating & Series Stats Row (Matching Screenshot 1) */}
+            <div className="flex items-center gap-3 text-sm font-semibold text-zinc-400">
+              <div className="flex items-baseline gap-1">
+                <span className="text-red-500 font-black text-2xl">{rating}</span>
+                <span className="text-zinc-500 text-xs">/ 10</span>
               </div>
-
-              {/* Right Synopsis & Highlights */}
-              <div className="flex-1 min-w-0 space-y-4">
-                <div>
-                  <h3 className="text-lg sm:text-xl font-black text-white mb-2 flex items-center gap-2">
-                    <span>Storyline Overview</span>
-                  </h3>
-                  <p className="text-zinc-100 text-sm sm:text-base leading-relaxed font-normal">{detail.overview || 'No overview available for this title.'}</p>
-                </div>
-
-                {/* Stoned.living Weed Sommelier Pairing */}
-                {(() => {
-                  const pairingInfo = detail.strain_pairing
-                    ? {
-                        strain_name: detail.strain_pairing.split('(')[0]?.trim() || detail.strain_pairing,
-                        strain_pairing: detail.strain_pairing,
-                        strain_type: detail.strain_type || 'Hybrid',
-                        thc: detail.thc || '24% THC',
-                        flavor: detail.flavor || 'Citrus & Sweet Pine',
-                        couchlock_score: detail.couchlock_score || 92,
-                        chill_vibe: detail.chill_vibe || 'Elevated Session Vibe',
-                        terpenes: detail.terpenes || 'Myrcene & Caryophyllene',
-                        sommelier_note: detail.sommelier_note || `Pair with ${detail.strain_pairing}. Enjoy deep immersion, vivid visuals, and optimal chill vibes during streaming.`
-                      }
-                    : StrainDatabase.getPairingForMedia(detail);
-
-                  const couchlockScore = pairingInfo.couchlock_score || 90;
-
-                  return (
-                    <div className="bg-gradient-to-br from-emerald-950/90 via-[#0a140f] to-green-950/90 border border-emerald-500/40 p-4 rounded-2xl shadow-xl space-y-3 relative overflow-hidden group">
-                      {/* Ambient Glow Accent */}
-                      <div className="absolute -right-10 -bottom-10 w-36 h-36 bg-emerald-500/10 rounded-full blur-2xl pointer-events-none" />
-
-                      {/* Top Header Row */}
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2">
-                          <Cannabis className="w-5 h-5 text-emerald-400 animate-pulse shrink-0" />
-                          <span className="text-xs font-black text-emerald-300 uppercase tracking-widest">
-                            Recommended Strain Pairing
-                          </span>
-                        </div>
-                        {pairingInfo.chill_vibe && (
-                          <span className="text-[10px] font-bold text-emerald-300 bg-emerald-900/60 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
-                            ✨ {pairingInfo.chill_vibe}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Primary Strain Badge & Spec Grid */}
-                      <div className="bg-black/40 border border-emerald-500/20 p-3 rounded-xl space-y-2">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <div>
-                            <h4 className="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
-                              <span>{pairingInfo.strain_name || pairingInfo.strain_pairing}</span>
-                              {pairingInfo.strain_type && (
-                                <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 rounded-md">
-                                  {pairingInfo.strain_type}
-                                </span>
-                              )}
-                            </h4>
-                          </div>
-                          {pairingInfo.thc && (
-                            <span className="text-xs font-black text-emerald-400 bg-emerald-950 border border-emerald-500/40 px-2.5 py-1 rounded-lg">
-                              ⚡ {pairingInfo.thc.includes('THC') ? pairingInfo.thc : `${pairingInfo.thc} THC`}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Couchlock Synergy Bar */}
-                        <div className="space-y-1 pt-1">
-                          <div className="flex justify-between items-center text-[10px] font-mono">
-                            <span className="text-zinc-400">Couchlock Synergy Match</span>
-                            <span className="text-amber-400 font-bold">{couchlockScore}%</span>
-                          </div>
-                          <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden border border-emerald-900/40">
-                            <div
-                              className="bg-gradient-to-r from-emerald-500 via-green-400 to-amber-400 h-full rounded-full transition-all duration-500"
-                              style={{ width: `${couchlockScore}%` }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Flavor & Terpenes Grid */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                        {pairingInfo.flavor && (
-                          <div className="bg-black/30 border border-emerald-900/40 p-2.5 rounded-xl">
-                            <span className="text-[10px] text-zinc-400 font-bold block uppercase tracking-wider">Aroma & Flavor Profile</span>
-                            <span className="text-emerald-200 font-semibold block text-[11px] mt-0.5">
-                              🍓 {pairingInfo.flavor}
-                            </span>
-                          </div>
-                        )}
-                        {pairingInfo.terpenes && (
-                          <div className="bg-black/30 border border-emerald-900/40 p-2.5 rounded-xl">
-                            <span className="text-[10px] text-zinc-400 font-bold block uppercase tracking-wider">Terpene Spectrum</span>
-                            <span className="text-emerald-300 font-mono text-[11px] block mt-0.5">
-                              🧪 {pairingInfo.terpenes}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Sommelier Pairing Rationale Note */}
-                      {pairingInfo.sommelier_note && (
-                        <div className="bg-black/50 p-3 rounded-xl border border-emerald-500/20">
-                          <p className="text-[11px] sm:text-xs text-zinc-200 leading-relaxed italic">
-                            "{pairingInfo.sommelier_note}"
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* Quick Info Grid */}
-                {(() => {
-                  const ageRatingInfo = getAgeRating(detail);
-                  const isMultiEpisode =
-                    mediaType === 'tv' ||
-                    Boolean(detail.number_of_episodes && detail.number_of_episodes > 1) ||
-                    Boolean(detail.number_of_seasons && detail.number_of_seasons > 0) ||
-                    Boolean(detail.episode_run_time && detail.episode_run_time.length > 0);
-
-                  return (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
-                      {!isMultiEpisode && (
-                        <div className="bg-[#101713] p-2.5 rounded-xl border border-emerald-900/50">
-                          <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Runtime</span>
-                          <span className="text-white font-extrabold flex items-center gap-1.5 mt-0.5">
-                            <Clock className="w-3.5 h-3.5 text-emerald-400" />
-                            {detail.runtime ? `${detail.runtime} mins` : '120 mins'}
-                          </span>
-                        </div>
-                      )}
-
-                      {mediaType === 'tv' && (
-                        <div className="bg-[#101713] p-2.5 rounded-xl border border-emerald-900/50">
-                          <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Seasons & Episodes</span>
-                          <span className="text-white font-extrabold flex items-center gap-1.5 mt-0.5">
-                            <Tv className="w-3.5 h-3.5 text-emerald-400" />
-                            {detail.number_of_seasons || 1} Seasons ({detail.number_of_episodes || 12} eps)
-                          </span>
-                        </div>
-                      )}
-
-                      <div className="bg-[#101713] p-2.5 rounded-xl border border-emerald-900/50">
-                        <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Original Language</span>
-                        <span className="text-white font-extrabold flex items-center gap-1.5 mt-0.5">
-                          <Globe className="w-3.5 h-3.5 text-emerald-400" />
-                          {detail.original_language?.toUpperCase() || 'EN'}
-                        </span>
-                      </div>
-
-                      <div className="bg-[#101713] p-2.5 rounded-xl border border-emerald-900/50 flex items-center justify-between portrait:hidden">
-                        <div>
-                          <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Age Rating</span>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                            <span className="text-emerald-300 font-extrabold text-sm">{ageRatingInfo.rating}</span>
-                          </div>
-                        </div>
-                        <span className="bg-emerald-950/80 border border-emerald-500/30 text-emerald-300 font-extrabold text-[10px] px-2 py-0.5 rounded-md text-right max-w-[110px] truncate">
-                          {ageRatingInfo.label}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
+              <span>·</span>
+              <span className="text-white font-medium">{releaseYear}</span>
+              <span>·</span>
+              <span className="text-white font-medium">{isActuallyTv ? tvStatsFormatted : runtimeFormatted}</span>
+              {detail.strain_pairing && (
+                <>
+                  <span>·</span>
+                  <span className="text-emerald-400 font-medium">🌿 {detail.strain_pairing}</span>
+                </>
+              )}
             </div>
-          )}
 
-          {/* TAB 2: CAST & CREW */}
-          {activeTab === 'cast' && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-emerald-400" />
-                  <span>Full Cast & Characters ({castList.length})</span>
+            {/* Overview / Synopsis with ...see more */}
+            <div>
+              <p className={`text-xs sm:text-sm text-zinc-300 leading-relaxed font-normal ${!synopsisExpanded ? 'line-clamp-3' : ''}`}>
+                {detail.overview || 'Stream this title in 4K resolution on Stoned.living.'}
+              </p>
+              {detail.overview && detail.overview.length > 180 && (
+                <button
+                  onClick={() => setSynopsisExpanded(!synopsisExpanded)}
+                  className="text-xs text-red-400 hover:text-red-300 font-bold mt-1 cursor-pointer transition"
+                >
+                  {synopsisExpanded ? 'see less' : '...see more'}
+                </button>
+              )}
+            </div>
+
+            {/* Casts Section (Circular headshots matching Screenshot 2) */}
+            {cast.length > 0 && (
+              <div className="space-y-3 pt-2">
+                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  Casts
                 </h3>
-
-                {castList.length === 0 ? (
-                  <p className="text-zinc-400 text-xs italic">No cast information available for this item.</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {castList.map((actor) => (
-                      <div
-                        key={`${actor.id}_${actor.character}`}
-                        className="bg-[#101713] border border-emerald-900/40 rounded-xl p-3 flex flex-col items-center text-center hover:border-emerald-500/40 transition group"
-                      >
-                        <img
-                          src={
-                            actor.profile_path
-                              ? `https://image.tmdb.org/t/p/w185${actor.profile_path}`
-                              : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80'
-                          }
-                          alt={actor.name}
-                          className="w-20 h-20 rounded-full object-cover mb-2 ring-2 ring-emerald-500/30 group-hover:scale-105 transition-transform"
-                        />
-                        <h4 className="font-bold text-xs text-white group-hover:text-emerald-400 transition-colors line-clamp-1">
-                          {actor.name}
-                        </h4>
-                        <p className="text-[11px] text-zinc-400 line-clamp-1 mt-0.5">{actor.character || 'Role Unspecified'}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {crewList.length > 0 && (
-                <div>
-                  <h3 className="text-base font-bold text-white mb-4">Key Crew Members ({crewList.length})</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {crewList.slice(0, 12).map((member) => (
-                      <div key={`${member.id}_${member.job}`} className="bg-[#101713] border border-emerald-900/30 p-2.5 rounded-xl flex items-center gap-3">
-                        <img
-                          src={
-                            member.profile_path
-                              ? `https://image.tmdb.org/t/p/w185${member.profile_path}`
-                              : 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80'
-                          }
-                          alt={member.name}
-                          className="w-10 h-10 rounded-full object-cover ring-1 ring-emerald-500/30 shrink-0"
-                        />
-                        <div className="min-w-0">
-                          <p className="font-bold text-xs text-white truncate">{member.name}</p>
-                          <p className="text-[10px] text-emerald-400 font-medium truncate">{member.job}</p>
-                          <p className="text-[9px] text-zinc-500 truncate">{member.department}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 4: PRODUCTION & FINANCIALS */}
-          {activeTab === 'details' && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                {detail.budget !== undefined && (
-                  <div className="bg-[#101713] p-4 rounded-xl border border-emerald-900/50">
-                    <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Production Budget</span>
-                    <span className="text-white font-black text-lg flex items-center gap-1.5 mt-1">
-                      <DollarSign className="w-4 h-4 text-emerald-400" />
-                      {formatMoney(detail.budget)}
-                    </span>
-                  </div>
-                )}
-
-                {detail.revenue !== undefined && (
-                  <div className="bg-[#101713] p-4 rounded-xl border border-emerald-900/50">
-                    <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Worldwide Box Office</span>
-                    <span className="text-emerald-400 font-black text-lg flex items-center gap-1.5 mt-1">
-                      <DollarSign className="w-4 h-4 text-emerald-400" />
-                      {formatMoney(detail.revenue)}
-                    </span>
-                  </div>
-                )}
-
-                <div className="bg-[#101713] p-4 rounded-xl border border-emerald-900/50">
-                  <span className="text-zinc-500 block text-[10px] font-bold uppercase tracking-wider">Original Name / Title</span>
-                  <span className="text-white font-bold text-sm block mt-1">{originalTitle || title}</span>
-                </div>
-              </div>
-
-              {/* Production Companies */}
-              {detail.production_companies && detail.production_companies.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold text-white mb-3 uppercase tracking-wider">Production Companies</h3>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {detail.production_companies.map((company) => (
-                      <div key={company.id} className="bg-[#101713] p-3 rounded-xl border border-emerald-900/40 flex items-center gap-3">
-                        {company.logo_path ? (
-                          <div className="w-10 h-10 p-1 bg-white/90 rounded-lg flex items-center justify-center shrink-0">
-                            <img
-                              src={`https://image.tmdb.org/t/p/w185${company.logo_path}`}
-                              alt={company.name}
-                              className="max-h-full max-w-full object-contain"
-                            />
-                          </div>
+                <div className="flex items-center gap-3.5 overflow-x-auto no-scrollbar py-1">
+                  {cast.slice(0, 7).map((actor) => (
+                    <div key={actor.id} className="flex flex-col items-center w-16 shrink-0 text-center">
+                      <div className="w-14 h-14 rounded-full overflow-hidden bg-zinc-800 border border-zinc-700 shadow-md mb-1.5">
+                        {actor.profile_path ? (
+                          <img
+                            src={actor.profile_path}
+                            alt={actor.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
                         ) : (
-                          <div className="w-10 h-10 bg-emerald-950 rounded-lg flex items-center justify-center shrink-0 border border-emerald-500/30">
-                            <Building2 className="w-5 h-5 text-emerald-400" />
+                          <div className="w-full h-full flex items-center justify-center font-bold text-zinc-400 text-xs">
+                            {actor.name.charAt(0)}
                           </div>
                         )}
-                        <div className="min-w-0">
-                          <p className="font-bold text-xs text-white truncate">{company.name}</p>
-                          {company.origin_country && <p className="text-[10px] text-zinc-400">{company.origin_country}</p>}
-                        </div>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Networks (For TV Shows & Anime) */}
-              {detail.networks && detail.networks.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-bold text-white mb-3 uppercase tracking-wider">Broadcasting Networks</h3>
-                  <div className="flex flex-wrap gap-3">
-                    {detail.networks.map((net) => (
-                      <div key={net.id} className="bg-[#101713] p-2.5 px-4 rounded-xl border border-emerald-900/40 flex items-center gap-3">
-                        {net.logo_path ? (
-                          <img
-                            src={`https://image.tmdb.org/t/p/w185${net.logo_path}`}
-                            alt={net.name}
-                            className="h-6 object-contain bg-white/90 px-1.5 py-0.5 rounded"
-                          />
-                        ) : null}
-                        <span className="font-bold text-xs text-white">{net.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Keywords / Tags */}
-              {keywordsList.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                    <Tag className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Keywords & Related Tags</span>
-                  </h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {keywordsList.map((kw) => (
-                      <span
-                        key={kw.id}
-                        className="bg-[#101713] text-zinc-300 border border-emerald-900/50 text-[10px] font-semibold px-2.5 py-1 rounded-lg"
-                      >
-                        #{kw.name}
+                      <span className="text-[11px] font-semibold text-zinc-200 truncate w-full">
+                        {actor.name.split(' ')[0]}
                       </span>
+                    </div>
+                  ))}
+
+                  {/* +N Badge */}
+                  {totalCastCount > 7 && (
+                    <div className="flex flex-col items-center w-14 shrink-0 text-center">
+                      <div className="w-14 h-14 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-red-400 font-bold text-xs shadow-md mb-1.5">
+                        +{totalCastCount - 7}
+                      </div>
+                      <span className="text-[10px] text-zinc-400">more</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ── Season & Episode Selector (Screenshots 2 & 3) ── */}
+            {isActuallyTv && (
+              <div className="space-y-4 pt-4 border-t border-zinc-900/80">
+                {/* Season Dropdown & Hide Spoilers Toggle Row */}
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  {/* Custom Styled Season Dropdown */}
+                  <div className="relative inline-block">
+                    <select
+                      value={selectedSeason}
+                      onChange={(e) => {
+                        setSelectedSeason(Number(e.target.value));
+                        setShowAllEpisodes(false);
+                      }}
+                      className="appearance-none bg-[#121915] border border-zinc-800 hover:border-emerald-500/50 rounded-xl pl-4 pr-10 py-2 text-xs sm:text-sm font-bold text-white shadow-md cursor-pointer outline-none focus:border-emerald-400 transition"
+                    >
+                      {availableSeasons.map((s) => (
+                        <option key={s.season_number} value={s.season_number} className="bg-[#0e1411] text-white">
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-zinc-400 absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  </div>
+
+                  {/* Hide Spoilers Toggle */}
+                  <button
+                    type="button"
+                    onClick={() => setHideSpoilers(!hideSpoilers)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-zinc-400 hover:text-white transition cursor-pointer select-none py-1.5 px-3 rounded-lg hover:bg-zinc-800/60"
+                    title={hideSpoilers ? 'Show spoilers' : 'Hide spoilers'}
+                  >
+                    {hideSpoilers ? (
+                      <EyeOff className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <Eye className="w-4 h-4 text-zinc-400" />
+                    )}
+                    <span className={hideSpoilers ? 'text-emerald-400 font-bold' : ''}>Hide Spoilers</span>
+                  </button>
+                </div>
+
+                {/* Episodes Grid (3 Columns matching Screenshots 2 & 3) */}
+                {loadingEpisodes ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 pt-1">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <div key={i} className="space-y-2">
+                        <div className="aspect-video w-full rounded-xl bg-zinc-900/80 animate-pulse border border-zinc-800" />
+                        <div className="h-4 w-3/4 rounded bg-zinc-900 animate-pulse" />
+                        <div className="h-3 w-1/2 rounded bg-zinc-900 animate-pulse" />
+                      </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                ) : seasonEpisodes.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 pt-1">
+                      {visibleEpisodes.map((ep) => {
+                        const epRating = ep.vote_average || 0;
+                        return (
+                          <div
+                            key={ep.id}
+                            className="group/ep flex flex-col cursor-pointer"
+                            onClick={() => {
+                              onClose();
+                              onPlay(detail, selectedSeason, ep.episode_number);
+                            }}
+                          >
+                            {/* 16:9 Thumbnail Card */}
+                            <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800/80 group-hover/ep:border-zinc-700 shadow-lg group-hover/ep:scale-[1.02] transition-all">
+                              {ep.still_path ? (
+                                <img
+                                  src={`https://image.tmdb.org/t/p/w500${ep.still_path}`}
+                                  alt={ep.name}
+                                  className={`w-full h-full object-cover transition-all duration-300 ${
+                                    hideSpoilers ? 'filter blur-md scale-105 opacity-60' : 'group-hover/ep:scale-105'
+                                  }`}
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-zinc-900/90 text-zinc-500 text-xs font-semibold p-2 text-center">
+                                  <Play className="w-6 h-6 mb-1 text-zinc-600" />
+                                  <span>Episode {ep.episode_number}</span>
+                                </div>
+                              )}
 
-          {/* TAB 5: MORE LIKE THIS / RECOMMENDATIONS */}
-          {activeTab === 'similar' && (
-            <div className="space-y-2.5 sm:space-y-3">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Recommended Titles Based On {title}</span>
-              </h3>
+                              {/* Gradient bottom shadow */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
 
-              <div className="grid grid-cols-5 gap-2 sm:gap-2.5">
-                {recommendationsList.map((rec) => (
-                  <div
-                    key={rec.id}
-                    onClick={() => {
-                      if (onSelectMedia) {
-                        onSelectMedia(rec);
-                      } else {
-                        setFullDetail(null);
-                        setActiveTab('overview');
-                        fetchMediaDetail(rec.media_type || getEffectiveMediaType(rec), rec.id).then((d) => d && setFullDetail(d));
-                      }
-                    }}
-                    className="group bg-[#101713] border border-emerald-900/40 hover:border-emerald-400/60 rounded-lg sm:rounded-xl overflow-hidden cursor-pointer transition hover:-translate-y-0.5 hover:shadow-lg flex flex-col"
-                  >
-                    <div className="aspect-[2/3] w-full relative bg-zinc-900 shrink-0">
-                      <img
-                        src={
-                          rec.poster_path
-                            ? `https://image.tmdb.org/t/p/w342${rec.poster_path}`
-                            : 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=300&auto=format&fit=crop&q=80'
-                        }
-                        alt={rec.title || rec.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                      />
-                      <div className="absolute top-1 right-1 bg-black/80 text-amber-400 text-[9px] font-bold px-1 py-0.5 rounded border border-amber-500/30 flex items-center gap-0.5">
-                        <Star className="w-2.5 h-2.5 fill-amber-400" />
-                        {rec.vote_average?.toFixed(1) || '7.5'}
+                              {/* Rating Circle Badge in Top Right (Matching Screenshots) */}
+                              {epRating > 0 && (
+                                <div
+                                  className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-black backdrop-blur-md bg-black/75 border-2 shadow-lg ${
+                                    epRating >= 8.0
+                                      ? 'border-[#00df82] text-emerald-300'
+                                      : epRating >= 5.5
+                                      ? 'border-amber-500 text-amber-300'
+                                      : 'border-red-500 text-red-400'
+                                  }`}
+                                >
+                                  {epRating.toFixed(1)}
+                                </div>
+                              )}
+
+                              {/* Center Play Icon Hover Overlay */}
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover/ep:opacity-100 transition-opacity flex items-center justify-center">
+                                <div className="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center shadow-2xl transition-transform transform scale-90 group-hover/ep:scale-100">
+                                  <Play className="w-4 h-4 fill-black ml-0.5" />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Metadata Below Card */}
+                            <div className="mt-2.5">
+                              <h4 className="font-bold text-xs sm:text-sm text-white group-hover/ep:text-emerald-400 transition-colors line-clamp-1">
+                                {ep.episode_number}. {ep.name}
+                              </h4>
+                              <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 mt-1 font-medium">
+                                {ep.air_date && <span>{formatAirDate(ep.air_date)}</span>}
+                                {ep.air_date && (ep.runtime || detail.episode_run_time?.[0]) && <span>·</span>}
+                                {ep.runtime ? (
+                                  <span>{ep.runtime} min</span>
+                                ) : detail.episode_run_time?.[0] ? (
+                                  <span>{detail.episode_run_time[0]} min</span>
+                                ) : null}
+                              </div>
+                              <p className="text-[11px] text-zinc-400 leading-relaxed mt-1.5 line-clamp-2">
+                                {hideSpoilers
+                                  ? 'Synopsis concealed to prevent spoilers.'
+                                  : ep.overview || 'No synopsis provided for this episode.'}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Show More / Show Less Button (Screenshot 3) */}
+                    {seasonEpisodes.length > 6 && (
+                      <div className="flex justify-center pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setShowAllEpisodes(!showAllEpisodes)}
+                          className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold text-zinc-300 hover:text-white bg-[#121915] hover:bg-zinc-800 border border-zinc-800/80 transition cursor-pointer"
+                        >
+                          <span>{showAllEpisodes ? 'Show Less' : 'Show More'}</span>
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 transition-transform ${showAllEpisodes ? 'rotate-180' : ''}`}
+                          />
+                        </button>
                       </div>
-                    </div>
-                    <div className="p-1.5 sm:p-2 min-w-0 flex flex-col justify-center">
-                      <h4 className="font-bold text-[10px] sm:text-xs text-white truncate group-hover:text-emerald-400 transition-colors leading-tight">
-                        {rec.title || rec.name}
-                      </h4>
-                      <p className="text-[9px] sm:text-[10px] text-zinc-400 mt-0.5">
-                        {rec.release_date?.slice(0, 4) || rec.first_air_date?.slice(0, 4) || 'Recommended'}
-                      </p>
-                    </div>
+                    )}
                   </div>
-                ))}
+                ) : (
+                  <div className="py-8 text-center text-xs text-zinc-500 bg-[#0c1410] rounded-2xl border border-zinc-900">
+                    No episodes found for this season.
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            )}
+
+            {/* You May Also Like (Screenshot 4) */}
+            {recommendations.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-zinc-900">
+                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  You may also like
+                </h3>
+                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+                  {recommendations.map((rec) => (
+                    <div 
+                      key={rec.id} 
+                      className="w-32 shrink-0"
+                      onClick={() => {
+                        if (onSelectMedia) {
+                          onSelectMedia(rec);
+                        } else {
+                          setDetail(rec);
+                        }
+                      }}
+                    >
+                      <MediaCard
+                        item={rec}
+                        onOpenDetails={(m) => {
+                          if (onSelectMedia) onSelectMedia(m);
+                          else setDetail(m);
+                        }}
+                        onPlay={(m) => onPlay(m)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
