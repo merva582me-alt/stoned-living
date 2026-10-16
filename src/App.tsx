@@ -189,11 +189,6 @@ export default function App() {
 
   return (
     <div className="relative min-h-screen w-full bg-black text-white selection:bg-red-600 selection:text-white">
-      {/* Age Verification Gate (Overlaid if not verified yet) */}
-      {!ageVerified && (
-        <AgeGate onVerify={() => setAgeVerified(true)} />
-      )}
-
       {/* ── Fixed Left Sidebar Dock (With Firebase Login / Account) ── */}
       <Sidebar
         currentTab={currentTab}
