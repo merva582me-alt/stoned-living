@@ -22,8 +22,8 @@ const VIDCORE_SERVER = {
   name: 'VidCore',
   getUrl: (id: number, isTv: boolean, s: number, e: number) =>
     isTv
-      ? `https://vidcore.org/embed/tv/${id}/${s}/${e}?branding=STONED.LIVING&color=10b981&autoplay=true`
-      : `https://vidcore.org/embed/movie/${id}?branding=STONED.LIVING&color=10b981&autoplay=true`,
+      ? `https://stream-proxy.chronixx.workers.dev/embed/tv/${id}/${s}/${e}?branding=STONED.LIVING&color=10b981&autoplay=true`
+      : `https://stream-proxy.chronixx.workers.dev/embed/movie/${id}?branding=STONED.LIVING&color=10b981&autoplay=true`,
 };
 
 export const WatchPlayer: React.FC<WatchPlayerProps> = ({
