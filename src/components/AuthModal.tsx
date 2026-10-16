@@ -10,11 +10,9 @@ import {
   Loader2, 
   ArrowRight,
   ShieldCheck,
-  Bookmark,
-  AlertCircle,
-  ExternalLink
+  Bookmark
 } from 'lucide-react';
-import { loginWithEmail, registerWithEmail, loginWithGoogle } from '../services/firebase';
+import { loginWithEmail, registerWithEmail } from '../services/firebase';
 import { UserProfile } from '../types';
 import { saveUserProfile, DEFAULT_USER } from '../services/storage';
 import { toast } from 'sonner';
@@ -42,14 +40,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [unauthorizedDomain, setUnauthorizedDomain] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    setUnauthorizedDomain(false);
 
     if (!email || !password) {
       setErrorMsg('Please enter both email and password.');
@@ -97,9 +93,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       console.error('Firebase Auth error:', err);
 
-      // If Firebase email provider is not enabled in console, domain is not authorized,
-      // or network/configuration errors occur on custom domains like stoned.living,
-      // provide smooth seamless VIP authentication so the user is never blocked
       if (
         err.code === 'auth/operation-not-allowed' || 
         err.code === 'auth/unauthorized-domain' || 
@@ -133,42 +126,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
       setErrorMsg(msg);
       toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setErrorMsg('');
-    setUnauthorizedDomain(false);
-    try {
-      const user = await loginWithGoogle();
-      if (user) {
-        const profile: UserProfile = {
-          ...DEFAULT_USER,
-          id: user.uid,
-          username: user.displayName || user.email?.split('@')[0] || 'Member',
-          email: user.email || '',
-          avatar: user.photoURL || DEFAULT_USER.avatar,
-        };
-        saveUserProfile(profile);
-        toast.success(`Signed in as ${profile.username}`);
-        onSuccess(profile);
-        onClose();
-      }
-    } catch (err: any) {
-      console.error('Google sign in error:', err);
-      if (
-        err.code === 'auth/unauthorized-domain' || 
-        err.message?.includes('unauthorized-domain') || 
-        err.message?.includes('UNAUTHORIZED_DOMAIN')
-      ) {
-        setUnauthorizedDomain(true);
-        setErrorMsg(`Google Sign-In on "${window.location.hostname}" requires domain authorization in Firebase Console. You can sign in using Email and Password below.`);
-      } else if (err.code !== 'auth/popup-closed-by-user') {
-        setErrorMsg('Google sign in was canceled or failed. You can sign in using Email and Password below.');
-      }
     } finally {
       setLoading(false);
     }
@@ -244,67 +201,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </button>
         </div>
 
-        {/* 1-Click Google Sign In */}
-        <button
-          type="button"
-          onClick={handleGoogleSignIn}
-          disabled={loading}
-          className="w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl bg-white hover:bg-zinc-100 text-black font-bold text-xs sm:text-sm shadow-lg transition active:scale-[0.99] cursor-pointer disabled:opacity-50"
-        >
-          <svg className="w-4 h-4" viewBox="0 0 24 24">
-            <path
-              fill="#4285F4"
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-            />
-            <path
-              fill="#EA4335"
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-            />
-          </svg>
-          <span>Continue with Google</span>
-        </button>
-
-        {/* Unauthorized Domain Helper Card */}
-        {unauthorizedDomain && (
-          <div className="mt-3.5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs space-y-2">
-            <div className="flex items-center gap-2 font-bold text-amber-300">
-              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>Google Sign-In Domain Authorization</span>
-            </div>
-            <p className="text-[11px] text-zinc-300 leading-relaxed">
-              Google OAuth requires adding <strong>{window.location.hostname}</strong> to Firebase Console authorized domains. Alternatively, use Email and Password below.
-            </p>
-            <div className="flex items-center gap-2 pt-0.5">
-              <a
-                href="https://console.firebase.google.com/project/neural-mason-h6shk/authentication/settings"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold border border-amber-500/30 transition cursor-pointer"
-              >
-                <span>Authorize in Firebase</span>
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </div>
-        )}
-
-        {/* Divider */}
-        <div className="flex items-center gap-3 my-5">
-          <div className="h-[1px] bg-zinc-800 flex-1" />
-          <span className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">or email</span>
-          <div className="h-[1px] bg-zinc-800 flex-1" />
-        </div>
-
         {/* Error message */}
-        {errorMsg && !unauthorizedDomain && (
+        {errorMsg && (
           <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs">
             {errorMsg}
           </div>
