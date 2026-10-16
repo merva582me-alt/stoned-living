@@ -59,24 +59,26 @@ export function sanitizeWatchlist(rawWatchlist: any[]): number[] {
 
 export function loadUserProfile(): UserProfile {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_USER);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      const isGuest = !parsed.id || parsed.id === 'guest_user';
-      return {
-        ...DEFAULT_USER,
-        ...parsed,
-        watchHistory: isGuest ? [] : (parsed.watchHistory || []),
-        watchlist: sanitizeWatchlist(parsed.watchlist || []),
-        stashDetails: parsed.stashDetails || {},
-        settings: {
-          ...DEFAULT_USER.settings,
-          ...(parsed.settings || {})
-        }
-      };
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = localStorage.getItem(STORAGE_KEY_USER);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const isGuest = !parsed.id || parsed.id === 'guest_user';
+        return {
+          ...DEFAULT_USER,
+          ...parsed,
+          watchHistory: isGuest ? [] : deduplicateWatchHistory(parsed.watchHistory || []),
+          watchlist: sanitizeWatchlist(parsed.watchlist || []),
+          stashDetails: parsed.stashDetails || {},
+          settings: {
+            ...DEFAULT_USER.settings,
+            ...(parsed.settings || {})
+          }
+        };
+      }
+      // Clear legacy v1 data if present
+      localStorage.removeItem('blunt_pics_user_profile_v1');
     }
-    // Clear legacy v1 data if present
-    localStorage.removeItem('blunt_pics_user_profile_v1');
   } catch (e) {
     console.warn('Storage read error:', e);
   }
@@ -90,15 +92,39 @@ export function registerProfileSyncListener(listener: ProfileSyncListener) {
   profileSyncListener = listener;
 }
 
-export function saveUserProfile(user: UserProfile) {
+type AuthPromptListener = (item: MediaItem) => void;
+let authPromptListener: AuthPromptListener | null = null;
+
+export function registerAuthPromptListener(listener: AuthPromptListener) {
+  authPromptListener = listener;
+}
+
+export function requestAuthForAction(item: MediaItem) {
+  if (authPromptListener) {
+    try {
+      authPromptListener(item);
+    } catch (e) {
+      console.warn('Auth prompt listener error:', e);
+    }
+  }
+}
+
+export function isUserLoggedIn(): boolean {
+  const profile = loadUserProfile();
+  return Boolean(profile.id && profile.id !== 'guest_user');
+}
+
+export function saveUserProfile(user: UserProfile, syncToCloud: boolean = true) {
   try {
     const cleanUser: UserProfile = {
       ...user,
       watchlist: sanitizeWatchlist(user.watchlist || []),
       stashDetails: user.stashDetails || {}
     };
-    localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(cleanUser));
-    if (profileSyncListener) {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(cleanUser));
+    }
+    if (syncToCloud && profileSyncListener) {
       try {
         profileSyncListener(cleanUser);
       } catch (err) {
@@ -110,32 +136,119 @@ export function saveUserProfile(user: UserProfile) {
   }
 }
 
+/**
+ * Formats the remaining time of an episode or movie as "45m remaining" or "1h 20m remaining"
+ */
+export function formatRemainingTime(
+  durationSeconds?: number,
+  progressSeconds?: number,
+  progressPercent?: number,
+  mediaType: 'movie' | 'tv' = 'tv'
+): string {
+  // Default episode runtime is ~45 minutes (2700s), feature film ~110 minutes (6600s)
+  const defaultDuration = mediaType === 'tv' ? 2700 : 6600;
+  const total = durationSeconds && durationSeconds > 0 ? durationSeconds : defaultDuration;
+
+  let elapsed = 0;
+  if (typeof progressSeconds === 'number' && progressSeconds >= 0) {
+    elapsed = progressSeconds;
+  } else if (typeof progressPercent === 'number' && progressPercent > 0) {
+    elapsed = Math.round((progressPercent / 100) * total);
+  } else {
+    // Default initial playback position (~2.5 minutes in)
+    elapsed = 150;
+  }
+
+  // Cap elapsed so remaining is never negative
+  const remainingSec = Math.max(0, total - elapsed);
+  const remainingMinutes = Math.max(1, Math.round(remainingSec / 60));
+
+  const hours = Math.floor(remainingMinutes / 60);
+  const mins = remainingMinutes % 60;
+
+  if (hours > 0) {
+    return mins > 0 ? `${hours}h ${mins}m remaining` : `${hours}h remaining`;
+  }
+  return `${mins}m remaining`;
+}
+
+/**
+ * Deduplicates watch history so each TV show or movie only ever appears ONCE.
+ * For TV shows, keeps only the latest watched episode and updates in-place.
+ */
+export function deduplicateWatchHistory(history: WatchHistoryItem[] = []): WatchHistoryItem[] {
+  if (!Array.isArray(history)) return [];
+  const map = new Map<string, WatchHistoryItem>();
+
+  for (const item of history) {
+    if (!item || !item.mediaId) continue;
+    const mediaId = Number(item.mediaId);
+    if (isNaN(mediaId) || mediaId <= 0) continue;
+
+    // Use unified key per media so each TV show or movie has exactly ONE entry in Continue Watching
+    const key = `${item.mediaType || 'movie'}_${mediaId}`;
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, { ...item, mediaId, id: `h_${mediaId}` });
+    } else {
+      const itemTime = new Date(item.updatedAt || 0).getTime();
+      const existingTime = new Date(existing.updatedAt || 0).getTime();
+      const itemEpisodeWeight = ((item.season || 1) * 1000) + (item.episode || 1);
+      const existingEpisodeWeight = ((existing.season || 1) * 1000) + (existing.episode || 1);
+
+      // Prefer newer update time; tie-break on higher season/episode
+      if (itemTime > existingTime || (itemTime === existingTime && itemEpisodeWeight >= existingEpisodeWeight)) {
+        map.set(key, { ...item, mediaId, id: `h_${mediaId}` });
+      }
+    }
+  }
+
+  return Array.from(map.values())
+    .sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime())
+    .slice(0, 50);
+}
+
+/**
+ * Intelligently merges local and cloud watch histories by media key without losing items,
+ * keeping only the latest watched episode per TV show in-place.
+ */
+export function mergeWatchHistories(
+  local: WatchHistoryItem[] = [],
+  remote: WatchHistoryItem[] = []
+): WatchHistoryItem[] {
+  return deduplicateWatchHistory([...remote, ...local]);
+}
+
 export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedAt'>): UserProfile {
   const profile = loadUserProfile();
   // Do not track any playback progress until user is logged in
   if (!profile.id || profile.id === 'guest_user') {
     return profile;
   }
-  const history = profile.watchHistory || [];
+  const history = deduplicateWatchHistory(profile.watchHistory || []);
   
   const targetMediaId = Number(item.mediaId);
   if (isNaN(targetMediaId) || targetMediaId <= 0) {
     return profile;
   }
 
-  // Find existing history entry for this media item (movie, show, or anime)
-  const existingIndex = history.findIndex(
-    (h) => Number(h.mediaId) === targetMediaId
-  );
+  // Find existing history entry for this media item (1 entry per show/movie)
+  const existingIndex = history.findIndex((h) => Number(h.mediaId) === targetMediaId);
 
   const updatedItem: WatchHistoryItem = {
     ...item,
     mediaId: targetMediaId,
-    id: `h_${targetMediaId}_${item.season || 0}_${item.episode || 0}`,
+    posterPath: item.posterPath || null,
+    backdropPath: item.backdropPath || null,
+    season: item.season ?? 1,
+    episode: item.episode ?? 1,
+    id: `h_${targetMediaId}`,
     updatedAt: new Date().toISOString()
   };
 
   if (existingIndex >= 0) {
+    // Replace the previous episode with the latest watched episode in-place
     history.splice(existingIndex, 1);
   }
   history.unshift(updatedItem);
@@ -144,6 +257,18 @@ export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedA
   profile.watchHistory = history.slice(0, 50);
   saveUserProfile(profile);
   return profile;
+}
+
+export function removeFromWatchHistory(mediaId: number, season?: number, episode?: number): UserProfile {
+  const profile = loadUserProfile();
+  const targetId = Number(mediaId);
+  // Remove the media entry from watch history so it cleanly vanishes from Continue Watching
+  const history = deduplicateWatchHistory(profile.watchHistory || []).filter((item) => {
+    return Number(item.mediaId) !== targetId;
+  });
+  const updatedProfile: UserProfile = { ...profile, watchHistory: history };
+  saveUserProfile(updatedProfile);
+  return updatedProfile;
 }
 
 export function toggleFavorite(mediaId: number): { isFav: boolean; updatedProfile: UserProfile } {
@@ -210,8 +335,8 @@ export function toggleWatchlist(mediaInput: MediaItem | number): { inList: boole
         vote_count: mediaInput.vote_count || 100,
         popularity: mediaInput.popularity || 10,
         media_type: mediaInput.media_type || (mediaInput.name ? 'tv' : 'movie'),
-        first_air_date: mediaInput.first_air_date,
-        release_date: mediaInput.release_date
+        first_air_date: mediaInput.first_air_date || null,
+        release_date: mediaInput.release_date || null
       };
     }
   }
@@ -228,6 +353,6 @@ export function toggleWatchlist(mediaInput: MediaItem | number): { inList: boole
 
 export function isItemInWatchlist(mediaId: number): boolean {
   const profile = loadUserProfile();
-  return (profile.watchlist || []).includes(mediaId);
+  return sanitizeWatchlist(profile.watchlist || []).includes(Number(mediaId));
 }
 

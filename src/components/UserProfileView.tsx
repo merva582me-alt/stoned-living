@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Bookmark, Heart, History, ListPlus, Play, Trash2, Check, Cannabis, Film, Sparkles, Clock, LogOut, ShieldCheck, Settings, Volume2, Wind } from 'lucide-react';
 import { UserProfile, WatchHistoryItem, MediaItem } from '../types';
-import { saveUserProfile, toggleWatchlist } from '../services/storage';
+import { saveUserProfile, toggleWatchlist, formatRemainingTime, deduplicateWatchHistory } from '../services/storage';
 import { saveProfileToFirestore } from '../services/firebase';
 import { toast } from 'sonner';
 
@@ -316,7 +316,14 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
-            <History className="w-4 h-4" /> Continue Watching ({user.watchHistory.length})
+            {(() => {
+              const historyList = deduplicateWatchHistory(user.watchHistory || []);
+              return (
+                <>
+                  <History className="w-4 h-4" /> Continue Watching ({historyList.length})
+                </>
+              );
+            })()}
           </button>
 
           <button
@@ -331,7 +338,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
           </button>
         </div>
 
-        {activeTab === 'history' && user.watchHistory.length > 0 && (
+        {activeTab === 'history' && deduplicateWatchHistory(user.watchHistory || []).length > 0 && (
           <button
             onClick={handleClearHistory}
             className="flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 font-semibold px-3 py-1.5 rounded-lg bg-rose-950/30 border border-rose-900/40"
@@ -342,16 +349,21 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'history' && (
-        user.watchHistory.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
-            <History className="w-12 h-12 text-emerald-900" />
-            <h3 className="text-lg font-extrabold text-white">No Watch History Yet</h3>
-            <p className="text-zinc-500 text-sm max-w-xs">Start streaming movies, TV shows or anime, and your watch history will automatically appear here.</p>
-          </div>
-        ) : (
+      {activeTab === 'history' && (() => {
+        const historyList = deduplicateWatchHistory(user.watchHistory || []);
+        if (historyList.length === 0) {
+          return (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
+              <History className="w-12 h-12 text-emerald-900" />
+              <h3 className="text-lg font-extrabold text-white">No Watch History Yet</h3>
+              <p className="text-zinc-500 text-sm max-w-xs">Start streaming movies, TV shows or anime, and your watch history will automatically appear here.</p>
+            </div>
+          );
+        }
+
+        return (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {user.watchHistory.map((h) => {
+            {historyList.map((h) => {
               const matched = catalog.find((m) => Number(m.id) === Number(h.mediaId)) || {
                 id: h.mediaId,
                 title: h.title,
@@ -380,22 +392,23 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
                     <h4 className="font-bold text-sm text-white group-hover:text-emerald-400 transition-colors truncate">
                       {h.title}
                     </h4>
-                    {h.season && (
-                      <p className="text-xs text-emerald-400 font-mono">
-                        S{h.season}:E{h.episode} {h.episodeTitle ? `• ${h.episodeTitle}` : ''}
-                      </p>
-                    )}
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400 mt-1 font-mono">
+                      <span className="text-emerald-400 font-semibold">
+                        {formatRemainingTime(h.durationSeconds, h.progressSeconds, h.progressPercent, h.mediaType)}
+                      </span>
+                      <span>{h.mediaType === 'tv' ? `S${h.season || 1}:E${h.episode || 1}` : 'Movie'}</span>
+                    </div>
                     {/* Progress bar */}
-                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden mt-3">
-                      <div className="bg-emerald-500 h-full" style={{ width: `${h.progressPercent}%` }} />
+                    <div className="w-full bg-zinc-800 h-1.5 rounded-full overflow-hidden mt-2.5">
+                      <div className="bg-emerald-500 h-full" style={{ width: `${Math.min(Math.max(h.progressPercent || 5, 5), 100)}%` }} />
                     </div>
                   </div>
                 </div>
               );
             })}
           </div>
-        )
-      )}
+        );
+      })()}
 
       {activeTab === 'watchlist' && (
         watchlistItems.length === 0 ? (

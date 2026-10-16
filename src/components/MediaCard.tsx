@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Star, Plus, Check } from 'lucide-react';
-import { MediaItem } from '../types';
-import { toggleWatchlist, isItemInWatchlist } from '../services/storage';
+import { MediaItem, UserProfile } from '../types';
+import { toggleWatchlist, isItemInWatchlist, isUserLoggedIn, requestAuthForAction } from '../services/storage';
 import { toast } from 'sonner';
 
 interface MediaCardProps {
@@ -11,6 +11,10 @@ interface MediaCardProps {
   className?: string;
   rankNumber?: number; // For Top 10 cards
   isRecentlyAdded?: boolean;
+  isLoggedIn?: boolean;
+  onRequireLogin?: (targetItem: MediaItem) => void;
+  onUpdateUser?: (updated: UserProfile) => void;
+  isInWatchlist?: boolean;
 }
 
 export const MediaCard: React.FC<MediaCardProps> = ({
@@ -20,9 +24,21 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   className = 'w-full',
   rankNumber,
   isRecentlyAdded,
+  isLoggedIn,
+  onRequireLogin,
+  onUpdateUser,
+  isInWatchlist,
 }) => {
-  const [inWatchlist, setInWatchlist] = useState(() => isItemInWatchlist(item.id));
+  const [inWatchlist, setInWatchlist] = useState(() => 
+    isInWatchlist !== undefined ? isInWatchlist : isItemInWatchlist(item.id)
+  );
   const [imgError, setImgError] = useState(false);
+
+  React.useEffect(() => {
+    if (isInWatchlist !== undefined) {
+      setInWatchlist(isInWatchlist);
+    }
+  }, [isInWatchlist]);
 
   const title = item.title || item.name || 'Untitled';
   const releaseYear = (item.release_date || item.first_air_date)?.split('-')[0] || '2026';
@@ -35,8 +51,18 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 
   const handleToggleWatchlist = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const loggedIn = isLoggedIn !== undefined ? isLoggedIn : isUserLoggedIn();
+    if (!loggedIn) {
+      if (onRequireLogin) {
+        onRequireLogin(item);
+      } else {
+        requestAuthForAction(item);
+      }
+      return;
+    }
     const result = toggleWatchlist(item);
     setInWatchlist(result.inList);
+    if (onUpdateUser) onUpdateUser(result.updatedProfile);
     toast(result.inList ? 'Saved to Watchlist' : 'Removed from Watchlist', { duration: 1500 });
   };
 

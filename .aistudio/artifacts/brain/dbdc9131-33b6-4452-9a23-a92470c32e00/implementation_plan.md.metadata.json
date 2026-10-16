@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan for Settings overhaul:\n1. Multilingual Support: Expand site and subtitle language selections to include English, Spanish, French, German, Japanese, Italian, and Portuguese with a clean selector modal/dropdown.\n2. Settings Cloud Synchronization: Ensure all user preferences automatically sync with Firestore when logged in, and load cloud settings immediately upon sign-in.\n3. Settings Auth Gate: Prompt logged-out users to sign in when clicking Settings, and automatically transition them to Settings upon successful authentication.\n4. Appearance Section Removal: Completely remove the Appearance section, Theme controls, and Accent Color options from the Settings interface.",
-  "updatedAt": "2026-10-15T21:33:33.178936968Z",
+  "summary": "Implementation plan to eliminate duplicate TV show cards in Continue Watching by updating in-place to the latest watched episode, and replace the static '5% watched' text with accurate dynamic remaining time formatted as '45m remaining' or '1h 20m remaining'.",
+  "updatedAt": "2026-10-16T17:48:10.118315002Z",
   "requestFeedback": true,
   "userFacing": true
 }

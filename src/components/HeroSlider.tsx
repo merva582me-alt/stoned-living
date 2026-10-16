@@ -1,19 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { Play, FolderPlus, Check, ChevronRight, Star } from 'lucide-react';
-import { MediaItem } from '../types';
-import { toggleWatchlist, isItemInWatchlist } from '../services/storage';
+import { MediaItem, UserProfile } from '../types';
+import { toggleWatchlist, isItemInWatchlist, isUserLoggedIn, requestAuthForAction } from '../services/storage';
 import { toast } from 'sonner';
 
 interface HeroSliderProps {
   items: MediaItem[];
   onPlay: (item: MediaItem) => void;
   onOpenDetails: (item: MediaItem) => void;
+  isLoggedIn?: boolean;
+  onRequireLogin?: (item: MediaItem) => void;
+  onUpdateUser?: (updated: UserProfile) => void;
+  userWatchlist?: number[];
 }
 
 export const HeroSlider: React.FC<HeroSliderProps> = ({
   items,
   onPlay,
   onOpenDetails,
+  isLoggedIn,
+  onRequireLogin,
+  onUpdateUser,
+  userWatchlist,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -34,7 +42,9 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
   }
 
   const current = items[currentIndex];
-  const inWatchlist = isItemInWatchlist(current.id);
+  const inWatchlist = userWatchlist 
+    ? userWatchlist.includes(Number(current.id))
+    : isItemInWatchlist(current.id);
 
   const backdropUrl = current.backdrop_path
     ? (current.backdrop_path.startsWith('http') ? current.backdrop_path : `https://image.tmdb.org/t/p/original${current.backdrop_path}`)
@@ -48,7 +58,17 @@ export const HeroSlider: React.FC<HeroSliderProps> = ({
   const genreName = current.genres?.[0]?.name || (current.media_type === 'tv' ? 'Science Fiction' : 'Action');
 
   const handleToggleList = () => {
+    const loggedIn = isLoggedIn !== undefined ? isLoggedIn : isUserLoggedIn();
+    if (!loggedIn) {
+      if (onRequireLogin) {
+        onRequireLogin(current);
+      } else {
+        requestAuthForAction(current);
+      }
+      return;
+    }
     const res = toggleWatchlist(current);
+    if (onUpdateUser) onUpdateUser(res.updatedProfile);
     toast(res.inList ? 'Added to your List' : 'Removed from your List');
   };
 

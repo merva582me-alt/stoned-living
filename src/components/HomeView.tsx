@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronUp, Play } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, Play, X } from 'lucide-react';
 import { MediaItem, UserProfile } from '../types';
+import { formatRemainingTime, deduplicateWatchHistory } from '../services/storage';
 import { HeroSlider } from './HeroSlider';
 import { MediaCard } from './MediaCard';
 import {
@@ -15,6 +16,9 @@ interface HomeViewProps {
   onPlayMedia: (item: MediaItem, season?: number, episode?: number) => void;
   onInspectItem: (item: MediaItem) => void;
   onNavigateTab: (tab: string) => void;
+  onRequireLogin?: (item: MediaItem) => void;
+  onUpdateUser?: (updated: UserProfile) => void;
+  onRemoveWatchHistory?: (mediaId: number, season?: number, episode?: number) => void;
 }
 
 // ── Streaming Providers List (Screenshot 2) ──
@@ -37,6 +41,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
   onPlayMedia,
   onInspectItem,
   onNavigateTab,
+  onRequireLogin,
+  onUpdateUser,
+  onRemoveWatchHistory,
 }) => {
   // Live State for all 1:1 shelves
   const [heroItems, setHeroItems] = useState<MediaItem[]>([]);
@@ -201,6 +208,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
         items={heroItems}
         onPlay={(item) => onPlayMedia(item)}
         onOpenDetails={(item) => onInspectItem(item)}
+        isLoggedIn={isLoggedIn}
+        onRequireLogin={onRequireLogin}
+        onUpdateUser={onUpdateUser}
+        userWatchlist={user.watchlist}
       />
 
       {/* ── 2. Content Shelves (Bleeds to Both Left and Right Edges when Scrolled) ── */}
@@ -208,18 +219,22 @@ export const HomeView: React.FC<HomeViewProps> = ({
         {/* ─────────────────────────────────────────────────────────────
             CONTINUE WATCHING SHELF (Only visible to authenticated logged-in users)
         ─────────────────────────────────────────────────────────────── */}
-        {isLoggedIn && user?.watchHistory && user.watchHistory.length > 0 && (
-          <div className="space-y-8 sm:space-y-10">
-            <section className="space-y-4">
-              <div className="flex items-center justify-between px-6 sm:px-8 lg:px-10">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
-                    <span>Continue Watching</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-red-600/20 text-red-400 font-bold border border-red-500/30">
-                      {user.watchHistory.length}
-                    </span>
-                  </h2>
-                </div>
+        {isLoggedIn && user?.watchHistory && user.watchHistory.length > 0 && (() => {
+          const continueWatchingList = deduplicateWatchHistory(user.watchHistory);
+          if (continueWatchingList.length === 0) return null;
+
+          return (
+            <div className="space-y-8 sm:space-y-10">
+              <section className="space-y-4">
+                <div className="flex items-center justify-between px-6 sm:px-8 lg:px-10">
+                  <div className="flex items-center gap-3">
+                    <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2.5">
+                      <span>Continue Watching</span>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-[#00df82] font-bold border border-emerald-500/30 font-mono">
+                        {continueWatchingList.length}
+                      </span>
+                    </h2>
+                  </div>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -244,7 +259,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 className="flex gap-4 sm:gap-5 overflow-x-auto no-scrollbar scroll-smooth pb-3 w-full"
               >
                 <div className="shrink-0 w-2 sm:w-3 lg:w-5 pointer-events-none" aria-hidden="true" />
-                {user.watchHistory.map((item) => (
+                {continueWatchingList.map((item) => (
                   <div
                     key={item.id}
                     onClick={() => onPlayMedia({
@@ -258,9 +273,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       popularity: 10,
                       media_type: item.mediaType,
                     }, item.season, item.episode)}
-                    className="w-64 sm:w-72 md:w-80 shrink-0 group cursor-pointer select-none"
+                    className="w-64 sm:w-72 md:w-80 shrink-0 group cursor-pointer select-none relative"
                   >
-                    <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:border-zinc-700 transition-all shadow-lg group-hover:scale-[1.02]">
+                    <div className="relative aspect-video w-full rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 group-hover:border-emerald-500/50 transition-all shadow-lg group-hover:scale-[1.02]">
                       <img
                         src={item.backdropPath || item.posterPath || ''}
                         alt={item.title}
@@ -268,28 +283,47 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
                       
+                      {/* Quick Remove Action Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onRemoveWatchHistory) {
+                            onRemoveWatchHistory(item.mediaId, item.season, item.episode);
+                          }
+                        }}
+                        className="absolute top-2 right-2 z-20 w-7 h-7 rounded-full bg-black/80 hover:bg-red-600 text-zinc-300 hover:text-white flex items-center justify-center opacity-80 group-hover:opacity-100 transition-all cursor-pointer border border-white/10 shadow-lg"
+                        title="Remove from Continue Watching"
+                      >
+                        <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                      </button>
+
+                      {/* Play overlay icon */}
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40">
-                        <div className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-2xl">
+                        <div className="w-12 h-12 rounded-full bg-[#00df82] text-black flex items-center justify-center shadow-[0_0_16px_rgba(0,223,130,0.6)]">
                           <Play className="w-5 h-5 fill-current ml-0.5" />
                         </div>
                       </div>
 
+                      {/* Progress bar */}
                       <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-zinc-800">
                         <div
-                          className="h-full bg-red-600 shadow-[0_0_8px_#ef4444]"
+                          className="h-full bg-[#00df82] shadow-[0_0_8px_rgba(0,223,130,0.8)]"
                           style={{ width: `${Math.min(Math.max(item.progressPercent || 5, 5), 100)}%` }}
                         />
                       </div>
                     </div>
 
                     <div className="mt-2.5 px-0.5">
-                      <h3 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-red-500 transition-colors">
+                      <h3 className="font-bold text-xs sm:text-sm text-white truncate group-hover:text-[#00df82] transition-colors">
                         {item.title}
                       </h3>
                       <div className="flex items-center gap-2 text-[11px] text-zinc-400 mt-0.5">
-                        <span className="text-red-400 font-semibold">{item.progressPercent || 5}% watched</span>
+                        <span className="text-emerald-400 font-semibold font-mono">
+                          {formatRemainingTime(item.durationSeconds, item.progressSeconds, item.progressPercent, item.mediaType)}
+                        </span>
                         <span>·</span>
-                        <span>{item.mediaType === 'tv' ? `S${item.season || 1} E${item.episode || 1}` : 'Feature Film'}</span>
+                        <span className="font-mono text-zinc-400">{item.mediaType === 'tv' ? `S${item.season || 1} E${item.episode || 1}` : 'Movie'}</span>
                       </div>
                     </div>
                   </div>
@@ -303,7 +337,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               <div className="border-t border-zinc-800/80" />
             </div>
           </div>
-        )}
+        );
+      })()}
 
         {/* ─────────────────────────────────────────────────────────────
             TOP 10 SHELF (Screenshot 2)
@@ -401,6 +436,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       isRecentlyAdded={index === 4 || index === 5 || index === 6}
                       onOpenDetails={onInspectItem}
                       onPlay={onPlayMedia}
+                      isLoggedIn={isLoggedIn}
+                      onRequireLogin={onRequireLogin}
+                      onUpdateUser={onUpdateUser}
+                      isInWatchlist={user.watchlist?.includes(Number(item.id))}
                     />
                   </div>
                 </div>
@@ -686,6 +725,10 @@ interface ShelfSectionProps {
   onOpenDetails: (item: MediaItem) => void;
   onPlay: (item: MediaItem) => void;
   loading: boolean;
+  isLoggedIn?: boolean;
+  onRequireLogin?: (item: MediaItem) => void;
+  onUpdateUser?: (updated: UserProfile) => void;
+  userWatchlist?: number[];
 }
 
 const ShelfSection: React.FC<ShelfSectionProps> = ({
@@ -694,6 +737,10 @@ const ShelfSection: React.FC<ShelfSectionProps> = ({
   onOpenDetails,
   onPlay,
   loading,
+  isLoggedIn,
+  onRequireLogin,
+  onUpdateUser,
+  userWatchlist,
 }) => {
   const shelfRef = useRef<HTMLDivElement>(null);
 
@@ -755,6 +802,10 @@ const ShelfSection: React.FC<ShelfSectionProps> = ({
                   isRecentlyAdded={idx === 1 || idx === 5}
                   onOpenDetails={onOpenDetails}
                   onPlay={onPlay}
+                  isLoggedIn={isLoggedIn}
+                  onRequireLogin={onRequireLogin}
+                  onUpdateUser={onUpdateUser}
+                  isInWatchlist={userWatchlist ? userWatchlist.includes(Number(item.id)) : undefined}
                 />
               </div>
             ))

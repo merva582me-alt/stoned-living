@@ -9,12 +9,19 @@ import { LibraryView } from './components/LibraryView';
 import { SettingsView } from './components/SettingsView';
 import { WatchPlayer } from './components/WatchPlayer';
 import { MediaDetailsModal } from './components/MediaDetailsModal';
-import { AgeGate, isAgeVerified } from './components/AgeGate';
 import { AuthModal } from './components/AuthModal';
 
 import { MediaItem, UserProfile, SiteSettings } from './types';
 import { fetchSiteSettings } from './services/api';
-import { loadUserProfile, saveUserProfile, DEFAULT_USER, registerProfileSyncListener } from './services/storage';
+import { 
+  loadUserProfile, 
+  saveUserProfile, 
+  DEFAULT_USER, 
+  registerProfileSyncListener, 
+  registerAuthPromptListener,
+  toggleWatchlist,
+  removeFromWatchHistory
+} from './services/storage';
 import { 
   subscribeToSiteSettings, 
   subscribeToUserProfile, 
@@ -34,12 +41,12 @@ function getInitialTab(): string {
 }
 
 export default function App() {
-  const [ageVerified, setAgeVerified] = useState(isAgeVerified);
   const [currentTab, setCurrentTab] = useState<string>(getInitialTab);
   const [inspectItem, setInspectItem] = useState<MediaItem | null>(null);
   const [activeMedia, setActiveMedia] = useState<MediaItem | null>(null);
   const [playSeason, setPlaySeason] = useState<number | undefined>(undefined);
   const [playEpisode, setPlayEpisode] = useState<number | undefined>(undefined);
+  const [pendingAddMedia, setPendingAddMedia] = useState<MediaItem | null>(null);
 
   // User Profile & Settings State
   const [user, setUser] = useState<UserProfile>(() => loadUserProfile());
@@ -50,7 +57,8 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalReason, setAuthModalReason] = useState<string | undefined>(undefined);
 
-  const isLoggedIn = Boolean(currentUser && user.id && user.id !== 'guest_user');
+  // User is logged in whenever their profile ID is established and not the guest placeholder
+  const isLoggedIn = Boolean(user && user.id && user.id !== 'guest_user');
 
   // Register background Firestore sync for any watchlist/history/favorite updates
   useEffect(() => {
@@ -58,6 +66,22 @@ export default function App() {
       if (auth.currentUser) {
         saveProfileToFirestore(updated);
       }
+    });
+  }, []);
+
+  // Clear any legacy age verification data
+  useEffect(() => {
+    try {
+      localStorage.removeItem('stoned_living_age_verified');
+    } catch {}
+  }, []);
+
+  // Listen for Add to List requests triggered when not logged in
+  useEffect(() => {
+    registerAuthPromptListener((targetItem) => {
+      setPendingAddMedia(targetItem);
+      setAuthModalReason('Please sign in or create an account to save titles to your personal list');
+      setIsAuthModalOpen(true);
     });
   }, []);
 
@@ -123,6 +147,12 @@ export default function App() {
     setInspectItem(item);
   };
 
+  const handleRequireLogin = (targetItem: MediaItem) => {
+    setPendingAddMedia(targetItem);
+    setAuthModalReason('Please sign in or create an account to save titles to your personal list');
+    setIsAuthModalOpen(true);
+  };
+
   const handleNavigateTab = (tab: string) => {
     // If user is not logged in and clicks library or settings, show Auth Modal with prompt reason
     if (tab === 'library' && !isLoggedIn) {
@@ -151,9 +181,28 @@ export default function App() {
     }
   };
 
+  const handleRemoveWatchHistory = (mediaId: number, season?: number, episode?: number) => {
+    const updated = removeFromWatchHistory(mediaId, season, episode);
+    setUser(updated);
+    if (auth.currentUser) {
+      saveProfileToFirestore(updated);
+    }
+    toast.success('Removed from Continue Watching');
+  };
+
   const handleAuthSuccess = (authenticatedUser: UserProfile) => {
     setUser(authenticatedUser);
     setIsAuthModalOpen(false);
+
+    // If an item was queued to be added to list, add it automatically
+    if (pendingAddMedia) {
+      const res = toggleWatchlist(pendingAddMedia);
+      const title = pendingAddMedia.title || pendingAddMedia.name || 'title';
+      toast.success(`Saved "${title}" to your List`);
+      handleUpdateUser(res.updatedProfile);
+      setPendingAddMedia(null);
+    }
+
     if (authModalReason?.includes('Library')) {
       setCurrentTab('library');
     } else if (authModalReason?.includes('Settings')) {
@@ -214,6 +263,9 @@ export default function App() {
             onPlayMedia={handlePlayMedia}
             onInspectItem={handleInspectMedia}
             onNavigateTab={handleNavigateTab}
+            onRequireLogin={handleRequireLogin}
+            onUpdateUser={handleUpdateUser}
+            onRemoveWatchHistory={handleRemoveWatchHistory}
           />
         )}
 
@@ -253,6 +305,7 @@ export default function App() {
             onOpenDetails={handleInspectMedia}
             onPlayMedia={handlePlayMedia}
             onNavigateTab={handleNavigateTab}
+            onRemoveWatchHistory={handleRemoveWatchHistory}
           />
         )}
 
@@ -276,6 +329,10 @@ export default function App() {
           onClose={() => setInspectItem(null)}
           onPlay={handlePlayMedia}
           onSelectMedia={(m) => setInspectItem(m)}
+          isLoggedIn={isLoggedIn}
+          onRequireLogin={handleRequireLogin}
+          onUpdateUser={handleUpdateUser}
+          userWatchlist={user.watchlist}
         />
       )}
 

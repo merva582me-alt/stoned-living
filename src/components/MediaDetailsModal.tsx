@@ -12,9 +12,9 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react';
-import { MediaItem, CastMember, Episode } from '../types';
+import { MediaItem, CastMember, Episode, UserProfile } from '../types';
 import { fetchMediaDetail, fetchCredits, fetchRecommendations, fetchTvSeason } from '../services/api';
-import { toggleWatchlist, isItemInWatchlist } from '../services/storage';
+import { toggleWatchlist, isItemInWatchlist, isUserLoggedIn, requestAuthForAction } from '../services/storage';
 import { MediaCard } from './MediaCard';
 import { toast } from 'sonner';
 
@@ -23,6 +23,10 @@ interface MediaDetailsModalProps {
   onClose: () => void;
   onPlay: (item: MediaItem, season?: number, episode?: number) => void;
   onSelectMedia?: (item: MediaItem) => void;
+  isLoggedIn?: boolean;
+  onRequireLogin?: (item: MediaItem) => void;
+  onUpdateUser?: (updated: UserProfile) => void;
+  userWatchlist?: number[];
 }
 
 function formatAirDate(dateStr?: string): string {
@@ -41,6 +45,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   onClose,
   onPlay,
   onSelectMedia,
+  isLoggedIn,
+  onRequireLogin,
+  onUpdateUser,
+  userWatchlist,
 }) => {
   const isTv = item.media_type === 'tv' || Boolean(item.first_air_date);
   const effectiveType: 'movie' | 'tv' = isTv ? 'tv' : 'movie';
@@ -49,9 +57,17 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [cast, setCast] = useState<CastMember[]>([]);
   const [totalCastCount, setTotalCastCount] = useState<number>(0);
   const [recommendations, setRecommendations] = useState<MediaItem[]>([]);
-  const [inWatchlist, setInWatchlist] = useState(() => isItemInWatchlist(item.id));
+  const [inWatchlist, setInWatchlist] = useState(() => 
+    userWatchlist ? userWatchlist.includes(Number(item.id)) : isItemInWatchlist(item.id)
+  );
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (userWatchlist) {
+      setInWatchlist(userWatchlist.includes(Number(detail.id)));
+    }
+  }, [detail.id, userWatchlist]);
 
   // ── Episodic State for TV Series (Screenshots 1 - 3) ──
   const [selectedSeason, setSelectedSeason] = useState<number>(1);
@@ -162,8 +178,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     : '';
 
   const handleToggleList = () => {
+    const loggedIn = isLoggedIn !== undefined ? isLoggedIn : isUserLoggedIn();
+    if (!loggedIn) {
+      if (onRequireLogin) {
+        onRequireLogin(detail);
+      } else {
+        requestAuthForAction(detail);
+      }
+      return;
+    }
     const res = toggleWatchlist(detail);
     setInWatchlist(res.inList);
+    if (onUpdateUser) onUpdateUser(res.updatedProfile);
     toast(res.inList ? 'Added to your List' : 'Removed from your List');
   };
 

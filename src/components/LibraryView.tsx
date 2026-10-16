@@ -8,10 +8,12 @@ import {
   Play, 
   Trash2,
   ChevronRight,
-  FolderOpen
+  FolderOpen,
+  X
 } from 'lucide-react';
 import { MediaItem, UserProfile, WatchHistoryItem } from '../types';
 import { MediaCard } from './MediaCard';
+import { formatRemainingTime, deduplicateWatchHistory } from '../services/storage';
 
 interface LibraryViewProps {
   user: UserProfile;
@@ -20,6 +22,7 @@ interface LibraryViewProps {
   onOpenDetails: (item: MediaItem) => void;
   onPlayMedia: (item: MediaItem, season?: number, episode?: number) => void;
   onNavigateTab: (tab: string) => void;
+  onRemoveWatchHistory?: (mediaId: number, season?: number, episode?: number) => void;
 }
 
 export const LibraryView: React.FC<LibraryViewProps> = ({
@@ -29,6 +32,7 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
   onOpenDetails,
   onPlayMedia,
   onNavigateTab,
+  onRemoveWatchHistory,
 }) => {
   const [activeList, setActiveList] = useState<'all' | 'watchlist' | 'favorites' | 'history'>('all');
   const [searchFilter, setSearchFilter] = useState('');
@@ -67,8 +71,8 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
     );
   }
 
-  // Extract real user items
-  const historyItems = user.watchHistory || [];
+  // Extract real user items with deduplicated history
+  const historyItems = deduplicateWatchHistory(user.watchHistory || []);
   const stashItems: MediaItem[] = Object.values(user.stashDetails || {});
 
   // Filter based on search input
@@ -158,6 +162,21 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
                     
+                    {/* Quick Remove Action Button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onRemoveWatchHistory) {
+                          onRemoveWatchHistory(item.mediaId, item.season, item.episode);
+                        }
+                      }}
+                      className="absolute top-2.5 right-2.5 z-20 w-7 h-7 rounded-full bg-black/80 hover:bg-red-600 text-zinc-300 hover:text-white flex items-center justify-center opacity-80 group-hover:opacity-100 transition-all cursor-pointer border border-white/10 shadow-lg"
+                      title="Remove from Continue Watching"
+                    >
+                      <X className="w-3.5 h-3.5 stroke-[2.5]" />
+                    </button>
+
                     {/* Hover Play Button */}
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/30">
                       <div className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl">
@@ -180,9 +199,11 @@ export const LibraryView: React.FC<LibraryViewProps> = ({
                       {item.title}
                     </h3>
                     <div className="flex items-center gap-2 text-xs text-zinc-400">
-                      <span className="text-emerald-400 font-semibold">{item.progressPercent || 5}% watched</span>
+                      <span className="text-emerald-400 font-semibold font-mono">
+                        {formatRemainingTime(item.durationSeconds, item.progressSeconds, item.progressPercent, item.mediaType)}
+                      </span>
                       <span>·</span>
-                      <span>{item.mediaType === 'tv' ? `S${item.season || 1} E${item.episode || 1}` : 'Feature Film'}</span>
+                      <span className="font-mono">{item.mediaType === 'tv' ? `S${item.season || 1} E${item.episode || 1}` : 'Feature Film'}</span>
                     </div>
                   </div>
                 </div>

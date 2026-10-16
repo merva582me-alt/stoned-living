@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 import { UserProfile, SiteSettings } from '../types';
-import { DEFAULT_USER, saveUserProfile, sanitizeWatchlist } from './storage';
+import { DEFAULT_USER, saveUserProfile, sanitizeWatchlist, loadUserProfile, mergeWatchHistories } from './storage';
 
 const firebaseConfig = {
   apiKey:            firebaseConfigJson.apiKey,
@@ -223,18 +223,41 @@ export async function logoutUser(): Promise<void> {
 }
 
 /**
+ * Recursively removes undefined values to ensure Firestore writes never fail
+ */
+export function sanitizeForFirestore(val: any): any {
+  if (val === undefined) return null;
+  if (val === null) return null;
+  if (Array.isArray(val)) {
+    return val.map((item) => sanitizeForFirestore(item));
+  }
+  if (typeof val === 'object') {
+    const cleaned: Record<string, any> = {};
+    for (const key of Object.keys(val)) {
+      const v = val[key];
+      if (v !== undefined) {
+        cleaned[key] = sanitizeForFirestore(v);
+      }
+    }
+    return cleaned;
+  }
+  return val;
+}
+
+/**
  * Save user profile to Firestore database
  */
+let lastSavedProfilePayload = '';
+
 export async function saveProfileToFirestore(userProfile: UserProfile): Promise<void> {
   if (!auth.currentUser) return;
   const path = `users/${auth.currentUser.uid}`;
   try {
-    const userRef = doc(db, 'users', auth.currentUser.uid);
-    await setDoc(userRef, {
+    const rawData = {
       userId: auth.currentUser.uid,
-      username: userProfile.username,
-      email: userProfile.email,
-      avatar: userProfile.avatar,
+      username: userProfile.username || 'VIP Member',
+      email: userProfile.email || auth.currentUser.email || '',
+      avatar: userProfile.avatar || DEFAULT_USER.avatar,
       watchlist: sanitizeWatchlist(userProfile.watchlist || []),
       stashDetails: userProfile.stashDetails || {},
       watchHistory: userProfile.watchHistory || [],
@@ -242,8 +265,27 @@ export async function saveProfileToFirestore(userProfile: UserProfile): Promise<
       customLists: userProfile.customLists || [],
       settings: userProfile.settings || DEFAULT_USER.settings,
       updatedAt: new Date().toISOString()
-    }, { merge: true });
-  } catch (err) {
+    };
+    const sanitized = sanitizeForFirestore(rawData);
+
+    // Deduplicate payload to prevent redundant Firestore writes
+    const comparisonPayload = JSON.stringify({ ...sanitized, updatedAt: '' });
+    if (comparisonPayload === lastSavedProfilePayload) {
+      return;
+    }
+    lastSavedProfilePayload = comparisonPayload;
+
+    const userRef = doc(db, 'users', auth.currentUser.uid);
+    await setDoc(userRef, sanitized, { merge: true });
+  } catch (err: any) {
+    if (
+      err?.code === 'resource-exhausted' || 
+      err?.message?.includes('Quota exceeded') ||
+      err?.message?.includes('resource-exhausted')
+    ) {
+      console.warn('Firestore write quota reached for today; persisting data locally in browser storage.');
+      return;
+    }
     handleFirestoreError(err, OperationType.WRITE, path);
   }
 }
@@ -263,51 +305,71 @@ export function subscribeToUserProfile(
       try {
         if (snapshot.exists()) {
           const data = snapshot.data();
+          const localProfile = loadUserProfile();
+          // Merge watch history losslessly so existing local items are never wiped
+          const mergedWatchHistory = mergeWatchHistories(
+            localProfile.watchHistory || [],
+            data.watchHistory || []
+          );
+
           const updatedProfile: UserProfile = {
             id: firebaseUser.uid,
             username: data.username || firebaseUser.displayName || 'VIP Member',
             email: data.email || firebaseUser.email || '',
             avatar: data.avatar || firebaseUser.photoURL || DEFAULT_USER.avatar,
             role: 'vip',
-            favorites: data.favorites || [],
-            watchlist: sanitizeWatchlist(data.watchlist || []),
-            stashDetails: data.stashDetails || {},
-            ratings: data.ratings || {},
-            watchHistory: data.watchHistory || [],
-            customLists: data.customLists || [],
+            favorites: data.favorites || localProfile.favorites || [],
+            watchlist: sanitizeWatchlist([...(data.watchlist || []), ...(localProfile.watchlist || [])]),
+            stashDetails: { ...(data.stashDetails || {}), ...(localProfile.stashDetails || {}) },
+            ratings: data.ratings || localProfile.ratings || {},
+            watchHistory: mergedWatchHistory,
+            customLists: data.customLists || localProfile.customLists || [],
             settings: {
               ...DEFAULT_USER.settings,
+              ...(localProfile.settings || {}),
               ...(data.settings || {})
             }
           };
-          saveUserProfile(updatedProfile);
+          // CRITICAL: syncToCloud = false to avoid recursive echo back to Firestore
+          saveUserProfile(updatedProfile, false);
           onUpdate(updatedProfile);
         } else {
-          // First time user profile creation in Firestore
+          // First time user profile creation in Firestore: retain any existing local watch history!
+          const localProfile = loadUserProfile();
           const newProfile: UserProfile = {
             id: firebaseUser.uid,
             username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'VIP Member',
             email: firebaseUser.email || 'user@stoned.living',
             avatar: firebaseUser.photoURL || DEFAULT_USER.avatar,
             role: 'vip',
-            favorites: [],
-            watchlist: [],
-            stashDetails: {},
-            ratings: {},
-            watchHistory: [],
-            customLists: [],
-            settings: DEFAULT_USER.settings
+            favorites: localProfile.favorites || [],
+            watchlist: sanitizeWatchlist(localProfile.watchlist || []),
+            stashDetails: localProfile.stashDetails || {},
+            ratings: localProfile.ratings || {},
+            watchHistory: localProfile.watchHistory || [],
+            customLists: localProfile.customLists || [],
+            settings: localProfile.settings || DEFAULT_USER.settings
           };
           
           saveProfileToFirestore(newProfile);
-          saveUserProfile(newProfile);
+          // CRITICAL: syncToCloud = false to avoid recursive echo back to Firestore
+          saveUserProfile(newProfile, false);
           onUpdate(newProfile);
         }
       } catch (e) {
         console.error('Error parsing user profile snapshot:', e);
       }
     },
-    error: (error) => {
+    error: (error: any) => {
+      if (
+        error?.code === 'resource-exhausted' || 
+        error?.message?.includes('Quota exceeded')
+      ) {
+        console.warn('Firestore quota reached; operating seamlessly in local offline mode.');
+        const local = loadUserProfile();
+        onUpdate(local);
+        return;
+      }
       handleFirestoreError(error, OperationType.GET, path);
       const fallbackProfile: UserProfile = {
         id: firebaseUser.uid,
