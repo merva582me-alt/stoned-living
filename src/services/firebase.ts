@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore';
 import firebaseConfigJson from '../../firebase-applet-config.json';
 import { UserProfile, SiteSettings } from '../types';
-import { DEFAULT_USER, saveUserProfile, sanitizeWatchlist, loadUserProfile, mergeWatchHistories } from './storage';
+import { DEFAULT_USER, saveUserProfile, sanitizeWatchlist, loadUserProfile, mergeWatchHistories, deduplicateWatchHistory } from './storage';
 
 const firebaseConfig = {
   apiKey:            firebaseConfigJson.apiKey,
@@ -248,46 +248,103 @@ export function sanitizeForFirestore(val: any): any {
  * Save user profile to Firestore database
  */
 let lastSavedProfilePayload = '';
+let quotaExhaustedUntil = 0;
+let debounceProfileSaveTimer: any = null;
 
-export async function saveProfileToFirestore(userProfile: UserProfile): Promise<void> {
-  if (!auth.currentUser) return;
-  const path = `users/${auth.currentUser.uid}`;
-  try {
-    const rawData = {
-      userId: auth.currentUser.uid,
-      username: userProfile.username || 'VIP Member',
-      email: userProfile.email || auth.currentUser.email || '',
-      avatar: userProfile.avatar || DEFAULT_USER.avatar,
-      watchlist: sanitizeWatchlist(userProfile.watchlist || []),
-      stashDetails: userProfile.stashDetails || {},
-      watchHistory: userProfile.watchHistory || [],
-      favorites: userProfile.favorites || [],
-      customLists: userProfile.customLists || [],
-      settings: userProfile.settings || DEFAULT_USER.settings,
-      updatedAt: new Date().toISOString()
-    };
-    const sanitized = sanitizeForFirestore(rawData);
-
-    // Deduplicate payload to prevent redundant Firestore writes
-    const comparisonPayload = JSON.stringify({ ...sanitized, updatedAt: '' });
-    if (comparisonPayload === lastSavedProfilePayload) {
-      return;
-    }
-    lastSavedProfilePayload = comparisonPayload;
-
-    const userRef = doc(db, 'users', auth.currentUser.uid);
-    await setDoc(userRef, sanitized, { merge: true });
-  } catch (err: any) {
-    if (
-      err?.code === 'resource-exhausted' || 
-      err?.message?.includes('Quota exceeded') ||
-      err?.message?.includes('resource-exhausted')
-    ) {
-      console.warn('Firestore write quota reached for today; persisting data locally in browser storage.');
-      return;
-    }
-    handleFirestoreError(err, OperationType.WRITE, path);
+export async function saveProfileToFirestore(userProfile: UserProfile, immediate: boolean = false): Promise<void> {
+  const currentUid = auth.currentUser?.uid || userProfile.id;
+  if (!currentUid || currentUid === 'guest_user') return;
+  if (Date.now() < quotaExhaustedUntil) {
+    // Gracefully operate in local offline mode while quota resets
+    return;
   }
+
+  const performSave = async () => {
+    const uid = auth.currentUser?.uid || userProfile.id;
+    if (!uid || uid === 'guest_user') return;
+    const path = `users/${uid}`;
+    try {
+      const rawData = {
+        userId: uid,
+        username: userProfile.username || 'VIP Member',
+        email: userProfile.email || auth.currentUser?.email || '',
+        avatar: userProfile.avatar || DEFAULT_USER.avatar,
+        watchlist: sanitizeWatchlist(userProfile.watchlist || []),
+        stashDetails: userProfile.stashDetails || {},
+        watchHistory: deduplicateWatchHistory(userProfile.watchHistory || []),
+        favorites: userProfile.favorites || [],
+        customLists: userProfile.customLists || [],
+        settings: userProfile.settings || DEFAULT_USER.settings,
+        updatedAt: new Date().toISOString()
+      };
+      const sanitized = sanitizeForFirestore(rawData);
+
+      // Deduplicate payload to prevent redundant Firestore writes
+      const comparisonPayload = JSON.stringify({ ...sanitized, updatedAt: '' });
+      if (comparisonPayload === lastSavedProfilePayload) {
+        return;
+      }
+      lastSavedProfilePayload = comparisonPayload;
+
+      const userRef = doc(db, 'users', uid);
+      await setDoc(userRef, sanitized, { merge: true });
+    } catch (err: any) {
+      if (
+        err?.code === 'resource-exhausted' || 
+        err?.message?.includes('Quota exceeded') ||
+        err?.message?.includes('resource-exhausted')
+      ) {
+        quotaExhaustedUntil = Date.now() + 30 * 60 * 1000; // 30 min backoff
+        console.warn('Firestore write quota reached for today; operating seamlessly in local storage.');
+        return;
+      }
+      handleFirestoreError(err, OperationType.WRITE, path);
+    }
+  };
+
+  if (debounceProfileSaveTimer) {
+    clearTimeout(debounceProfileSaveTimer);
+    debounceProfileSaveTimer = null;
+  }
+
+  if (immediate) {
+    await performSave();
+  } else {
+    debounceProfileSaveTimer = setTimeout(performSave, 1200);
+  }
+}
+
+/**
+ * Direct fetch of cloud profile from Firestore on login
+ */
+export async function fetchUserProfileFromFirestore(uid: string): Promise<UserProfile | null> {
+  try {
+    const userRef = doc(db, 'users', uid);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      return {
+        id: uid,
+        username: data.username || 'VIP Member',
+        email: data.email || '',
+        avatar: data.avatar || DEFAULT_USER.avatar,
+        role: 'vip',
+        favorites: Array.isArray(data.favorites) ? data.favorites : [],
+        watchlist: sanitizeWatchlist(data.watchlist || []),
+        stashDetails: data.stashDetails || {},
+        ratings: data.ratings || {},
+        watchHistory: deduplicateWatchHistory(data.watchHistory || []),
+        customLists: data.customLists || [],
+        settings: {
+          ...DEFAULT_USER.settings,
+          ...(data.settings || {})
+        }
+      };
+    }
+  } catch (err: any) {
+    console.warn('Error fetching user profile from Firestore:', err);
+  }
+  return null;
 }
 
 /**
@@ -306,11 +363,26 @@ export function subscribeToUserProfile(
         if (snapshot.exists()) {
           const data = snapshot.data();
           const localProfile = loadUserProfile();
-          // Merge watch history losslessly so existing local items are never wiped
-          const mergedWatchHistory = mergeWatchHistories(
-            localProfile.watchHistory || [],
-            data.watchHistory || []
-          );
+          
+          // Only merge local history if localProfile actually belongs to this same authenticated user ID
+          const isSameUser = localProfile.id === firebaseUser.uid;
+          
+          // Always give precedence to cloud data.
+          // If localProfile has items and is the same user, merge any that aren't in cloud yet.
+          const cloudWatchHistory = deduplicateWatchHistory(data.watchHistory || []);
+          const mergedWatchHistory = (isSameUser && localProfile.watchHistory && localProfile.watchHistory.length > 0)
+            ? mergeWatchHistories(localProfile.watchHistory, cloudWatchHistory)
+            : cloudWatchHistory;
+
+          const cloudWatchlist = sanitizeWatchlist(data.watchlist || []);
+          const mergedWatchlist = (isSameUser && localProfile.watchlist && localProfile.watchlist.length > 0)
+            ? sanitizeWatchlist([...cloudWatchlist, ...localProfile.watchlist])
+            : cloudWatchlist;
+
+          const cloudFavorites = Array.isArray(data.favorites) ? data.favorites : [];
+          const mergedFavorites = (isSameUser && localProfile.favorites && localProfile.favorites.length > 0)
+            ? Array.from(new Set([...cloudFavorites, ...localProfile.favorites]))
+            : cloudFavorites;
 
           const updatedProfile: UserProfile = {
             id: firebaseUser.uid,
@@ -318,15 +390,21 @@ export function subscribeToUserProfile(
             email: data.email || firebaseUser.email || '',
             avatar: data.avatar || firebaseUser.photoURL || DEFAULT_USER.avatar,
             role: 'vip',
-            favorites: data.favorites || localProfile.favorites || [],
-            watchlist: sanitizeWatchlist([...(data.watchlist || []), ...(localProfile.watchlist || [])]),
-            stashDetails: { ...(data.stashDetails || {}), ...(localProfile.stashDetails || {}) },
-            ratings: data.ratings || localProfile.ratings || {},
+            favorites: mergedFavorites,
+            watchlist: mergedWatchlist,
+            stashDetails: {
+              ...(isSameUser ? (localProfile.stashDetails || {}) : {}),
+              ...(data.stashDetails || {})
+            },
+            ratings: {
+              ...(isSameUser ? (localProfile.ratings || {}) : {}),
+              ...(data.ratings || {})
+            },
             watchHistory: mergedWatchHistory,
-            customLists: data.customLists || localProfile.customLists || [],
+            customLists: data.customLists || (isSameUser ? localProfile.customLists : []) || [],
             settings: {
               ...DEFAULT_USER.settings,
-              ...(localProfile.settings || {}),
+              ...(isSameUser ? (localProfile.settings || {}) : {}),
               ...(data.settings || {})
             }
           };
@@ -334,24 +412,25 @@ export function subscribeToUserProfile(
           saveUserProfile(updatedProfile, false);
           onUpdate(updatedProfile);
         } else {
-          // First time user profile creation in Firestore: retain any existing local watch history!
+          // First time user profile creation in Firestore
           const localProfile = loadUserProfile();
+          const isGuest = !localProfile.id || localProfile.id === 'guest_user';
           const newProfile: UserProfile = {
             id: firebaseUser.uid,
             username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'VIP Member',
             email: firebaseUser.email || 'user@stoned.living',
             avatar: firebaseUser.photoURL || DEFAULT_USER.avatar,
             role: 'vip',
-            favorites: localProfile.favorites || [],
-            watchlist: sanitizeWatchlist(localProfile.watchlist || []),
-            stashDetails: localProfile.stashDetails || {},
-            ratings: localProfile.ratings || {},
-            watchHistory: localProfile.watchHistory || [],
-            customLists: localProfile.customLists || [],
+            favorites: isGuest ? (localProfile.favorites || []) : [],
+            watchlist: sanitizeWatchlist(isGuest ? (localProfile.watchlist || []) : []),
+            stashDetails: isGuest ? (localProfile.stashDetails || {}) : {},
+            ratings: isGuest ? (localProfile.ratings || {}) : {},
+            watchHistory: deduplicateWatchHistory(isGuest ? (localProfile.watchHistory || []) : []),
+            customLists: isGuest ? (localProfile.customLists || []) : [],
             settings: localProfile.settings || DEFAULT_USER.settings
           };
           
-          saveProfileToFirestore(newProfile);
+          saveProfileToFirestore(newProfile, true);
           // CRITICAL: syncToCloud = false to avoid recursive echo back to Firestore
           saveUserProfile(newProfile, false);
           onUpdate(newProfile);

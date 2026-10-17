@@ -177,6 +177,27 @@ export async function fetchTvSeason(tvId: number, seasonNumber: number) {
   }
 }
 
+export async function fetchEpisodeDetails(
+  tvId: number,
+  seasonNumber: number,
+  episodeNumber: number
+): Promise<{ runtime?: number; name?: string; still_path?: string | null } | null> {
+  try {
+    const url = tmdbUrl(`/tv/${tvId}/season/${seasonNumber}/episode/${episodeNumber}`);
+    const data = await cachedFetch<any>(url);
+    if (data) {
+      return {
+        runtime: typeof data.runtime === 'number' && data.runtime > 0 ? data.runtime : undefined,
+        name: data.name || undefined,
+        still_path: data.still_path || null
+      };
+    }
+  } catch (_) {
+    // fallback gracefully
+  }
+  return null;
+}
+
 export async function searchMedia(query: string) {
   try {
     const url = tmdbUrl('/search/multi', { query });

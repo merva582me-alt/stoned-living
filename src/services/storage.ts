@@ -9,7 +9,7 @@ export const DEFAULT_USER: UserProfile = {
   id: 'guest_user',
   username: 'VIP Guest',
   email: 'viewer@stoned.living',
-  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120&auto=format&fit=crop&q=80',
+  avatar: 'https://images.unsplash.com/photo-1568644396922-5c3bfae12521?w=300&h=300&fit=crop&q=80',
   role: 'vip',
   favorites: [],
   watchlist: [],
@@ -145,21 +145,28 @@ export function formatRemainingTime(
   progressPercent?: number,
   mediaType: 'movie' | 'tv' = 'tv'
 ): string {
-  // Default episode runtime is ~45 minutes (2700s), feature film ~110 minutes (6600s)
-  const defaultDuration = mediaType === 'tv' ? 2700 : 6600;
-  const total = durationSeconds && durationSeconds > 0 ? durationSeconds : defaultDuration;
+  // TV episodes are typically ~42-45 minutes (2520-2700s); movies ~110 minutes (6600s)
+  const defaultDuration = mediaType === 'tv' ? 2520 : 6600;
+  let total = durationSeconds && durationSeconds > 0 ? durationSeconds : defaultDuration;
+
+  // Normalize legacy TV items saved with erroneous 7200s (2-hour) duration
+  if (mediaType === 'tv' && total >= 7000) {
+    total = 2520; // 42 minutes standard episode
+  }
 
   let elapsed = 0;
   if (typeof progressSeconds === 'number' && progressSeconds >= 0) {
     elapsed = progressSeconds;
+    // If progress was saved with legacy 120s placeholder on a 7200s duration, scale appropriately
+    if (durationSeconds && durationSeconds >= 7000 && mediaType === 'tv' && elapsed === 120) {
+      elapsed = 15;
+    }
+    if (elapsed > total) elapsed = total;
   } else if (typeof progressPercent === 'number' && progressPercent > 0) {
     elapsed = Math.round((progressPercent / 100) * total);
-  } else {
-    // Default initial playback position (~2.5 minutes in)
-    elapsed = 150;
   }
 
-  // Cap elapsed so remaining is never negative
+  // Calculate remaining time
   const remainingSec = Math.max(0, total - elapsed);
   const remainingMinutes = Math.max(1, Math.round(remainingSec / 60));
 
@@ -175,22 +182,49 @@ export function formatRemainingTime(
 /**
  * Deduplicates watch history so each TV show or movie only ever appears ONCE.
  * For TV shows, keeps only the latest watched episode and updates in-place.
+ * Also normalizes legacy records saved with the 2-hour placeholder.
  */
 export function deduplicateWatchHistory(history: WatchHistoryItem[] = []): WatchHistoryItem[] {
   if (!Array.isArray(history)) return [];
   const map = new Map<string, WatchHistoryItem>();
 
-  for (const item of history) {
-    if (!item || !item.mediaId) continue;
-    const mediaId = Number(item.mediaId);
+  for (const rawItem of history) {
+    if (!rawItem || !rawItem.mediaId) continue;
+    const mediaId = Number(rawItem.mediaId);
     if (isNaN(mediaId) || mediaId <= 0) continue;
+
+    // Normalize legacy 7200s duration on TV shows to accurate 42-45 minute runtimes
+    let durationSeconds = rawItem.durationSeconds;
+    let progressSeconds = rawItem.progressSeconds;
+    if (rawItem.mediaType === 'tv' && (!durationSeconds || durationSeconds >= 7000)) {
+      durationSeconds = 2520; // 42 minutes
+      if (progressSeconds === 120 || progressSeconds > durationSeconds) {
+        progressSeconds = 15;
+      }
+    } else if (!durationSeconds || durationSeconds <= 0) {
+      durationSeconds = rawItem.mediaType === 'tv' ? 2520 : 6600;
+    }
+
+    const progressPercent = Math.min(
+      99,
+      Math.max(1, Math.round(((progressSeconds || 0) / durationSeconds) * 100))
+    );
+
+    const item: WatchHistoryItem = {
+      ...rawItem,
+      mediaId,
+      id: `h_${mediaId}`,
+      durationSeconds,
+      progressSeconds: progressSeconds || 0,
+      progressPercent
+    };
 
     // Use unified key per media so each TV show or movie has exactly ONE entry in Continue Watching
     const key = `${item.mediaType || 'movie'}_${mediaId}`;
     const existing = map.get(key);
 
     if (!existing) {
-      map.set(key, { ...item, mediaId, id: `h_${mediaId}` });
+      map.set(key, item);
     } else {
       const itemTime = new Date(item.updatedAt || 0).getTime();
       const existingTime = new Date(existing.updatedAt || 0).getTime();
@@ -199,7 +233,7 @@ export function deduplicateWatchHistory(history: WatchHistoryItem[] = []): Watch
 
       // Prefer newer update time; tie-break on higher season/episode
       if (itemTime > existingTime || (itemTime === existingTime && itemEpisodeWeight >= existingEpisodeWeight)) {
-        map.set(key, { ...item, mediaId, id: `h_${mediaId}` });
+        map.set(key, item);
       }
     }
   }

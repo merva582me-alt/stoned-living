@@ -12,9 +12,9 @@ import {
   ShieldCheck,
   Bookmark
 } from 'lucide-react';
-import { loginWithEmail, registerWithEmail } from '../services/firebase';
+import { loginWithEmail, registerWithEmail, fetchUserProfileFromFirestore, saveProfileToFirestore } from '../services/firebase';
 import { UserProfile } from '../types';
-import { saveUserProfile, DEFAULT_USER } from '../services/storage';
+import { saveUserProfile, DEFAULT_USER, loadUserProfile, deduplicateWatchHistory, sanitizeWatchlist } from '../services/storage';
 import { toast } from 'sonner';
 
 interface AuthModalProps {
@@ -67,25 +67,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       if (mode === 'signin') {
         const user = await loginWithEmail(email, password);
-        const profile: UserProfile = {
-          ...DEFAULT_USER,
-          id: user.uid,
-          username: user.displayName || email.split('@')[0],
-          email: user.email || email,
-        };
-        saveUserProfile(profile);
+        // Direct fetch from Firestore so we load the user's existing watch history, watchlist, avatar, etc.
+        const cloudProfile = await fetchUserProfileFromFirestore(user.uid);
+        let profile: UserProfile;
+        if (cloudProfile) {
+          profile = cloudProfile;
+        } else {
+          profile = {
+            ...DEFAULT_USER,
+            id: user.uid,
+            username: user.displayName || email.split('@')[0],
+            email: user.email || email,
+          };
+          await saveProfileToFirestore(profile, true);
+        }
+        // Save locally without triggering an overwrite back to Firestore
+        saveUserProfile(profile, false);
         toast.success(`Signed in as ${profile.username}`);
         onSuccess(profile);
         onClose();
       } else {
         const user = await registerWithEmail(email, password, name.trim() || undefined);
-        const profile: UserProfile = {
-          ...DEFAULT_USER,
-          id: user.uid,
-          username: name.trim() || user.displayName || email.split('@')[0],
-          email: user.email || email,
-        };
-        saveUserProfile(profile);
+        const existing = await fetchUserProfileFromFirestore(user.uid);
+        let profile: UserProfile;
+        if (existing) {
+          profile = existing;
+        } else {
+          const local = loadUserProfile();
+          const isGuest = !local.id || local.id === 'guest_user';
+          profile = {
+            ...DEFAULT_USER,
+            id: user.uid,
+            username: name.trim() || user.displayName || email.split('@')[0],
+            email: user.email || email,
+            watchlist: isGuest ? sanitizeWatchlist(local.watchlist || []) : [],
+            stashDetails: isGuest ? (local.stashDetails || {}) : {},
+            watchHistory: isGuest ? deduplicateWatchHistory(local.watchHistory || []) : [],
+            favorites: isGuest ? (local.favorites || []) : [],
+            settings: local.settings || DEFAULT_USER.settings,
+          };
+          await saveProfileToFirestore(profile, true);
+        }
+        saveUserProfile(profile, false);
         toast.success(`Account created! Welcome, ${profile.username}`);
         onSuccess(profile);
         onClose();

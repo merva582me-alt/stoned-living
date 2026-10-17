@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Cannabis, Mail, Lock, User as UserIcon, Eye, EyeOff, Sparkles, ArrowRight, ShieldCheck } from 'lucide-react';
-import { loginWithEmail, registerWithEmail } from '../services/firebase';
+import { loginWithEmail, registerWithEmail, fetchUserProfileFromFirestore, saveProfileToFirestore } from '../services/firebase';
 import { UserProfile } from '../types';
-import { saveUserProfile, DEFAULT_USER } from '../services/storage';
+import { saveUserProfile, DEFAULT_USER, loadUserProfile, deduplicateWatchHistory, sanitizeWatchlist } from '../services/storage';
 import { toast } from 'sonner';
 
 interface AuthViewProps {
@@ -61,24 +61,45 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSuccess, onEnterGuest }) =
     try {
       if (mode === 'signin') {
         const user = await loginWithEmail(email, password);
-        const profile: UserProfile = {
-          ...DEFAULT_USER,
-          id: user.uid,
-          username: user.displayName || email.split('@')[0],
-          email: user.email || email,
-        };
-        saveUserProfile(profile);
+        const cloudProfile = await fetchUserProfileFromFirestore(user.uid);
+        let profile: UserProfile;
+        if (cloudProfile) {
+          profile = cloudProfile;
+        } else {
+          profile = {
+            ...DEFAULT_USER,
+            id: user.uid,
+            username: user.displayName || email.split('@')[0],
+            email: user.email || email,
+          };
+          await saveProfileToFirestore(profile, true);
+        }
+        saveUserProfile(profile, false);
         toast.success(`Signed in as ${profile.username}`);
         onSuccess(profile);
       } else {
         const user = await registerWithEmail(email, password, name.trim() || undefined);
-        const profile: UserProfile = {
-          ...DEFAULT_USER,
-          id: user.uid,
-          username: name.trim() || user.displayName || email.split('@')[0],
-          email: user.email || email,
-        };
-        saveUserProfile(profile);
+        const existing = await fetchUserProfileFromFirestore(user.uid);
+        let profile: UserProfile;
+        if (existing) {
+          profile = existing;
+        } else {
+          const local = loadUserProfile();
+          const isGuest = !local.id || local.id === 'guest_user';
+          profile = {
+            ...DEFAULT_USER,
+            id: user.uid,
+            username: name.trim() || user.displayName || email.split('@')[0],
+            email: user.email || email,
+            watchlist: isGuest ? sanitizeWatchlist(local.watchlist || []) : [],
+            stashDetails: isGuest ? (local.stashDetails || {}) : {},
+            watchHistory: isGuest ? deduplicateWatchHistory(local.watchHistory || []) : [],
+            favorites: isGuest ? (local.favorites || []) : [],
+            settings: local.settings || DEFAULT_USER.settings,
+          };
+          await saveProfileToFirestore(profile, true);
+        }
+        saveUserProfile(profile, false);
         toast.success(`Account created! Welcome, ${profile.username}`);
         onSuccess(profile);
       }
@@ -408,7 +429,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onSuccess, onEnterGuest }) =
       <footer className="relative z-10 w-full px-6 py-6 border-t border-zinc-900/80 text-center text-xs text-zinc-500 flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-500/70" />
-          <span>Stoned.living Cinema Experience · VidCore 4K Engine · Streamed.pk Sports</span>
+          <span>Stoned.living Cinema Experience · 4K Cinema Engine · Streamed.pk Sports</span>
         </div>
         <div className="flex items-center gap-4 text-zinc-500 text-[11px]">
           <span className="hover:text-zinc-300 cursor-pointer">DMCA Notice</span>

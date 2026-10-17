@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { MediaItem, UserProfile } from '../types';
 import { updateWatchHistory } from '../services/storage';
+import { fetchEpisodeDetails } from '../services/api';
 import { toast } from 'sonner';
 
 interface WatchPlayerProps {
@@ -22,7 +23,7 @@ interface WatchPlayerProps {
   onUpdateUser?: (updated: UserProfile) => void;
 }
 
-export interface VidCoreServer {
+export interface StreamServerNode {
   id: string;
   serverParam: string;
   name: string;
@@ -30,7 +31,9 @@ export interface VidCoreServer {
   description: string;
 }
 
-export const VIDCORE_SERVERS: VidCoreServer[] = [
+export type VidCoreServer = StreamServerNode;
+
+export const STREAM_SERVERS: StreamServerNode[] = [
   { id: 'atlas', serverParam: 'atlas', name: 'Atlas', badge: 'Fastest', description: 'Primary High-Speed Node' },
   { id: 'centaurus', serverParam: 'centaurus', name: 'Centaurus', badge: 'HD', description: 'High Bitrate 1080p' },
   { id: 'ursa', serverParam: 'meow', name: 'Ursa', badge: 'Ultra', description: 'Ultra Resilient Mirror' },
@@ -38,7 +41,9 @@ export const VIDCORE_SERVERS: VidCoreServer[] = [
   { id: 'orion', serverParam: 'orion', name: 'Orion', badge: 'Backup', description: 'Failover Relay' },
 ];
 
-function getVidCoreStreamUrl(
+export const VIDCORE_SERVERS = STREAM_SERVERS;
+
+function getStreamUrl(
   mediaId: number, 
   isTv: boolean, 
   season: number, 
@@ -51,13 +56,13 @@ function getVidCoreStreamUrl(
   return `${base}?server=${serverParam}&branding=STONED.LIVING&color=10b981&autoplay=true`;
 }
 
-const PREFERRED_SERVER_KEY = 'stoned_living_preferred_vidcore_server';
+const PREFERRED_SERVER_KEY = 'stoned_living_preferred_stream_node';
 
 function getInitialServerIndex(): number {
   try {
     const saved = localStorage.getItem(PREFERRED_SERVER_KEY);
     if (saved) {
-      const idx = VIDCORE_SERVERS.findIndex(s => s.id === saved || s.serverParam === saved);
+      const idx = STREAM_SERVERS.findIndex(s => s.id === saved || s.serverParam === saved);
       if (idx !== -1) return idx;
     }
   } catch {}
@@ -83,11 +88,20 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   const [autoRotate, setAutoRotate] = useState(true);
 
   const isTv = media.media_type === 'tv' || Boolean(media.first_air_date);
-  const currentServer = VIDCORE_SERVERS[serverIndex];
-  const streamUrl = getVidCoreStreamUrl(media.id, isTv, season, episode, currentServer.serverParam);
+  const currentServer = STREAM_SERVERS[serverIndex];
+  const streamUrl = getStreamUrl(media.id, isTv, season, episode, currentServer.serverParam);
 
   const title = media.title || media.name || 'Untitled';
   const genres = media.genres?.map((g) => g.name).join(' / ') || (isTv ? 'SERIES' : 'CINEMA');
+
+  // Baseline duration: 42 minutes (2520s) for TV episodes, 110 minutes (6600s) for movies
+  const baselineDuration = isTv
+    ? (media.episode_run_time?.[0] ? media.episode_run_time[0] * 60 : 2520)
+    : (media.runtime ? media.runtime * 60 : 6600);
+
+  const [detectedDuration, setDetectedDuration] = useState<number>(baselineDuration);
+  const [episodeTitle, setEpisodeTitle] = useState<string>('');
+  const [playbackSeconds, setPlaybackSeconds] = useState<number>(15);
 
   const backdropUrl = media.backdrop_path
     ? (media.backdrop_path.startsWith('http') ? media.backdrop_path : `https://image.tmdb.org/t/p/original${media.backdrop_path}`)
@@ -100,15 +114,59 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     : backdropUrl;
 
   // Next server in the rotation pool
-  const nextServerIndex = (serverIndex + 1) % VIDCORE_SERVERS.length;
-  const nextServer = VIDCORE_SERVERS[nextServerIndex];
+  const nextServerIndex = (serverIndex + 1) % STREAM_SERVERS.length;
+  const nextServer = STREAM_SERVERS[nextServerIndex];
 
   // Helper to persist user server preference
   const persistServerChoice = (idx: number) => {
     try {
-      localStorage.setItem(PREFERRED_SERVER_KEY, VIDCORE_SERVERS[idx].id);
+      localStorage.setItem(PREFERRED_SERVER_KEY, STREAM_SERVERS[idx].id);
     } catch {}
   };
+
+  // Fetch actual TMDb episode runtime and name for TV shows
+  useEffect(() => {
+    if (!isTv) return;
+    let isCancelled = false;
+
+    fetchEpisodeDetails(media.id, season, episode).then((details) => {
+      if (isCancelled || !details) return;
+      if (details.runtime && details.runtime > 0) {
+        setDetectedDuration(details.runtime * 60);
+      }
+      if (details.name) {
+        setEpisodeTitle(details.name);
+      }
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [media.id, season, episode, isTv]);
+
+  // Listen for iframe postMessage from embed (timeupdate, durationchange)
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const raw = event.data;
+        const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (!data || typeof data !== 'object') return;
+
+        const duration = Number(data.duration || data.totalDuration || data.length);
+        const currentTime = Number(data.currentTime || data.time || data.progress || data.seconds);
+
+        if (!isNaN(duration) && duration > 60) {
+          setDetectedDuration(Math.round(duration));
+        }
+        if (!isNaN(currentTime) && currentTime >= 0) {
+          setPlaybackSeconds(Math.round(currentTime));
+        }
+      } catch (_) {}
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   // Reset loading state and countdown when server, media, or episode changes
   useEffect(() => {
@@ -141,18 +199,18 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
       setFailoverCountdown((prev) => {
         if (prev <= 1) {
           // Record current server as stalled in this session
-          const currentId = VIDCORE_SERVERS[serverIndex].id;
+          const currentId = STREAM_SERVERS[serverIndex].id;
           setStalledServerIds((prevList) => 
             prevList.includes(currentId) ? prevList : [...prevList, currentId]
           );
 
           // Auto switch to next server in pool
-          const nextIdx = (serverIndex + 1) % VIDCORE_SERVERS.length;
-          const target = VIDCORE_SERVERS[nextIdx];
+          const nextIdx = (serverIndex + 1) % STREAM_SERVERS.length;
+          const target = STREAM_SERVERS[nextIdx];
           setServerIndex(nextIdx);
           persistServerChoice(nextIdx);
 
-          toast.info(`Auto-switching to VidCore ${target.name}...`, {
+          toast.info(`Auto-switching to Node ${target.name}...`, {
             duration: 2500,
           });
           return 7;
@@ -172,18 +230,25 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     setFailoverCountdown(7);
     // Explicit manual selection pauses auto-rotate so user's choice is respected
     setAutoRotate(false);
-    toast.success(`Connected to VidCore ${VIDCORE_SERVERS[index].name}`);
+    toast.success(`Connected to Node ${STREAM_SERVERS[index].name}`);
   };
 
   const handleNextServer = () => {
-    const nextIdx = (serverIndex + 1) % VIDCORE_SERVERS.length;
+    const nextIdx = (serverIndex + 1) % STREAM_SERVERS.length;
     handleSelectServer(nextIdx);
   };
 
-  // Record playback session in user history (Only for logged-in authenticated users)
+  // Record playback session and track active progress in user history
   useEffect(() => {
     if (!isLoggedIn) return;
 
+    // Check if resuming from previous history
+    const existing = user?.watchHistory?.find((h) => Number(h.mediaId) === Number(media.id));
+    const isSameEp = existing && (!isTv || (existing.season === season && existing.episode === episode));
+    const initialElapsed = isSameEp && existing.progressSeconds > 0 ? existing.progressSeconds : 15;
+    setPlaybackSeconds(initialElapsed);
+
+    const initialPct = Math.min(99, Math.max(1, Math.round((initialElapsed / detectedDuration) * 100)));
     const updated = updateWatchHistory({
       mediaId: media.id,
       mediaType: isTv ? 'tv' : 'movie',
@@ -192,12 +257,41 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
       backdropPath: backdropUrl || null,
       season: isTv ? (season || 1) : 1,
       episode: isTv ? (episode || 1) : 1,
-      progressSeconds: 120,
-      durationSeconds: 7200,
-      progressPercent: 5,
+      episodeTitle: episodeTitle || undefined,
+      progressSeconds: initialElapsed,
+      durationSeconds: detectedDuration,
+      progressPercent: initialPct,
     });
     if (onUpdateUser) onUpdateUser(updated);
-  }, [media.id, season, episode, isLoggedIn, isTv, title, media.poster_path, backdropUrl]);
+
+    // Increment watching progress every 15 seconds while actively streaming
+    const progressTimer = setInterval(() => {
+      if (isLoading) return;
+
+      setPlaybackSeconds((prev) => {
+        const next = Math.min(detectedDuration, prev + 15);
+        const nextPct = Math.min(99, Math.max(1, Math.round((next / detectedDuration) * 100)));
+
+        const syncUpdate = updateWatchHistory({
+          mediaId: media.id,
+          mediaType: isTv ? 'tv' : 'movie',
+          title,
+          posterPath: media.poster_path ? `https://image.tmdb.org/t/p/w500${media.poster_path}` : null,
+          backdropPath: backdropUrl || null,
+          season: isTv ? (season || 1) : 1,
+          episode: isTv ? (episode || 1) : 1,
+          episodeTitle: episodeTitle || undefined,
+          progressSeconds: next,
+          durationSeconds: detectedDuration,
+          progressPercent: nextPct,
+        });
+        if (onUpdateUser) onUpdateUser(syncUpdate);
+        return next;
+      });
+    }, 15000);
+
+    return () => clearInterval(progressTimer);
+  }, [media.id, season, episode, isLoggedIn, isTv, title, media.poster_path, backdropUrl, detectedDuration, episodeTitle]);
 
   return (
     <div className="fixed inset-0 z-50 bg-[#050806] text-white flex flex-col overflow-hidden select-none">
@@ -264,7 +358,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
           {/* Active Server Badge (Header preview) */}
           <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/40 border border-emerald-500/20 text-[#00df82] text-xs font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-[#00df82] animate-pulse" />
-            <span>VidCore {currentServer.name}</span>
+            <span>Node: {currentServer.name}</span>
           </div>
         </div>
       </header>
@@ -281,131 +375,14 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 
         {/* Video Iframe Embed */}
         <iframe
-          key={`vidcore-${currentServer.id}-${media.id}-${isTv ? `${season}-${episode}` : 'movie'}`}
+          key={`stream-${currentServer.id}-${media.id}-${isTv ? `${season}-${episode}` : 'movie'}`}
           src={streamUrl}
           title={title}
           allowFullScreen
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerPolicy="no-referrer"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
           onLoad={() => setIsLoading(false)}
           className="relative z-10 w-full h-full max-w-[1920px] border-0"
         />
-
-        {/* ── Loading & Connecting Screen Overlay ── */}
-        <div
-          className={`absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/92 backdrop-blur-xl transition-all duration-500 ease-out ${
-            isLoading ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-          }`}
-        >
-          {/* Ambient Blurred Backdrop */}
-          {backdropUrl && (
-            <div 
-              className="absolute inset-0 bg-cover bg-center filter blur-2xl opacity-25 scale-110 pointer-events-none transition-transform duration-1000"
-              style={{ backgroundImage: `url('${backdropUrl}')` }}
-            />
-          )}
-
-          {/* Vignette Gradients */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-black/60 pointer-events-none" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,223,130,0.08)_0%,transparent_75%)] pointer-events-none" />
-
-          {/* Centered Content Card */}
-          <div className="relative z-30 flex flex-col items-center text-center px-4 max-w-lg mx-auto select-none">
-            {/* Poster Thumbnail */}
-            {posterUrl && (
-              <div className="w-20 h-28 sm:w-28 sm:h-42 rounded-2xl overflow-hidden shadow-[0_16px_40px_rgba(0,0,0,0.85),0_0_24px_rgba(0,223,130,0.18)] border border-emerald-500/25 mb-4 relative group">
-                <img
-                  src={posterUrl}
-                  alt={title}
-                  className="w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
-              </div>
-            )}
-
-            {/* Title Name */}
-            <h2 className="text-lg sm:text-2xl md:text-3xl font-black text-white tracking-tight drop-shadow-md px-2 max-w-md line-clamp-2">
-              {title}
-            </h2>
-
-            {/* Episode details if TV */}
-            {isTv && (
-              <div className="inline-flex items-center gap-2 mt-1.5 px-3 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-[#00df82] font-mono text-xs font-semibold tracking-wider uppercase">
-                <span>Season {season}</span>
-                <span className="w-1 h-1 rounded-full bg-[#00df82]/70" />
-                <span>Episode {episode}</span>
-              </div>
-            )}
-
-            {/* Connecting to server status line */}
-            <div className="flex items-center justify-center gap-2 mt-4 text-zinc-300 font-mono text-xs sm:text-sm font-semibold tracking-wide">
-              <span className="w-2 h-2 rounded-full bg-[#00df82] animate-ping" />
-              <span>Connecting to VidCore</span>
-              <span className="text-[#00df82] font-bold">{currentServer.name}</span>
-            </div>
-
-            {/* Auto-rotation failover notice */}
-            <p className="text-[11px] text-zinc-400 mt-1 font-mono">
-              Auto-rotating in <span className="text-[#00df82] font-bold tabular-nums">{failoverCountdown}s</span> if stalled
-            </p>
-
-            {/* Glowing Indeterminate Progress Bar */}
-            <div className="w-48 sm:w-64 h-1.5 bg-zinc-800/90 rounded-full mt-3 overflow-hidden relative border border-zinc-700/40 shadow-inner">
-              <div className="absolute inset-y-0 w-2/5 bg-gradient-to-r from-emerald-500 via-[#00df82] to-emerald-400 rounded-full animate-stream-shimmer shadow-[0_0_12px_rgba(0,223,130,0.9)]" />
-            </div>
-
-            {/* Direct 1-Click Server Switch Pills right inside the Connecting Overlay */}
-            <div className="mt-4 flex flex-col items-center gap-1.5 w-full">
-              <span className="text-[10px] uppercase font-mono tracking-wider text-zinc-400">
-                Switch Server Instantly:
-              </span>
-              <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-sm">
-                {VIDCORE_SERVERS.map((srv, idx) => {
-                  const isCurrent = idx === serverIndex;
-                  const wasStalled = stalledServerIds.includes(srv.id);
-                  return (
-                    <button
-                      key={`connecting-${srv.id}`}
-                      type="button"
-                      onClick={() => handleSelectServer(idx)}
-                      className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        isCurrent
-                          ? 'bg-emerald-500 text-black shadow-[0_0_14px_rgba(0,223,130,0.5)] scale-105'
-                          : wasStalled
-                          ? 'bg-zinc-900/90 text-amber-300 border border-amber-500/30 hover:border-amber-400'
-                          : 'bg-zinc-900/90 text-zinc-300 hover:text-white border border-zinc-800 hover:border-emerald-500/50'
-                      }`}
-                    >
-                      <span className={`w-1.5 h-1.5 rounded-full ${isCurrent ? 'bg-black' : wasStalled ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-                      <span>{srv.name}</span>
-                      {wasStalled && <span className="text-[9px] text-amber-400 font-mono">(Slow)</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Action buttons inside connecting modal */}
-            <div className="flex items-center gap-3 mt-4">
-              <button
-                onClick={handleNextServer}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-[#00df82] border border-emerald-500/40 text-xs font-bold transition cursor-pointer"
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-                <span>Next Server ({nextServer.name})</span>
-              </button>
-
-              {showSkip && (
-                <button
-                  onClick={() => setIsLoading(false)}
-                  className="px-3.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white text-xs font-semibold transition cursor-pointer"
-                >
-                  Reveal Player
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
       </main>
 
       {/* ── Permanently Visible Bottom Server Dock (Works on Mobile Portrait & Landscape) ── */}
@@ -416,7 +393,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
             <div className="flex items-center gap-1.5">
               <Server className="w-3.5 h-3.5 text-emerald-400" />
               <span className="text-[11px] font-black uppercase tracking-wider text-zinc-300 hidden xs:inline">
-                Servers
+                Nodes
               </span>
             </div>
             {isLoading ? (
@@ -450,7 +427,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 
           {/* Horizontally Scrollable Server Selector Pills (Always accessible on mobile) */}
           <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar scroll-smooth py-0.5 px-0.5 flex-1 justify-center sm:justify-start max-w-full">
-            {VIDCORE_SERVERS.map((srv, idx) => {
+            {STREAM_SERVERS.map((srv, idx) => {
               const isActive = idx === serverIndex;
               const wasStalled = stalledServerIds.includes(srv.id);
               return (
@@ -490,6 +467,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
           </button>
         </div>
       </footer>
+
     </div>
   );
 };

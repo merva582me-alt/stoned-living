@@ -1,101 +1,123 @@
-# Single-Card Show Progress & Remaining Time in Continue Watching
+# Comprehensive Fix Plan: Watch Progress Reset, Subtitles & Dubs Auto-Load, Settings Persistence, and Full-Site Translation
 
-Deduplicate TV shows in Continue Watching so each series occupies exactly one card that tracks the most recently watched episode, clean up existing legacy duplicate cards, and replace the static "5% watched" indicator with dynamic remaining episode/movie time formatted as "45m remaining" or "1h 20m remaining".
+This plan delivers complete fixes for all four reported issues: resolving the non-functional "Clear Watch Progress" button with a custom confirmation modal and bidirectional Firestore/local sync; enabling subtitles and alternate audio tracks (dubs) with automatic loading based on user preferences; ensuring all playback and subtitle settings persist reliably in Firestore; and implementing full-site UI localization across all seven supported languages.
+
+---
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> The following product specifications were confirmed via interactive user clarification and govern the implementation:
-
-- **Single Card Per Show**: When streaming TV series (e.g., Reacher), each show will maintain a single card in Continue Watching that updates in-place to the latest watched episode (e.g. updating S1 E1 to S1 E2 instead of creating duplicate cards).
-- **Time Remaining Format**: Replace "5% watched" with time remaining formatted as **`45m remaining`** (or **`1h 20m remaining`** for longer content).
-- **Automatic Legacy Cleanup**: Deduplication logic in `mergeWatchHistories` will automatically consolidate existing duplicate entries in local storage and Firestore on app boot so the row is immediately cleaned up.
+> The following user preferences were confirmed via Phase 1 clarifying questions:
+> - **Language Translation Scope**: Full UI localization across all navigation, buttons, views, modals, filters, and player controls (English, Spanish, French, German, Japanese, Italian, Portuguese).
+> - **Clear Watch Progress Confirmation**: Custom emerald modal dialog with explicit confirmation ("Clear Watch Progress", "Cancel", and safety notice), replacing the unreliable browser `window.confirm()` that fails in iframe and mobile webview environments.
+> - **Subtitles & Alternative Audio**: Auto-load preferred subtitle and audio tracks directly from the user's settings into the streaming player, with real-time controls in the player dock for quick adjustments.
 
 ---
 
 ## 1. Overview & Core Concept
 
-- **What It Delivers**: A streamlined Continue Watching feed where every show has a single, up-to-date entry displaying the newest episode in progress and how much time is left to watch.
-- **Problem Solved**:
-  1. Watching sequential episodes previously produced multiple side-by-side cards for the same show (e.g., Reacher S1 E1 and S1 E2 both appearing).
-  2. The indicator was fixed to a generic "5% watched" instead of providing meaningful context on how much of the episode remains.
-- **Key Experience**: Opening the app immediately presents a clean, non-redundant row showing "Reacher · S1 E2 · 48m remaining".
+1. **Working Watch Progress Reset**:
+   - Replaces `window.confirm()` with an accessible in-app modal matching the emerald/cannabis aesthetic.
+   - Clears watch history from local storage and instantly persists the empty list to Cloud Firestore (`saveProfileToFirestore`), preventing real-time Firestore listeners or page refreshes from restoring old progress.
+   - Clears active progress across Continue Watching carousels, profile history, and player state.
+
+2. **Subtitles & Dubs (Alternate Audio) Auto-Load**:
+   - Passes user preferences directly into the stream URL (`subtitle`, `dubLang`, `dubType`, `language`, `autoplay`).
+   - Configures the player iframe with full permissions (`allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope; web-share"`) and compatible referrer policies so OpenSubtitles and audio tracks load without cross-origin blocks.
+   - Adds an interactive Subtitles & Dubs controller in the player dock to toggle subtitles, pick languages, or change audio tracks on the fly.
+
+3. **Settings Persistence & Live Application**:
+   - Modifies `SettingsView.tsx`'s `updateSetting` handler to immediately persist changes to Cloud Firestore for authenticated users (`saveProfileToFirestore(updatedUser, true)`), eliminating the bug where settings reverted on reload.
+   - Wires playback settings (`autoplay`, `defaultVolume`, `autoSubtitles`, `subtitleLanguage`, `nextEpisode`) directly into both `WatchPlayer` and `SportsWatchPlayer`.
+
+4. **Full-Site Multi-Language Localization (i18n)**:
+   - Implements a dedicated internationalization engine (`src/services/i18n.ts`) supporting all 7 site languages (`en`, `es`, `fr`, `de`, `ja`, `it`, `pt`).
+   - Translates all UI components: navigation, hero banners, filter tabs, modal cards, strain pairings, media details, settings labels, login modal, search, stash, and player headers.
+   - Language selection in Settings immediately switches the whole application in real time and persists across sessions.
 
 ---
 
 ## 2. User Experience & Visual Design
 
-### Key User Flows
-1. **Watching Sequential Episodes**:
-   - User watches Reacher S1 E1. Continue Watching shows `Reacher · S1 E1 · 45m remaining`.
-   - User finishes or switches to Reacher S1 E2. Continue Watching updates the existing Reacher card in-place to `Reacher · S1 E2 · 48m remaining`.
-2. **Dynamic Remaining Time Presentation**:
-   - Time remaining is calculated from runtime and current playback progress.
-   - Formatted cleanly as:
-     - Under 60 minutes: `45m remaining`
-     - Over 60 minutes: `1h 15m remaining`
-   - Progress bar visually reflects the percentage watched while the text clearly states remaining time in emerald monospace font (`text-emerald-400 font-mono text-xs`).
-3. **Card Actions**:
-   - Clicking the card resumes directly at the latest episode (`S1 E2`).
-   - The top-right `X` button removes the show from Continue Watching entirely.
+- **Clear Watch Progress Modal**:
+  - Dark emerald glass overlay (`bg-black/80 backdrop-blur-md`) with glowing emerald border (`border-emerald-500/40`).
+  - Warning icon with clear explanation: *"Are you sure you want to clear your saved watch progress? This will reset your continue watching list across all devices."*
+  - Dual action buttons: *"Keep Progress"* (subtle ghost button) and *"Yes, Clear Progress"* (emerald/red danger button with tactile feedback).
+  
+- **Player Subtitles & Audio Controls**:
+  - Modern bottom dock switcher beside the node selector:
+    - **Subs Badge**: Displays active subtitle language (e.g. `Subs: English` or `Subs: Off`) with a quick popup to switch between available languages.
+    - **Audio Badge**: Displays active audio track (e.g. `Audio: English (Original)` or `Audio: Spanish Dub`).
+  - Seamlessly respects the user's defaults saved in Settings.
 
-### Visual Layout
-- **Shelf Header**: `Continue Watching (count)` with distinct show count (each series counted once).
-- **Sub-info Line**: `<span className="text-emerald-400 font-mono font-semibold">45m remaining</span> · <span className="font-mono text-zinc-400">S1 E2</span>`.
+- **Full-Site Localization UI**:
+  - Selecting a language in Settings updates all text instantly with zero reload.
+  - Retains strain naming authenticity (e.g. "OG Kush", "Granddaddy Purple") while translating all category tags, descriptions, button calls-to-action, status pills, and instructional text.
 
 ---
 
-## 3. Key Product Decisions & Trade-Offs
+## 3. Key Technical Architecture & Implementation Steps
 
-- **Decision 1: Series-Level Keying vs. Episode-Level Keying**
-  - *Chosen Approach*: Key watch history by `mediaId` for both movies and TV series, with season and episode stored as attributes that update as the user advances through the show.
-  - *Why*: Prevents cluttered shelves filled with 5 different episodes of the same show. Matches Netflix, Prime Video, and Disney+ industry standards.
-- **Decision 2: Automatic Deduplication on Sync & Load**
-  - *Chosen Approach*: When `mergeWatchHistories` runs on app boot, group existing history records by `mediaId` and keep the one with the newest timestamp or highest season/episode.
-  - *Why*: Immediately fixes the user's existing records shown in the screenshot without requiring manual deletion.
-- **Decision 3: Episode Duration Heuristics**
-  - *Chosen Approach*: Use TMDB runtime from stash details when available; otherwise use standard defaults (50 minutes for 1-hour drama/action shows like Reacher, 24 minutes for anime/comedy, 110 minutes for movies).
-  - *Why*: Ensures realistic and helpful remaining times even if TMDB has missing episode-specific runtimes.
-
----
-
-## 4. Technical Architecture & Data Strategy
-
+### A. Fix Watch Progress Clearing (`src/components/SettingsView.tsx` & `src/services/storage.ts`)
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                       WatchPlayer                           │
-│  - Sends playback progress (duration & elapsed seconds)     │
-│  - Automatically calculates episode runtime                 │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       storage.ts                            │
-│  - updateWatchHistory: finds entry by mediaId (not episode) │
-│    and updates in-place to the newest season & episode      │
-│  - mergeWatchHistories: consolidates legacy duplicates      │
-│  - formatTimeRemaining helper (e.g. "45m remaining")       │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 HomeView & Continue Watching                │
-│  - Renders 1 card per show                                  │
-│  - Displays "XXm remaining · S1 E2"                         │
-│  - Preserves quick remove action and resume playback        │
+│                   Clear Watch Progress Flow                  │
+│                                                             │
+│ [Clear Button] ──> [Custom Emerald Modal]                    │
+│                          │ (User Confirms)                  │
+│                          ▼                                  │
+│                 clearWatchHistory()                         │
+│                          │                                  │
+│           ┌──────────────┴──────────────┐                   │
+│           ▼                             ▼                   │
+│    localStorage.clear            saveProfileToFirestore     │
+│    (instant local)               (remote DB sync)           │
+│           │                             │                   │
+│           └──────────────┬──────────────┘                   │
+│                          ▼                                  │
+│           App State (user.watchHistory = [])                │
+│           Continue Watching row updates immediately         │
 └─────────────────────────────────────────────────────────────┘
 ```
+1. Add state `showClearConfirmModal` to `SettingsView.tsx`.
+2. Implement custom confirmation dialog component.
+3. Call `clearWatchHistory()`, update local state via `onUpdateUser`, and call `saveProfileToFirestore` so Firestore is synchronized.
 
-### Formatting Implementation
-```ts
-export function formatTimeRemaining(progressSeconds: number = 0, durationSeconds: number = 3000): string {
-  const remaining = Math.max(0, durationSeconds - progressSeconds);
-  const minutes = Math.round(remaining / 60);
-  if (minutes >= 60) {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return mins > 0 ? `${hours}h ${mins}m remaining` : `${hours}h remaining`;
-  }
-  return `${Math.max(1, minutes)}m remaining`;
-}
-```
+### B. Fix Settings Persistence (`src/components/SettingsView.tsx`)
+1. In `updateSetting(key, value)`:
+   - Save to localStorage with `saveUserProfile(updatedUser)`.
+   - Update React parent state with `onUpdateUser(updatedUser)`.
+   - If user is authenticated (`isLoggedIn`), call `saveProfileToFirestore(updatedUser, true)` to ensure Firestore persists the setting.
+2. Ensure defaults are populated properly on initial load and schema migrations.
+
+### C. Subtitles and Dubs / Alternate Audio Loading (`src/components/WatchPlayer.tsx`)
+1. Enhance `getStreamUrl` to include subtitle and audio query parameters:
+   - `subtitle=${encodeURIComponent(user?.settings?.autoSubtitles ? (user?.settings?.subtitleLanguage || 'English') : '')}`
+   - `dubLang=${encodeURIComponent(user?.settings?.language || 'en')}`
+   - `dubType=1`
+   - `language=${encodeURIComponent(user?.settings?.language || 'en')}`
+2. Ensure iframe attributes include:
+   - `allow="autoplay; fullscreen; encrypted-media; picture-in-picture; accelerometer; gyroscope; web-share"`
+   - `referrerPolicy="origin-when-cross-origin"`
+3. Add in-player Subtitle & Audio indicator and dropdown toggle so users can adjust subtitles and dubs directly during playback.
+
+### D. Full-Site Localization Engine (`src/services/i18n.ts`)
+1. Create `src/services/i18n.ts` with comprehensive translation strings for:
+   - **Common / Actions**: Search, Play Now, Add to Stash, In Stash, Close, Back, Save, Cancel, Clear, Loading, Error, Success.
+   - **Navigation**: Home, Movies, TV Shows, Anime, Sports, My Stash, Settings, Search, VIP Cinephile.
+   - **Hero & Carousels**: Trending Now, Continue Watching, Recommended Strains, Top Rated, High THC, Couch-Lock, Cinema Chill.
+   - **Settings Tab**: Profile Identity, Weed Avatar Presets, Appearance, Playback & Subtitles, Autoplay, Default Volume, Subtitle Language, Site Language, Clear Watch Progress, Dangerous Zone.
+   - **Player**: Stream Nodes, Connecting, Audio Dub, Subtitles, Return to Catalog, Season, Episode.
+   - **Stash / Profile**: My Stash, Saved Movies & Series, Watch History, Clear History, Empty Stash Notice, Sign In to Unlock.
+2. Provide a reactive `useTranslation(user?.settings?.language)` hook and `t(key)` helper.
+3. Connect `useTranslation` to `App.tsx`, `Navbar.tsx`, `HeroSlider.tsx`, `MediaGrid.tsx`, `MediaDetailsModal.tsx`, `SettingsView.tsx`, `UserProfileView.tsx`, `WatchPlayer.tsx`, and `SportsView.tsx`.
+
+---
+
+## 4. Verification & Testing Checklist
+
+- [ ] **Clear Watch Progress**: Click button in Settings; verify custom modal appears; confirm; verify "Continue Watching" row empties and stays empty after refreshing the browser and across sessions.
+- [ ] **Subtitles & Dubs**: Open a movie/series in `WatchPlayer`; verify preferred subtitle language auto-loads, iframe permits cross-origin captions, and audio/subtitle switcher in bottom dock works.
+- [ ] **Settings Sticking**: Change Autoplay, Subtitle Language, Site Language, and Volume in Settings; refresh the browser; verify all settings remain exactly as selected.
+- [ ] **Full-Site Localization**: Switch language to Spanish, French, German, Japanese, Italian, and Portuguese; verify navigation, hero buttons, carousel headers, modal details, and settings immediately reflect the selected language.
+- [ ] **Build & Typecheck**: Run `compile_applet` and `lint_applet` to ensure zero compilation or type errors.

@@ -305,8 +305,7 @@ export const SearchView: React.FC<SearchViewProps> = ({
               placeholder="Search ..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full h-full bg-transparent text-white text-sm sm:text-base placeholder-zinc-500 outline-none font-medium"
-              autoFocus
+              className="w-full h-full bg-transparent text-white text-base placeholder-zinc-500 outline-none font-medium"
             />
             {searching ? (
               <Loader2 className="w-5 h-5 text-emerald-400 animate-spin shrink-0" />

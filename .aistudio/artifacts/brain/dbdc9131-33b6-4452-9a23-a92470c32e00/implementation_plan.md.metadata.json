@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to eliminate duplicate TV show cards in Continue Watching by updating in-place to the latest watched episode, and replace the static '5% watched' text with accurate dynamic remaining time formatted as '45m remaining' or '1h 20m remaining'.",
-  "updatedAt": "2026-10-16T17:48:10.118315002Z",
+  "summary": "Implementation plan to fix the Clear Watch Progress button with a custom emerald confirmation modal and Firestore sync, fix subtitles and alternate audio tracks (dubs) in the player with user setting auto-load, fix playback and subtitle settings persistence in SettingsView and wire them to playback, and implement full-site UI localization across all 7 languages.",
+  "updatedAt": "2026-10-17T14:25:55.039722250Z",
   "requestFeedback": true,
   "userFacing": true
 }

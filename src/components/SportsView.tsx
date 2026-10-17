@@ -25,9 +25,10 @@ import { SportsWatchPlayer } from './SportsWatchPlayer';
 
 interface SportsViewProps {
   onPlayMedia?: (item: any) => void;
+  onSelectMatch?: (match: APIMatch) => void;
 }
 
-export const SportsView: React.FC<SportsViewProps> = () => {
+export const SportsView: React.FC<SportsViewProps> = ({ onSelectMatch }) => {
   const [liveMatches, setLiveMatches] = useState<APIMatch[]>([]);
   const [todayMatches, setTodayMatches] = useState<APIMatch[]>([]);
   const [categories, setCategories] = useState<SportCategory[]>([]);
@@ -35,6 +36,14 @@ export const SportsView: React.FC<SportsViewProps> = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeMatch, setActiveMatch] = useState<APIMatch | null>(null);
+
+  const handleSelectMatch = (match: APIMatch) => {
+    if (onSelectMatch) {
+      onSelectMatch(match);
+    } else {
+      setActiveMatch(match);
+    }
+  };
 
   // Load all live and scheduled matches
   const loadMatches = useCallback(async () => {
@@ -239,7 +248,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
                     return (
                       <div
                         key={match.id}
-                        onClick={() => setActiveMatch(match)}
+                        onClick={() => handleSelectMatch(match)}
                         className="group relative bg-[#090e0b] hover:bg-[#0c1410] border border-emerald-500/20 hover:border-emerald-500/50 rounded-2xl p-5 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-[0_0_25px_rgba(0,223,130,0.15)] flex flex-col justify-between"
                       >
                         {/* Header: Category & Live Indicator */}
@@ -314,7 +323,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setActiveMatch(match);
+                              handleSelectMatch(match);
                             }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500 text-black text-xs font-bold group-hover:bg-[#00df82] transition-colors shadow-[0_0_12px_rgba(0,223,130,0.3)] cursor-pointer"
                           >
@@ -357,7 +366,7 @@ export const SportsView: React.FC<SportsViewProps> = () => {
                     return (
                       <div
                         key={match.id}
-                        onClick={() => setActiveMatch(match)}
+                        onClick={() => handleSelectMatch(match)}
                         className="group relative bg-[#090e0b]/80 hover:bg-[#0c1410] border border-zinc-800/80 hover:border-emerald-500/40 rounded-2xl p-5 transition-all duration-300 cursor-pointer flex flex-col justify-between"
                       >
                         {/* Header: Category & Kick-off Time */}

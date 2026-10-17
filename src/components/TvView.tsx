@@ -189,9 +189,7 @@ export const TvView: React.FC<TvViewProps> = ({
           {/* Quick Counter */}
           <div className="flex items-center gap-2 text-xs text-zinc-400 font-mono shrink-0 self-start sm:self-auto bg-[#0c1410] px-3 py-1.5 rounded-lg border border-emerald-500/15">
             <span>Total results:</span>
-            <span className="text-emerald-400 font-bold">
-              {totalResults ? `${totalResults.toLocaleString()}+` : '9,999+'}
-            </span>
+            <span className="text-emerald-400 font-bold">300,000+</span>
           </div>
         </div>
 

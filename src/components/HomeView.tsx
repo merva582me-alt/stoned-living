@@ -35,6 +35,42 @@ const STREAMING_PROVIDERS = [
   { id: '174', name: 'Warner Bros.', type: 'Movie Studio', logoType: 'wb' },
 ];
 
+interface Top10RankBadgeProps {
+  rank: number;
+}
+
+const Top10RankBadge: React.FC<Top10RankBadgeProps> = ({ rank }) => {
+  const isOne = rank === 1;
+  const isTen = rank === 10;
+  const viewBoxWidth = isTen ? 112 : isOne ? 54 : 70;
+  const textX = isTen ? 56 : isOne ? 27 : 35;
+
+  return (
+    <svg
+      viewBox={`0 0 ${viewBoxWidth} 122`}
+      className="h-[6.8rem] sm:h-[8.5rem] md:h-[9.5rem] shrink-0 z-0 self-end mr-[-0.75rem] sm:mr-[-1rem] mb-11 sm:mb-12 pointer-events-none select-none transition-all duration-200 overflow-visible"
+      preserveAspectRatio="xMidYMax meet"
+      aria-hidden="true"
+    >
+      <text
+        x={textX}
+        y="108"
+        textAnchor="middle"
+        className="font-black text-[118px] select-none tracking-tighter fill-transparent stroke-[rgba(255,255,255,0.75)] transition-colors duration-200 group-hover:fill-white group-hover:stroke-white"
+        strokeWidth="4"
+        strokeLinejoin="round"
+        strokeLinecap="round"
+        style={{
+          fontFamily: 'Impact, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+          paintOrder: 'stroke fill',
+        }}
+      >
+        {rank}
+      </text>
+    </svg>
+  );
+};
+
 export const HomeView: React.FC<HomeViewProps> = ({
   user,
   isLoggedIn = false,
@@ -74,20 +110,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [highlyRated, setHighlyRated] = useState<MediaItem[]>([]);
 
   const [loading, setLoading] = useState(true);
-  const [showScrollTop, setShowScrollTop] = useState(false);
 
   const continueWatchingScrollRef = useRef<HTMLDivElement>(null);
   const top10ScrollRef = useRef<HTMLDivElement>(null);
   const providersScrollRef = useRef<HTMLDivElement>(null);
-
-  // Monitor scroll position for floating Scroll to top button (Screenshots 3–12)
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 350);
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   // Fetch live media catalog from TMDb
   useEffect(() => {
@@ -423,11 +449,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   className="flex items-end shrink-0 cursor-pointer group"
                 >
                   {/* Giant Outline Hollow Rank Number (Fills completely white on hover; aligned with poster above titles) */}
-                  <span
-                    className="top10-rank-number text-[7.5rem] sm:text-[9rem] font-black leading-[0.72] select-none tracking-tighter shrink-0 z-0 self-end mr-[-0.75rem] sm:mr-[-1rem] mb-11 sm:mb-12 pointer-events-none"
-                  >
-                    {index + 1}
-                  </span>
+                  <Top10RankBadge rank={index + 1} />
 
                   {/* Poster Card overlapping number */}
                   <div className="w-36 sm:w-44 md:w-48 shrink-0 z-10 relative">
@@ -702,18 +724,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         />
       </div>
 
-      {/* ─────────────────────────────────────────────────────────────
-          FLOATING 'SCROLL TO TOP' BUTTON (Screenshots 3 - 12)
-      ─────────────────────────────────────────────────────────────── */}
-      {showScrollTop && (
-        <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-          className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 px-4 py-2 rounded-xl bg-[#181818]/90 hover:bg-[#252525] border border-zinc-700/60 text-white text-xs font-semibold shadow-2xl backdrop-blur-md transition-all cursor-pointer hover:scale-105 select-none"
-        >
-          <ChevronUp className="w-3.5 h-3.5" />
-          <span>Scroll to top</span>
-        </button>
-      )}
+
     </div>
   );
 };
