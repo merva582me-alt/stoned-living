@@ -4,12 +4,15 @@ import { MediaItem, UserProfile } from '../types';
 import { toggleWatchlist, isItemInWatchlist, isUserLoggedIn, requestAuthForAction } from '../services/storage';
 import { toast } from 'sonner';
 
+import { Top10RankBadge } from './Top10RankBadge';
+
 interface MediaCardProps {
   item: MediaItem;
   onOpenDetails: (item: MediaItem) => void;
   onPlay?: (item: MediaItem) => void;
   className?: string;
   rankNumber?: number; // For Top 10 cards
+  top10Rank?: number; // Netflix-style giant baseline-locked rank number
   isRecentlyAdded?: boolean;
   isLoggedIn?: boolean;
   onRequireLogin?: (targetItem: MediaItem) => void;
@@ -23,6 +26,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
   onPlay,
   className = 'w-full',
   rankNumber,
+  top10Rank,
   isRecentlyAdded,
   isLoggedIn,
   onRequireLogin,
@@ -80,8 +84,12 @@ export const MediaCard: React.FC<MediaCardProps> = ({
       onClick={() => onOpenDetails(item)}
       className={`group relative flex flex-col cursor-pointer select-none transition-all duration-300 ${className}`}
     >
-      {/* Poster Container (2:3 aspect ratio) */}
-      <div className="relative w-full aspect-[2/3] rounded-xl overflow-hidden bg-[#0c1410] border border-zinc-800 group-hover:border-zinc-500 group-hover:shadow-[0_8px_30px_rgba(0,0,0,0.8)] transition-all duration-300">
+      {/* Poster Container Wrapper with baseline-locked Top 10 rank number */}
+      <div className="relative w-full aspect-[2/3]">
+        {top10Rank !== undefined && <Top10RankBadge rank={top10Rank} />}
+
+        {/* Poster Surface (z-10 with elevation shadow over rank badge) */}
+        <div className="relative w-full h-full rounded-xl overflow-hidden bg-[#0c1410] border border-zinc-800 group-hover:border-zinc-500 shadow-[0_8px_30px_rgba(0,0,0,0.85)] group-hover:shadow-[0_12px_36px_rgba(0,0,0,0.95)] transition-all duration-300 z-10">
         {posterUrl ? (
           <img
             src={posterUrl}
@@ -137,6 +145,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
           </div>
         )}
       </div>
+    </div>
 
       {/* Card Metadata (Below Poster) */}
       <div className="mt-2.5 px-0.5">

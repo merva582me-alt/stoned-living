@@ -52,17 +52,7 @@ html, body, #root, * {
   scrollbar-width: none !important;
 }
 
-/* Top 10 Giant Rank Numbers: Outline by default, solid white fill on hover */
-.top10-rank-number {
-  -webkit-text-stroke: 3px rgba(255, 255, 255, 0.75);
-  color: transparent;
-  transition: color 0.2s ease, -webkit-text-stroke 0.2s ease;
-}
 
-.group:hover .top10-rank-number {
-  color: #ffffff !important;
-  -webkit-text-stroke: 3px #ffffff !important;
-}
 
 .top10-carousel {
   overflow-y: hidden !important;

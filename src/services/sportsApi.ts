@@ -69,13 +69,49 @@ export async function fetchMatchesBySport(sportId: string): Promise<APIMatch[]> 
   return Array.isArray(data) ? data : [];
 }
 
-/**
- * Fetch stream options for a given source and id
- */
 export async function fetchStreams(source: string, sourceId: string): Promise<StreamedStream[]> {
   if (!source || !sourceId) return [];
   const data = await safeFetch<StreamedStream[]>(`/api/stream/${encodeURIComponent(source)}/${encodeURIComponent(sourceId)}`);
   return Array.isArray(data) ? data : [];
+}
+
+/**
+ * Fetch and combine all available stream feeds across all sources for a match
+ */
+export async function fetchAllMatchStreams(
+  sources: Array<{ source: string; id: string }>
+): Promise<StreamedStream[]> {
+  if (!sources || sources.length === 0) return [];
+
+  const results = await Promise.allSettled(
+    sources.map((s) => fetchStreams(s.source, s.id))
+  );
+
+  const allStreams: StreamedStream[] = [];
+  const seenUrls = new Set<string>();
+
+  results.forEach((res, index) => {
+    if (res.status === 'fulfilled' && Array.isArray(res.value)) {
+      const srcMeta = sources[index];
+      const sourceName = srcMeta?.source ? srcMeta.source.toUpperCase() : `SRC ${index + 1}`;
+
+      res.value.forEach((stream, sIdx) => {
+        if (!stream.embedUrl) return;
+        const cleanUrl = stream.embedUrl.trim();
+        if (seenUrls.has(cleanUrl)) return;
+        seenUrls.add(cleanUrl);
+
+        allStreams.push({
+          ...stream,
+          embedUrl: cleanUrl,
+          source: stream.source || sourceName,
+          streamNo: stream.streamNo || (sIdx + 1),
+        });
+      });
+    }
+  });
+
+  return allStreams;
 }
 
 /**

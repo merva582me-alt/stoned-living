@@ -1,0 +1,6 @@
+{
+  "summary": "Implementation plan to add horizontal navigation arrow buttons flanking both ends of the genre filter bars in Movies and TV Shows tabs, as well as the sports category filter bar in the Live Sports Arena tab, with edge-aware dimming and disabling.",
+  "updatedAt": "2026-10-18T05:07:35.365011982Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

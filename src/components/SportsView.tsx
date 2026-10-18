@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   Trophy,
   Radio,
@@ -12,6 +12,8 @@ import {
   Filter,
   AlertCircle,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { APIMatch, SportCategory } from '../types';
 import {
@@ -36,6 +38,37 @@ export const SportsView: React.FC<SportsViewProps> = ({ onSelectMatch }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeMatch, setActiveMatch] = useState<APIMatch | null>(null);
+
+  const sportsRowRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkScroll = useCallback(() => {
+    if (sportsRowRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = sportsRowRef.current;
+      setCanScrollLeft(scrollLeft > 2);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    const el = sportsRowRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [checkScroll, categories]);
+
+  const scrollSports = (direction: 'left' | 'right') => {
+    if (sportsRowRef.current) {
+      const amount = (direction === 'left' ? -1 : 1) * 260;
+      sportsRowRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+    }
+  };
 
   const handleSelectMatch = (match: APIMatch) => {
     if (onSelectMatch) {
@@ -171,36 +204,72 @@ export const SportsView: React.FC<SportsViewProps> = ({ onSelectMatch }) => {
             )}
           </div>
 
-          {/* Sport Categories Pill Bar */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+          {/* Sport Categories Pill Bar with Flanking Nav Arrows */}
+          <div className="relative flex items-center min-w-0 w-full gap-1.5">
+            {/* Left Scroll Arrow */}
             <button
-              onClick={() => setSelectedSport('all')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                selectedSport === 'all'
-                  ? 'bg-emerald-500 text-black shadow-[0_0_15px_#00FF9D] font-bold'
-                  : 'bg-[#0c1410] text-zinc-300 hover:text-white hover:bg-zinc-800 border border-emerald-500/15'
+              onClick={() => scrollSports('left')}
+              disabled={!canScrollLeft}
+              title="Scroll sports left"
+              aria-label="Scroll sports left"
+              className={`w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center border border-zinc-800 hover:border-emerald-500/40 transition shrink-0 cursor-pointer ${
+                !canScrollLeft
+                  ? 'opacity-25 cursor-default pointer-events-none border-zinc-800/40 text-zinc-600'
+                  : 'shadow-[0_2px_8px_rgba(0,0,0,0.5)]'
               }`}
             >
-              <Flame className="w-3.5 h-3.5" />
-              <span>All Sports</span>
+              <ChevronLeft className="w-4 h-4" />
             </button>
 
-            {categories.map((cat) => {
-              const isActive = selectedSport === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setSelectedSport(cat.id)}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap capitalize transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-emerald-500 text-black shadow-[0_0_15px_#00FF9D] font-bold'
-                      : 'bg-[#0c1410] text-zinc-300 hover:text-white hover:bg-zinc-800 border border-emerald-500/15'
-                  }`}
-                >
-                  <span>{cat.name}</span>
-                </button>
-              );
-            })}
+            {/* Scrollable Categories Track */}
+            <div
+              ref={sportsRowRef}
+              className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 flex-1 min-w-0"
+            >
+              <button
+                onClick={() => setSelectedSport('all')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  selectedSport === 'all'
+                    ? 'bg-emerald-500 text-black shadow-[0_0_15px_#00FF9D] font-bold'
+                    : 'bg-[#0c1410] text-zinc-300 hover:text-white hover:bg-zinc-800 border border-emerald-500/15'
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>All Sports</span>
+              </button>
+
+              {categories.map((cat) => {
+                const isActive = selectedSport === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedSport(cat.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap capitalize transition-all cursor-pointer shrink-0 ${
+                      isActive
+                        ? 'bg-emerald-500 text-black shadow-[0_0_15px_#00FF9D] font-bold'
+                        : 'bg-[#0c1410] text-zinc-300 hover:text-white hover:bg-zinc-800 border border-emerald-500/15'
+                    }`}
+                  >
+                    <span>{cat.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right Scroll Arrow */}
+            <button
+              onClick={() => scrollSports('right')}
+              disabled={!canScrollRight}
+              title="Scroll sports right"
+              aria-label="Scroll sports right"
+              className={`w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center border border-zinc-800 hover:border-emerald-500/40 transition shrink-0 cursor-pointer ${
+                !canScrollRight
+                  ? 'opacity-25 cursor-default pointer-events-none border-zinc-800/40 text-zinc-600'
+                  : 'shadow-[0_2px_8px_rgba(0,0,0,0.5)]'
+              }`}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
         </div>
 

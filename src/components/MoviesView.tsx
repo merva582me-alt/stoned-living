@@ -11,7 +11,9 @@ import {
   Sparkles,
   SlidersHorizontal,
   Flame,
-  Loader2
+  Loader2,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { MediaItem, AdvanceFilters, DEFAULT_ADVANCE_FILTERS } from '../types';
 import { MediaCard } from './MediaCard';
@@ -52,6 +54,36 @@ export const MoviesView: React.FC<MoviesViewProps> = ({
   const [totalResults, setTotalResults] = useState(9999);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const genreRowRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkScroll = useCallback(() => {
+    if (genreRowRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = genreRowRef.current;
+      setCanScrollLeft(scrollLeft > 2);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 4);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    const el = genreRowRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [checkScroll]);
+
+  const scrollGenres = (direction: 'left' | 'right') => {
+    if (genreRowRef.current) {
+      const amount = (direction === 'left' ? -1 : 1) * 280;
+      genreRowRef.current.scrollBy({ left: amount, behavior: 'smooth' });
+    }
+  };
 
   // Helper to compile API discovery params
   const buildApiParams = useCallback((genre: string | number, adv: AdvanceFilters) => {
@@ -193,27 +225,63 @@ export const MoviesView: React.FC<MoviesViewProps> = ({
           </div>
         </div>
 
-        {/* ── Genre Filter Bar & Advance Filter Trigger (Screenshot 4) ── */}
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-zinc-900 pb-5">
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            {GENRE_FILTERS.map((genre) => {
-              const Icon = genre.icon;
-              const isActive = selectedGenre === genre.id;
-              return (
-                <button
-                  key={genre.id}
-                  onClick={() => setSelectedGenre(genre.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                    isActive
-                      ? 'bg-emerald-500 text-black shadow-[0_0_15px_#00FF9D]'
-                      : 'bg-[#0c1410] text-zinc-300 hover:text-white hover:bg-zinc-800 border border-emerald-500/15'
-                  }`}
-                >
-                  <span>{genre.name}</span>
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-black' : 'text-zinc-400'}`} />
-                </button>
-              );
-            })}
+        {/* ── Genre Filter Bar & Advance Filter Trigger with Flanking Nav Arrows ── */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 border-b border-zinc-900 pb-5">
+          <div className="relative flex items-center min-w-0 flex-1 gap-1.5">
+            {/* Left Scroll Arrow */}
+            <button
+              onClick={() => scrollGenres('left')}
+              disabled={!canScrollLeft}
+              title="Scroll genres left"
+              aria-label="Scroll genres left"
+              className={`w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center border border-zinc-800 hover:border-emerald-500/40 transition shrink-0 cursor-pointer ${
+                !canScrollLeft
+                  ? 'opacity-25 cursor-default pointer-events-none border-zinc-800/40 text-zinc-600'
+                  : 'shadow-[0_2px_8px_rgba(0,0,0,0.5)]'
+              }`}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+
+            {/* Scrollable Genre Pills Track */}
+            <div
+              ref={genreRowRef}
+              className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1 flex-1 min-w-0"
+            >
+              {GENRE_FILTERS.map((genre) => {
+                const Icon = genre.icon;
+                const isActive = selectedGenre === genre.id;
+                return (
+                  <button
+                    key={genre.id}
+                    onClick={() => setSelectedGenre(genre.id)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                      isActive
+                        ? 'bg-emerald-500 text-black shadow-[0_0_15px_#00FF9D]'
+                        : 'bg-[#0c1410] text-zinc-300 hover:text-white hover:bg-zinc-800 border border-emerald-500/15'
+                    }`}
+                  >
+                    <span>{genre.name}</span>
+                    <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-black' : 'text-zinc-400'}`} />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right Scroll Arrow */}
+            <button
+              onClick={() => scrollGenres('right')}
+              disabled={!canScrollRight}
+              title="Scroll genres right"
+              aria-label="Scroll genres right"
+              className={`w-8 h-8 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white flex items-center justify-center border border-zinc-800 hover:border-emerald-500/40 transition shrink-0 cursor-pointer ${
+                !canScrollRight
+                  ? 'opacity-25 cursor-default pointer-events-none border-zinc-800/40 text-zinc-600'
+                  : 'shadow-[0_2px_8px_rgba(0,0,0,0.5)]'
+              }`}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
           </div>
 
           {/* Advance Filter Drawer Button */}

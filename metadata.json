@@ -1,6 +1,6 @@
 {
-  "name": "Remix stoned-living",
-  "description": "Imported from GitHub: merva582me-alt/stoned-living",
+  "name": "Remix Remix stoned-living",
+  "description": "Imported from GitHub",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

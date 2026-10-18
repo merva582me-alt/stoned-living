@@ -10,6 +10,7 @@ import {
 import { MediaItem, UserProfile } from '../types';
 import { updateWatchHistory } from '../services/storage';
 import { fetchEpisodeDetails } from '../services/api';
+import { EpisodesModal } from './EpisodesModal';
 import { toast } from 'sonner';
 
 interface WatchPlayerProps {
@@ -86,6 +87,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   const [showSkip, setShowSkip] = useState(false);
   const [failoverCountdown, setFailoverCountdown] = useState(7);
   const [autoRotate, setAutoRotate] = useState(true);
+  const [isEpisodesModalOpen, setIsEpisodesModalOpen] = useState(false);
 
   const isTv = media.media_type === 'tv' || Boolean(media.first_air_date);
   const currentServer = STREAM_SERVERS[serverIndex];
@@ -333,26 +335,25 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Episode / Season Quick Switcher for TV */}
+          {/* Episode / Season Selector Button for TV */}
           {isTv && (
-            <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1 text-xs">
-              <span className="text-zinc-500 text-[11px] hidden xs:inline">Ep:</span>
-              <button
-                onClick={() => setEpisode(Math.max(1, episode - 1))}
-                className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 text-zinc-300 font-bold"
-                title="Previous episode"
-              >
-                -
-              </button>
-              <span className="font-mono text-emerald-400 font-bold px-1 text-xs">{episode}</span>
-              <button
-                onClick={() => setEpisode(episode + 1)}
-                className="w-5 h-5 flex items-center justify-center rounded hover:bg-zinc-800 text-zinc-300 font-bold"
-                title="Next episode"
-              >
-                +
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsEpisodesModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-zinc-800 hover:border-emerald-500/50 transition-all cursor-pointer shadow-sm group"
+              title="Select season and episode"
+            >
+              <div className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform flex items-center justify-center">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <rect x="6" y="2" width="16" height="16" rx="2" fill="currentColor" fillOpacity="0.15" stroke="currentColor" />
+                  <path d="M2 6v12a2 2 0 0 0 2 2h12" />
+                  <polygon points="12 7 17 10 12 13 12 7" fill="currentColor" />
+                </svg>
+              </div>
+              <span className="text-xs font-bold font-mono tracking-tight text-white group-hover:text-emerald-400 transition-colors">
+                S{season} E{episode}
+              </span>
+            </button>
           )}
 
           {/* Active Server Badge (Header preview) */}
@@ -468,6 +469,22 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
         </div>
       </footer>
 
+      {/* Episodes Selection Modal */}
+      {isTv && (
+        <EpisodesModal
+          isOpen={isEpisodesModalOpen}
+          media={media}
+          currentSeason={season}
+          currentEpisode={episode}
+          onSelectEpisode={(newSeason, newEpisode) => {
+            setSeason(newSeason);
+            setEpisode(newEpisode);
+            setIsLoading(true);
+            toast.success(`Now playing Season ${newSeason} · Episode ${newEpisode}`);
+          }}
+          onClose={() => setIsEpisodesModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

@@ -1,12 +1,12 @@
 {
-  "projectId": "neural-mason-h6shk",
-  "appId": "1:245469881166:web:0a0188da0b6dd2189df41f",
-  "apiKey": "AIzaSyBkBGrF9xCLkXqHov1RNkFcTPRXg7Oheko",
-  "authDomain": "neural-mason-h6shk.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-remixstonedlivin-dbdc9131-33b6-4452-9a23-a92470c32e00",
-  "storageBucket": "neural-mason-h6shk.firebasestorage.app",
-  "messagingSenderId": "245469881166",
+  "projectId": "gen-lang-client-0692833497",
+  "appId": "1:154713018899:web:5ca28ba8795d92b81965e6",
+  "apiKey": "AIzaSyAS1vRf-v4fMS9M7RYkuPZ9aaF1lU7DeIA",
+  "authDomain": "gen-lang-client-0692833497.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-remixremixstoned-fbbd3da5-1248-416b-a7f5-ca2071cc7849",
+  "storageBucket": "gen-lang-client-0692833497.firebasestorage.app",
+  "messagingSenderId": "154713018899",
   "measurementId": "",
-  "oAuthClientId": "245469881166-9k5b64k8idjpkalqpismqvvut3nn815m.apps.googleusercontent.com",
+  "oAuthClientId": "154713018899-c9jvcdkvb3fichu493jprolrued0k3ho.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }

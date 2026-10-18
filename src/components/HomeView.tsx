@@ -35,41 +35,6 @@ const STREAMING_PROVIDERS = [
   { id: '174', name: 'Warner Bros.', type: 'Movie Studio', logoType: 'wb' },
 ];
 
-interface Top10RankBadgeProps {
-  rank: number;
-}
-
-const Top10RankBadge: React.FC<Top10RankBadgeProps> = ({ rank }) => {
-  const isOne = rank === 1;
-  const isTen = rank === 10;
-  const viewBoxWidth = isTen ? 112 : isOne ? 54 : 70;
-  const textX = isTen ? 56 : isOne ? 27 : 35;
-
-  return (
-    <svg
-      viewBox={`0 0 ${viewBoxWidth} 122`}
-      className="h-[6.8rem] sm:h-[8.5rem] md:h-[9.5rem] shrink-0 z-0 self-end mr-[-0.75rem] sm:mr-[-1rem] mb-11 sm:mb-12 pointer-events-none select-none transition-all duration-200 overflow-visible"
-      preserveAspectRatio="xMidYMax meet"
-      aria-hidden="true"
-    >
-      <text
-        x={textX}
-        y="108"
-        textAnchor="middle"
-        className="font-black text-[118px] select-none tracking-tighter fill-transparent stroke-[rgba(255,255,255,0.75)] transition-colors duration-200 group-hover:fill-white group-hover:stroke-white"
-        strokeWidth="4"
-        strokeLinejoin="round"
-        strokeLinecap="round"
-        style={{
-          fontFamily: 'Impact, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          paintOrder: 'stroke fill',
-        }}
-      >
-        {rank}
-      </text>
-    </svg>
-  );
-};
 
 export const HomeView: React.FC<HomeViewProps> = ({
   user,
@@ -432,29 +397,31 @@ export const HomeView: React.FC<HomeViewProps> = ({
           {/* Top 10 Carousel with Giant Outline Numbers (Bleeds to Right Edge) */}
           <div
             ref={top10ScrollRef}
-            className="flex gap-2 sm:gap-4 overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth pb-3 pt-1 w-full top10-carousel"
+            className="flex items-start gap-3 sm:gap-5 md:gap-6 overflow-x-auto overflow-y-hidden no-scrollbar scroll-smooth pb-4 pt-1 w-full top10-carousel px-4 sm:px-8 lg:px-10"
           >
-            <div className="shrink-0 w-4 sm:w-4 lg:w-6 pointer-events-none" aria-hidden="true" />
             {loading && !top10Items.length ? (
               Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
-                  className="w-48 sm:w-56 shrink-0 aspect-[2/3] rounded-xl bg-zinc-900/60 animate-pulse border border-zinc-800"
+                  className="w-32 sm:w-40 md:w-44 lg:w-48 shrink-0 aspect-[2/3] rounded-xl bg-zinc-900/60 animate-pulse border border-zinc-800 ml-6 sm:ml-8"
                 />
               ))
             ) : (
               top10Items.map((item, index) => (
                 <div 
                   key={item.id} 
-                  className="flex items-end shrink-0 cursor-pointer group"
+                  className={`shrink-0 ${
+                    index === 0
+                      ? 'pl-9 sm:pl-12 md:pl-14 lg:pl-16'
+                      : index === 9
+                      ? 'pl-14 sm:pl-18 md:pl-20 lg:pl-22'
+                      : 'pl-8 sm:pl-10 md:pl-12 lg:pl-14'
+                  }`}
                 >
-                  {/* Giant Outline Hollow Rank Number (Fills completely white on hover; aligned with poster above titles) */}
-                  <Top10RankBadge rank={index + 1} />
-
-                  {/* Poster Card overlapping number */}
-                  <div className="w-36 sm:w-44 md:w-48 shrink-0 z-10 relative">
+                  <div className="w-32 sm:w-40 md:w-44 lg:w-48">
                     <MediaCard
                       item={item}
+                      top10Rank={index + 1}
                       isRecentlyAdded={index === 4 || index === 5 || index === 6}
                       onOpenDetails={onInspectItem}
                       onPlay={onPlayMedia}
@@ -467,7 +434,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </div>
               ))
             )}
-            <div className="shrink-0 w-8 sm:w-12 pointer-events-none" aria-hidden="true" />
+            <div className="shrink-0 w-6 sm:w-10 pointer-events-none" aria-hidden="true" />
           </div>
         </section>
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Play,
   Bookmark,
@@ -9,6 +9,8 @@ import {
   Clock,
   Calendar,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Eye,
   EyeOff
 } from 'lucide-react';
@@ -62,6 +64,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   );
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
+  const recommendationsScrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollRecommendations = (direction: 'left' | 'right') => {
+    if (recommendationsScrollRef.current) {
+      const scrollAmount = (direction === 'left' ? -1 : 1) * 320;
+      recommendationsScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   useEffect(() => {
     if (userWatchlist) {
@@ -504,13 +514,39 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               </div>
             )}
 
-            {/* You May Also Like (Screenshot 4) */}
+            {/* You May Also Like (Screenshots 1-3) */}
             {recommendations.length > 0 && (
               <div className="space-y-3 pt-4 border-t border-zinc-900">
-                <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                  You may also like
-                </h3>
-                <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                    You may also like
+                  </h3>
+
+                  {/* Left and Right Navigation Buttons matching user screenshot */}
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => scrollRecommendations('left')}
+                      className="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+                      title="Scroll left"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollRecommendations('right')}
+                      className="w-7 h-7 rounded-full bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white flex items-center justify-center border border-zinc-800 transition cursor-pointer"
+                      title="Scroll right"
+                    >
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <div 
+                  ref={recommendationsScrollRef} 
+                  className="flex gap-3 overflow-x-auto no-scrollbar scroll-smooth pb-2"
+                >
                   {recommendations.map((rec) => (
                     <div 
                       key={rec.id} 
