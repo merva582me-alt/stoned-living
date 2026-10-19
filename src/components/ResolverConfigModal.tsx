@@ -30,10 +30,10 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
   onClose,
   onSaved,
 }) => {
-  const [activeTab, setActiveTab] = useState<'container' | 'cloudflare'>('container');
+  const [activeTab, setActiveTab] = useState<'oracle' | 'container' | 'cloudflare'>('oracle');
   const [resolverUrl, setResolverUrl] = useState('');
   const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; latencyMs?: number } | null>(null);
   const [copiedDockerCmd, setCopiedDockerCmd] = useState(false);
   const [copiedTunnelCmd, setCopiedTunnelCmd] = useState(false);
 
@@ -57,7 +57,7 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
       const res = await checkResolverHealth(resolverUrl.trim());
       setTestResult(res);
       if (res.ok) {
-        toast.success('Successfully connected to resolver service!');
+        toast.success(`Successfully connected to resolver service! (${res.latencyMs || 0}ms)`);
       } else {
         toast.error('Connection notice: ' + res.message);
       }
@@ -78,10 +78,10 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
   };
 
   const dockerCommand =
-    'docker run -d --name streamed-pk-resolver -p 3000:3000 lunatic16/streamed-pk-resolver';
+    'sudo docker run -d --name streamed-pk-resolver --restart unless-stopped -p 3000:3000 lunatic16/streamed-pk-resolver';
 
   const tunnelCommand =
-    'cloudflared tunnel run --url http://localhost:3000';
+    'cloudflared tunnel --url http://localhost:3000';
 
   const handleCopy = (text: string, type: 'docker' | 'tunnel') => {
     navigator.clipboard.writeText(text);
@@ -108,11 +108,11 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
               <h2 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
                 <span>Streamed.pk HLS Stream Resolver</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/70 text-emerald-400 border border-emerald-500/30 font-semibold">
-                  Lunatic16
+                  Zero Cost
                 </span>
               </h2>
               <p className="text-xs text-zinc-400 font-mono">
-                Replays embed.st GOAT /fetch handshake, unlocks lock.wasm, and streams raw MPEG-TS
+                Unlocks embed.st stream keys and unwraps WEBP to raw MPEG-TS
               </p>
             </div>
           </div>
@@ -127,6 +127,17 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
         {/* Tab Selector */}
         <div className="flex items-center gap-1.5 p-1 bg-zinc-900/90 rounded-xl border border-zinc-800 text-xs font-mono">
           <button
+            onClick={() => setActiveTab('oracle')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+              activeTab === 'oracle'
+                ? 'bg-emerald-500 text-black shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Server className="w-3.5 h-3.5" />
+            <span>Oracle Cloud (Free)</span>
+          </button>
+          <button
             onClick={() => setActiveTab('container')}
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
               activeTab === 'container'
@@ -134,8 +145,8 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
                 : 'text-zinc-400 hover:text-white'
             }`}
           >
-            <Server className="w-3.5 h-3.5" />
-            <span>Cloud Container / Docker</span>
+            <Terminal className="w-3.5 h-3.5" />
+            <span>Docker</span>
           </button>
           <button
             onClick={() => setActiveTab('cloudflare')}
@@ -146,11 +157,54 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
             }`}
           >
             <Cloud className="w-3.5 h-3.5" />
-            <span>Cloudflare Tunnel / Proxy</span>
+            <span>Cloudflare Tunnel</span>
           </button>
         </div>
 
-        {activeTab === 'container' ? (
+        {activeTab === 'oracle' ? (
+          /* Oracle Cloud Always Free Tab */
+          <div className="flex flex-col gap-3 text-xs font-mono">
+            <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-3 flex flex-col gap-1.5">
+              <span className="text-emerald-400 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                <Server className="w-3.5 h-3.5" />
+                Oracle Cloud Always Free VPS (10 TB/mo Free)
+              </span>
+              <p className="text-[11px] text-zinc-300 leading-relaxed font-sans">
+                Oracle Cloud provides up to <strong>4 ARM cores, 24 GB RAM, and 10 TB free monthly egress bandwidth</strong> permanently ($0.00/mo). Runs 24/7 in the cloud without Railway compute bills.
+              </p>
+            </div>
+
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2">
+              <div className="flex items-center justify-between text-zinc-300">
+                <span className="text-zinc-400 text-[11px] font-bold">1. Start Docker Container</span>
+                <button
+                  onClick={() => handleCopy(dockerCommand, 'docker')}
+                  className="flex items-center gap-1 text-[11px] text-emerald-400 hover:underline cursor-pointer"
+                >
+                  {copiedDockerCmd ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedDockerCmd ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+              <code className="text-[10.5px] bg-black/60 p-2 rounded-lg text-emerald-300 select-all overflow-x-auto block">
+                {dockerCommand}
+              </code>
+
+              <div className="flex items-center justify-between text-zinc-300 mt-2">
+                <span className="text-zinc-400 text-[11px] font-bold">2. Run Cloudflare Tunnel</span>
+                <button
+                  onClick={() => handleCopy(tunnelCommand, 'tunnel')}
+                  className="flex items-center gap-1 text-[11px] text-emerald-400 hover:underline cursor-pointer"
+                >
+                  {copiedTunnelCmd ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedTunnelCmd ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+              <code className="text-[10.5px] bg-black/60 p-2 rounded-lg text-emerald-300 select-all overflow-x-auto block">
+                {tunnelCommand}
+              </code>
+            </div>
+          </div>
+        ) : activeTab === 'container' ? (
           /* Container Setup Tab */
           <div className="flex flex-col gap-3">
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 text-xs font-mono">

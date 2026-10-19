@@ -1,12 +1,12 @@
 import { StreamedStream, ResolvedStreamInfo } from '../types';
 
 const RESOLVER_STORAGE_KEY = 'stoned_sports_resolver_url';
-// Deployed live instance of Lunatic16/streamed-pk-resolver on Railway with native Impit Chrome TLS & WEBP unwrap
-export const DEFAULT_CLOUDFLARE_RESOLVER = 'https://streamed-pk-resolver-production.up.railway.app';
+// Active live Cloudflare Tunnel resolver instance
+export const DEFAULT_CLOUDFLARE_RESOLVER = 'https://revolutionary-dust-kilometers-mom.trycloudflare.com';
 
 /**
  * Returns the currently active resolver host URL.
- * Defaults to the live deployed instance: https://streamed-pk-resolver-production.up.railway.app
+ * Defaults to the live Cloudflare Tunnel: https://revolutionary-dust-kilometers-mom.trycloudflare.com
  */
 export function getResolverBaseUrl(): string {
   if (typeof window !== 'undefined') {
@@ -40,11 +40,13 @@ export function setResolverBaseUrl(url: string): void {
  * Test connectivity to the streamed-pk-resolver host.
  * Tests /api/sports or /health endpoint.
  */
-export async function checkResolverHealth(baseUrl: string): Promise<{ ok: boolean; message: string }> {
+export async function checkResolverHealth(baseUrl: string): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
   const target = baseUrl.trim().replace(/\/+$/, '');
   if (!target) {
     return { ok: false, message: 'No resolver URL specified.' };
   }
+
+  const startTime = performance.now();
 
   try {
     const controller = new AbortController();
@@ -57,9 +59,15 @@ export async function checkResolverHealth(baseUrl: string): Promise<{ ok: boolea
       signal: controller.signal,
     }).catch(() => null);
 
+    const latencyMs = Math.round(performance.now() - startTime);
+
     if (sportsRes && sportsRes.ok) {
       clearTimeout(timeout);
-      return { ok: true, message: 'Connected to streamed-pk-resolver! Live catalog and GOAT unlock ready.' };
+      return { 
+        ok: true, 
+        message: `Connected to streamed-pk-resolver! Live catalog and GOAT unlock ready (${latencyMs}ms).`,
+        latencyMs 
+      };
     }
 
     // 2. Try /health
@@ -72,12 +80,17 @@ export async function checkResolverHealth(baseUrl: string): Promise<{ ok: boolea
     clearTimeout(timeout);
 
     if (healthRes && healthRes.ok) {
-      return { ok: true, message: 'Connected to resolver service.' };
+      return { 
+        ok: true, 
+        message: `Connected to resolver service (${latencyMs}ms).`,
+        latencyMs 
+      };
     }
 
     return {
       ok: false,
       message: `Host responded with status ${sportsRes?.status || healthRes?.status || 'unreachable'}. Make sure your container is running.`,
+      latencyMs,
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Connection failed';

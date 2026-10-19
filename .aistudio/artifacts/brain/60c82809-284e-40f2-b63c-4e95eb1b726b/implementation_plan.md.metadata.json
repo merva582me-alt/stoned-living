@@ -1,6 +1,6 @@
 {
-  "summary": "Implementation plan to remove 'NFL vs RedZone', partition 24/7 live TV channels (Sky Sports Golf, Tennis Channel, Rally TV, NHL Network, NFL Network, Fox League, Fox Cricket, Willow Cricket) into a dedicated '24/7 Live Sports TV Channels' section positioned above the match schedule in the Sports Arena, style them with high-contrast network cards and 24/7 LIVE badges, and preserve head-to-head match purity in both the match schedule and the Home view.",
-  "updatedAt": "2026-10-19T02:18:16.435875792Z",
+  "summary": "Revised implementation plan focusing on 100% free hosting using Oracle Cloud Always Free VPS (4 ARM cores, 24GB RAM, 10TB free monthly bandwidth) running the unmodified streamed-pk-resolver Docker container 24/7, fronted by Cloudflare for free SSL and DDoS protection, with step-by-step provisioning commands and seamless fallback in the app.",
+  "updatedAt": "2026-10-19T03:50:41.898652471Z",
   "requestFeedback": true,
   "userFacing": true
 }

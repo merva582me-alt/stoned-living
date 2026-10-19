@@ -20,12 +20,23 @@ import {
   AlertCircle,
   AlertTriangle,
   Cannabis,
-  X
+  X,
+  Server,
+  Terminal,
+  Copy,
+  CheckCircle2,
+  ChevronUp,
 } from 'lucide-react';
 import { UserProfile, UserSettings } from '../types';
 import { saveUserProfile, clearWatchHistory, DEFAULT_USER } from '../services/storage';
 import { saveProfileToFirestore } from '../services/firebase';
 import { useTranslation, SupportedLanguage } from '../services/i18n';
+import {
+  getResolverBaseUrl,
+  setResolverBaseUrl,
+  checkResolverHealth,
+  DEFAULT_CLOUDFLARE_RESOLVER,
+} from '../services/sportsStreamResolver';
 import { toast } from 'sonner';
 
 export interface AvatarPreset {
@@ -173,6 +184,82 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [customAvatarUrl, setCustomAvatarUrl] = useState('');
   const [customUrlError, setCustomUrlError] = useState(false);
   const [isApplyingAvatar, setIsApplyingAvatar] = useState(false);
+
+  // Live Sports Resolver configuration & diagnostic state
+  const [resolverUrl, setResolverUrl] = useState(() => getResolverBaseUrl());
+  const [testingResolver, setTestingResolver] = useState(false);
+  const [resolverTestResult, setResolverTestResult] = useState<{ ok: boolean; message: string; latencyMs?: number } | null>(null);
+  const [showOracleGuide, setShowOracleGuide] = useState(false);
+  const [copiedDockerCmd, setCopiedDockerCmd] = useState(false);
+  const [copiedTunnelCmd, setCopiedTunnelCmd] = useState(false);
+
+  const handleTestResolver = async () => {
+    if (!resolverUrl.trim()) {
+      setResolverTestResult({ ok: false, message: 'Please enter a resolver URL to test.' });
+      return;
+    }
+    setTestingResolver(true);
+    setResolverTestResult(null);
+    try {
+      const res = await checkResolverHealth(resolverUrl.trim());
+      setResolverTestResult(res);
+      if (res.ok) {
+        toast.success(`Connected to resolver service! (${res.latencyMs || 0}ms)`);
+      } else {
+        toast.error('Resolver connection notice: ' + res.message);
+      }
+    } finally {
+      setTestingResolver(false);
+    }
+  };
+
+  const handleSaveResolver = () => {
+    const trimmed = resolverUrl.trim();
+    setResolverBaseUrl(trimmed);
+    toast.success(
+      trimmed
+        ? 'Stream resolver saved! Live sports player will route through this endpoint.'
+        : 'Resolver URL reset to default relay.'
+    );
+  };
+
+  const handleResetResolver = () => {
+    setResolverUrl(DEFAULT_CLOUDFLARE_RESOLVER);
+    setResolverBaseUrl(DEFAULT_CLOUDFLARE_RESOLVER);
+    setResolverTestResult(null);
+    toast.info('Resolver reset to default production host.');
+  };
+
+  const [guidePlatform, setGuidePlatform] = useState<'ec2' | 'oracle'>('ec2');
+  const [ec2Distro, setEc2Distro] = useState<'ubuntu' | 'al2023'>('ubuntu');
+  const [copiedEc2Cmd, setCopiedEc2Cmd] = useState(false);
+
+  const oracleDockerCommand =
+    'sudo docker run -d --name streamed-pk-resolver --restart unless-stopped -p 3000:3000 lunatic16/streamed-pk-resolver';
+
+  const oracleTunnelCommand =
+    'cloudflared tunnel --url http://localhost:3000';
+
+  const ec2UbuntuCommand =
+    'curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker ubuntu && sudo docker run -d --name streamed-pk-resolver --restart unless-stopped -p 3000:3000 lunatic16/streamed-pk-resolver && curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && sudo dpkg -i cloudflared.deb && nohup cloudflared tunnel --url http://localhost:3000 > cloudflared.log 2>&1 & sleep 3 && grep -o "https://.*trycloudflare.com" cloudflared.log';
+
+  const ec2Al2023Command =
+    'sudo dnf install -y docker wget && sudo systemctl enable --now docker && sudo usermod -aG docker ec2-user && sudo docker run -d --name streamed-pk-resolver --restart unless-stopped -p 3000:3000 lunatic16/streamed-pk-resolver && wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-x86_64.rpm && sudo rpm -i cloudflared-linux-x86_64.rpm && nohup cloudflared tunnel --url http://localhost:3000 > cloudflared.log 2>&1 & sleep 3 && grep -o "https://.*trycloudflare.com" cloudflared.log';
+
+  const handleCopyCmd = (text: string, type: 'docker' | 'tunnel' | 'ec2') => {
+    navigator.clipboard.writeText(text);
+    if (type === 'docker') {
+      setCopiedDockerCmd(true);
+      setTimeout(() => setCopiedDockerCmd(false), 2000);
+    } else if (type === 'tunnel') {
+      setCopiedTunnelCmd(true);
+      setTimeout(() => setCopiedTunnelCmd(false), 2000);
+    } else {
+      setCopiedEc2Cmd(true);
+      setTimeout(() => setCopiedEc2Cmd(false), 2000);
+    }
+    toast.info('Command copied to clipboard!');
+  };
 
   const handleSelectAvatarPreset = async (presetUrl: string) => {
     if (user.avatar === presetUrl) return;
@@ -766,7 +853,205 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
         </section>
 
-        {/* ── 4. Data Section ── */}
+        {/* ── 4. Live Sports Stream Resolver (Zero-Cost Hosting) ── */}
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-zinc-300">Live Sports Stream Resolver</h2>
+              <p className="text-xs text-zinc-500">Route live sports feeds through your zero-cost Oracle Cloud or Cloudflare Tunnel host.</p>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 font-semibold">
+              Zero-Cost Hosting
+            </span>
+          </div>
+
+          <div className="rounded-2xl bg-[#0c1410] border border-emerald-500/15 p-4 sm:p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800/80">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                  <Server className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Resolver Service Endpoint</h3>
+                  <p className="text-xs text-zinc-400">Unlocks and relays ad-stripped direct HLS sports streams</p>
+                </div>
+              </div>
+
+              {/* Status indicator */}
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                {resolverUrl.trim() === DEFAULT_CLOUDFLARE_RESOLVER ? (
+                  <span className="text-[10px] font-mono px-2 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400">
+                    Default Relay
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-2 py-1 rounded-lg bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 font-semibold flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00df82] animate-pulse" />
+                    Custom Host
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Input + Action Buttons */}
+            <div className="space-y-2">
+              <label className="text-xs font-mono text-zinc-300 font-semibold block">
+                Active Resolver URL
+              </label>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                <input
+                  type="text"
+                  value={resolverUrl}
+                  onChange={(e) => {
+                    setResolverUrl(e.target.value);
+                    setResolverTestResult(null);
+                  }}
+                  placeholder="https://your-tunnel.trycloudflare.com or https://resolver.yourdomain.com"
+                  className="flex-1 bg-black/70 border border-zinc-800 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs font-mono text-emerald-300 placeholder-zinc-600 focus:outline-none transition"
+                />
+                <button
+                  type="button"
+                  onClick={handleTestResolver}
+                  disabled={testingResolver}
+                  className="px-3.5 py-2.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-emerald-500/40 text-xs font-bold text-zinc-300 hover:text-white transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${testingResolver ? 'animate-spin text-emerald-400' : ''}`} />
+                  <span>{testingResolver ? 'Testing...' : 'Test Connection'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveResolver}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-[#00df82] text-black font-black text-xs transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0 shadow-[0_0_15px_rgba(0,223,130,0.25)]"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[3]" />
+                  <span>Save</span>
+                </button>
+              </div>
+
+              {/* Test Result Message */}
+              {resolverTestResult && (
+                <div
+                  className={`p-3 rounded-xl border text-xs font-mono flex items-start gap-2.5 transition animate-fadeIn ${
+                    resolverTestResult.ok
+                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                      : 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                  }`}
+                >
+                  {resolverTestResult.ok ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold">{resolverTestResult.message}</p>
+                    {resolverTestResult.latencyMs !== undefined && (
+                      <span className="text-[10px] text-zinc-400 mt-0.5 block">
+                        Response time: {resolverTestResult.latencyMs}ms
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Quick Actions Footer */}
+            <div className="pt-2 flex items-center justify-between flex-wrap gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowOracleGuide(!showOracleGuide)}
+                className="text-xs text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1.5 cursor-pointer py-1"
+              >
+                <Cloud className="w-3.5 h-3.5" />
+                <span>{showOracleGuide ? 'Hide Oracle Cloud Guide' : 'How to Host for Free on Oracle Cloud VPS'}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showOracleGuide ? 'rotate-180' : ''}`} />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetResolver}
+                className="text-[11px] text-zinc-500 hover:text-zinc-300 underline cursor-pointer"
+              >
+                Reset to Default Relay
+              </button>
+            </div>
+
+            {/* Collapsible Oracle Cloud Always Free Setup Guide */}
+            {showOracleGuide && (
+              <div className="mt-3 pt-3 border-t border-zinc-800/80 space-y-3.5 text-xs font-mono animate-fadeIn">
+                <div className="p-3 rounded-xl bg-zinc-900/60 border border-zinc-800 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Why Oracle Cloud Always Free?</span>
+                  </div>
+                  <p className="text-zinc-300 text-[11px] leading-relaxed font-sans">
+                    Oracle Cloud provides <strong className="text-white">4 ARM Ampere cores, 24 GB RAM, and 10 TB/month of free outbound bandwidth</strong> permanently ($0.00/month). Unlike a home PC, it runs 24/7 in the cloud without ever sleeping or incurring Railway egress bills.
+                  </p>
+                </div>
+
+                {/* Step 1 */}
+                <div className="space-y-1.5">
+                  <span className="text-zinc-300 font-bold flex items-center gap-2 text-[11px]">
+                    <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px]">1</span>
+                    Launch Free VM Instance
+                  </span>
+                  <p className="text-[11px] text-zinc-400 pl-7 font-sans">
+                    In Oracle Cloud, launch an Always Free Ubuntu 24.04 instance. Connect to it via SSH.
+                  </p>
+                </div>
+
+                {/* Step 2 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-zinc-300 pl-7">
+                    <span className="font-bold flex items-center gap-2 text-[11px]">
+                      <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] -ml-7">2</span>
+                      Run Resolver Container
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCmd(oracleDockerCommand, 'docker')}
+                      className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 text-[11px] cursor-pointer"
+                    >
+                      {copiedDockerCmd ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedDockerCmd ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <div className="pl-7">
+                    <code className="text-[10.5px] bg-black/80 border border-zinc-800 rounded-lg p-2.5 block text-emerald-300 overflow-x-auto select-all">
+                      {oracleDockerCommand}
+                    </code>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-zinc-300 pl-7">
+                    <span className="font-bold flex items-center gap-2 text-[11px]">
+                      <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center text-[10px] -ml-7">3</span>
+                      Expose via Free Cloudflare Tunnel
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleCopyCmd(oracleTunnelCommand, 'tunnel')}
+                      className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 text-[11px] cursor-pointer"
+                    >
+                      {copiedTunnelCmd ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedTunnelCmd ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                  <div className="pl-7">
+                    <code className="text-[10.5px] bg-black/80 border border-zinc-800 rounded-lg p-2.5 block text-emerald-300 overflow-x-auto select-all">
+                      {oracleTunnelCommand}
+                    </code>
+                    <p className="text-[10.5px] text-zinc-400 mt-1.5 leading-relaxed font-sans">
+                      Copy the generated <code className="text-emerald-400">https://xxxx.trycloudflare.com</code> (or your custom domain) and paste it into the box above.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── 5. Data Section ── */}
         <section className="space-y-3">
           <h2 className="text-sm font-bold text-zinc-300">{t('settings.danger_zone')}</h2>
           <p className="text-xs text-zinc-500">{t('settings.clear_progress_desc')}</p>

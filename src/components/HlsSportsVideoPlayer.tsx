@@ -11,6 +11,7 @@ import {
   RotateCw,
   AlertTriangle,
 } from 'lucide-react';
+import { getResolverBaseUrl } from '../services/sportsStreamResolver';
 
 interface HlsSportsVideoPlayerProps {
   streamUrl: string;
@@ -27,7 +28,7 @@ interface QualityLevel {
 }
 
 // Custom Hls.js loader that automatically enforces https: on playlist manifests and fragment URLs
-// to prevent mixed content blocking when running behind Railway / Cloudflare / HTTPS proxies
+// to prevent mixed content blocking when running behind Cloudflare Tunnels, proxies, or custom domains
 class HttpsEnforcingLoader extends Hls.DefaultConfig.loader {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   load(context: any, config: any, callbacks: any) {
@@ -41,8 +42,19 @@ class HttpsEnforcingLoader extends Hls.DefaultConfig.loader {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     callbacks.onSuccess = function (response: any, stats: any, ctx: any, networkDetails: any) {
       if (typeof response?.data === 'string') {
+        // Upgrade trycloudflare HTTP segment links to HTTPS
+        response.data = response.data.replace(/http:\/\/([a-zA-Z0-9.-]+\.trycloudflare\.com)/gi, 'https://$1');
         response.data = response.data.replace(/http:\/\/streamed-pk-resolver-production\.up\.railway\.app/gi, 'https://streamed-pk-resolver-production.up.railway.app');
         response.data = response.data.replace(/http:\/\/localhost:3000/gi, 'https://streamed-pk-resolver-production.up.railway.app');
+
+        // Dynamically enforce HTTPS on the active resolver host if on HTTPS web client
+        if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+          const resolverHost = getResolverBaseUrl().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+          if (resolverHost) {
+            const escaped = resolverHost.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            response.data = response.data.replace(new RegExp(`http://${escaped}`, 'gi'), `https://${resolverHost}`);
+          }
+        }
       }
       return originalSuccess.call(this, response, stats, ctx, networkDetails);
     };
