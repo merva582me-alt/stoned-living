@@ -161,9 +161,9 @@ export const AdvanceFilterDrawer: React.FC<AdvanceFilterDrawerProps> = ({
                   <button
                     key={opt.value}
                     onClick={() => onChangeFilters({ ...filters, sortBy: opt.value })}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium text-left transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold text-left transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-500 text-black font-bold shadow-[0_0_12px_#00FF9D]'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40'
                         : 'bg-[#0f1712] text-zinc-300 hover:bg-zinc-800 border border-emerald-500/10'
                     }`}
                   >
@@ -186,9 +186,9 @@ export const AdvanceFilterDrawer: React.FC<AdvanceFilterDrawerProps> = ({
                   <button
                     key={opt.value}
                     onClick={() => onChangeFilters({ ...filters, year: opt.value })}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-500 text-black font-bold shadow-[0_0_10px_#00FF9D]'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40'
                         : 'bg-[#0f1712] text-zinc-300 hover:bg-zinc-800 border border-emerald-500/10'
                     }`}
                   >
@@ -218,7 +218,7 @@ export const AdvanceFilterDrawer: React.FC<AdvanceFilterDrawerProps> = ({
                     onClick={() => onChangeFilters({ ...filters, minRating: score })}
                     className={`py-2 rounded-lg text-xs font-semibold text-center transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-500 text-black shadow-[0_0_10px_#00FF9D]'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40'
                         : 'bg-[#0f1712] text-zinc-300 hover:bg-zinc-800 border border-emerald-500/10'
                     }`}
                   >
@@ -241,9 +241,9 @@ export const AdvanceFilterDrawer: React.FC<AdvanceFilterDrawerProps> = ({
                   <button
                     key={comp.id || 'all'}
                     onClick={() => onChangeFilters({ ...filters, companyId: comp.id })}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-500 text-black font-bold shadow-[0_0_10px_#00FF9D]'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40'
                         : 'bg-[#0f1712] text-zinc-300 hover:bg-zinc-800 border border-emerald-500/10'
                     }`}
                   >
@@ -266,9 +266,9 @@ export const AdvanceFilterDrawer: React.FC<AdvanceFilterDrawerProps> = ({
                   <button
                     key={lang.code}
                     onClick={() => onChangeFilters({ ...filters, language: lang.code })}
-                    className={`px-3 py-2 rounded-xl text-xs font-medium text-center transition-all cursor-pointer ${
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold text-center transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-emerald-500 text-black font-bold shadow-[0_0_10px_#00FF9D]'
+                        ? 'bg-emerald-500 text-black shadow-[0_0_12px_rgba(16,185,129,0.35)] border border-emerald-400/40'
                         : 'bg-[#0f1712] text-zinc-300 hover:bg-zinc-800 border border-emerald-500/10'
                     }`}
                   >
@@ -297,7 +297,7 @@ export const AdvanceFilterDrawer: React.FC<AdvanceFilterDrawerProps> = ({
 
           <button
             onClick={onClose}
-            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs shadow-[0_0_20px_#00FF9D] transition-all cursor-pointer"
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black text-xs shadow-[0_0_16px_rgba(16,185,129,0.35)] transition-all cursor-pointer"
           >
             <Check className="w-4 h-4 stroke-[3]" />
             <span>

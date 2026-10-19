@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, 
-  Cannabis,
-  Server,
-  RotateCw,
-  Zap,
-  ChevronRight
+  Cannabis, 
+  Server, 
+  RotateCw, 
+  Zap, 
+  ChevronRight,
+  Play
 } from 'lucide-react';
 import { MediaItem, UserProfile } from '../types';
 import { updateWatchHistory } from '../services/storage';
@@ -34,27 +35,32 @@ export interface StreamServerNode {
 
 export type VidCoreServer = StreamServerNode;
 
+// Default node is now URSA (index 0), followed by Atlas, Centaurus, Andromeda, and Orion
 export const STREAM_SERVERS: StreamServerNode[] = [
+  { id: 'ursa', serverParam: 'meow', name: 'Ursa', badge: 'Ultra', description: 'Ultra Resilient Mirror' },
   { id: 'atlas', serverParam: 'atlas', name: 'Atlas', badge: 'Fastest', description: 'Primary High-Speed Node' },
   { id: 'centaurus', serverParam: 'centaurus', name: 'Centaurus', badge: 'HD', description: 'High Bitrate 1080p' },
-  { id: 'ursa', serverParam: 'meow', name: 'Ursa', badge: 'Ultra', description: 'Ultra Resilient Mirror' },
   { id: 'andromeda', serverParam: 'andromeda', name: 'Andromeda', badge: 'CDN', description: 'Global Edge Cache' },
   { id: 'orion', serverParam: 'orion', name: 'Orion', badge: 'Backup', description: 'Failover Relay' },
 ];
 
 export const VIDCORE_SERVERS = STREAM_SERVERS;
 
+const FAILOVER_TIMEOUT = 5; // 5 seconds before switching to next node
+
 function getStreamUrl(
   mediaId: number, 
   isTv: boolean, 
   season: number, 
   episode: number, 
-  serverParam: string
+  serverParam: string,
+  resumeSeconds: number = 0
 ): string {
   const base = isTv
     ? `https://stream-proxy.chronixx.workers.dev/embed/tv/${mediaId}/${season}/${episode}`
     : `https://stream-proxy.chronixx.workers.dev/embed/movie/${mediaId}`;
-  return `${base}?server=${serverParam}&branding=STONED.LIVING&color=10b981&autoplay=true`;
+  const resumeParam = resumeSeconds > 10 ? `&t=${resumeSeconds}&start=${resumeSeconds}#t=${resumeSeconds}` : '';
+  return `${base}?server=${serverParam}&branding=STONED.LIVING&color=10b981&autoplay=true${resumeParam}`;
 }
 
 const PREFERRED_SERVER_KEY = 'stoned_living_preferred_stream_node';
@@ -67,7 +73,19 @@ function getInitialServerIndex(): number {
       if (idx !== -1) return idx;
     }
   } catch {}
+  // Default to Ursa (index 0)
   return 0;
+}
+
+function formatPlaybackTime(sec: number): string {
+  if (sec <= 0) return '0:00';
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) {
+    return `${h}h ${m < 10 ? '0' : ''}${m}m`;
+  }
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
 export const WatchPlayer: React.FC<WatchPlayerProps> = ({
@@ -85,16 +103,11 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
   const [stalledServerIds, setStalledServerIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showSkip, setShowSkip] = useState(false);
-  const [failoverCountdown, setFailoverCountdown] = useState(7);
+  const [failoverCountdown, setFailoverCountdown] = useState(FAILOVER_TIMEOUT);
   const [autoRotate, setAutoRotate] = useState(true);
   const [isEpisodesModalOpen, setIsEpisodesModalOpen] = useState(false);
 
   const isTv = media.media_type === 'tv' || Boolean(media.first_air_date);
-  const currentServer = STREAM_SERVERS[serverIndex];
-  const streamUrl = getStreamUrl(media.id, isTv, season, episode, currentServer.serverParam);
-
-  const title = media.title || media.name || 'Untitled';
-  const genres = media.genres?.map((g) => g.name).join(' / ') || (isTv ? 'SERIES' : 'CINEMA');
 
   // Baseline duration: 42 minutes (2520s) for TV episodes, 110 minutes (6600s) for movies
   const baselineDuration = isTv
@@ -103,17 +116,28 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 
   const [detectedDuration, setDetectedDuration] = useState<number>(baselineDuration);
   const [episodeTitle, setEpisodeTitle] = useState<string>('');
-  const [playbackSeconds, setPlaybackSeconds] = useState<number>(15);
 
+  // Find saved watch history to resume playback at last saved position
+  const existingHistory = user?.watchHistory?.find((h) => Number(h.mediaId) === Number(media.id));
+  const isSameEp = existingHistory && (!isTv || (Number(existingHistory.season) === Number(season) && Number(existingHistory.episode) === Number(episode)));
+  const initialResumeSeconds = isSameEp && (existingHistory?.progressSeconds || 0) > 10 ? existingHistory.progressSeconds : 0;
+
+  const [playbackSeconds, setPlaybackSeconds] = useState<number>(initialResumeSeconds);
+  const playbackSecondsRef = useRef<number>(initialResumeSeconds);
+  playbackSecondsRef.current = playbackSeconds;
+
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const hasShownResumeToastRef = useRef(false);
+
+  const currentServer = STREAM_SERVERS[serverIndex];
+  const streamUrl = getStreamUrl(media.id, isTv, season, episode, currentServer.serverParam, initialResumeSeconds);
+
+  const title = media.title || media.name || 'Untitled';
   const backdropUrl = media.backdrop_path
     ? (media.backdrop_path.startsWith('http') ? media.backdrop_path : `https://image.tmdb.org/t/p/original${media.backdrop_path}`)
     : media.poster_path
     ? (media.poster_path.startsWith('http') ? media.poster_path : `https://image.tmdb.org/t/p/original${media.poster_path}`)
     : '';
-
-  const posterUrl = media.poster_path
-    ? (media.poster_path.startsWith('http') ? media.poster_path : `https://image.tmdb.org/t/p/w500${media.poster_path}`)
-    : backdropUrl;
 
   // Next server in the rotation pool
   const nextServerIndex = (serverIndex + 1) % STREAM_SERVERS.length;
@@ -125,6 +149,69 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
       localStorage.setItem(PREFERRED_SERVER_KEY, STREAM_SERVERS[idx].id);
     } catch {}
   };
+
+  // Immediate watch history sync to ensure cloud persistence across browsers/devices
+  const flushWatchHistory = (immediate = false) => {
+    if (!isLoggedIn) return;
+    const currentSec = playbackSecondsRef.current;
+    if (currentSec <= 0) return;
+
+    const currentPct = Math.min(99, Math.max(1, Math.round((currentSec / detectedDuration) * 100)));
+    const updated = updateWatchHistory({
+      mediaId: media.id,
+      mediaType: isTv ? 'tv' : 'movie',
+      title,
+      posterPath: media.poster_path ? `https://image.tmdb.org/t/p/w500${media.poster_path}` : null,
+      backdropPath: backdropUrl || null,
+      season: isTv ? (season || 1) : 1,
+      episode: isTv ? (episode || 1) : 1,
+      episodeTitle: episodeTitle || undefined,
+      progressSeconds: currentSec,
+      durationSeconds: detectedDuration,
+      progressPercent: currentPct,
+    }, immediate);
+    if (onUpdateUser) onUpdateUser(updated);
+  };
+
+  // Show Resume Notification Toast on initial load if resuming from prior progress
+  useEffect(() => {
+    if (initialResumeSeconds > 10 && !hasShownResumeToastRef.current) {
+      hasShownResumeToastRef.current = true;
+      toast.info(`Resuming playback at ${formatPlaybackTime(initialResumeSeconds)}`, {
+        duration: 4500,
+        action: {
+          label: 'Start Over',
+          onClick: () => {
+            setPlaybackSeconds(0);
+            playbackSecondsRef.current = 0;
+            if (iframeRef.current?.contentWindow) {
+              try {
+                iframeRef.current.contentWindow.postMessage({ type: 'seek', time: 0 }, '*');
+                iframeRef.current.contentWindow.postMessage({ type: 'setCurrentTime', value: 0 }, '*');
+              } catch {}
+            }
+            if (isLoggedIn) {
+              const updated = updateWatchHistory({
+                mediaId: media.id,
+                mediaType: isTv ? 'tv' : 'movie',
+                title,
+                posterPath: media.poster_path ? `https://image.tmdb.org/t/p/w500${media.poster_path}` : null,
+                backdropPath: backdropUrl || null,
+                season: isTv ? (season || 1) : 1,
+                episode: isTv ? (episode || 1) : 1,
+                episodeTitle: episodeTitle || undefined,
+                progressSeconds: 0,
+                durationSeconds: detectedDuration,
+                progressPercent: 0,
+              }, true);
+              if (onUpdateUser) onUpdateUser(updated);
+            }
+            toast.success('Restarted playback from beginning');
+          }
+        }
+      });
+    }
+  }, [initialResumeSeconds, isLoggedIn, media.id, isTv, season, episode, title, media.poster_path, backdropUrl, detectedDuration, episodeTitle, onUpdateUser]);
 
   // Fetch actual TMDb episode runtime and name for TV shows
   useEffect(() => {
@@ -146,13 +233,27 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     };
   }, [media.id, season, episode, isTv]);
 
-  // Listen for iframe postMessage from embed (timeupdate, durationchange)
+  // Listen for iframe postMessage from embed (timeupdate, durationchange, errors)
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
         const raw = event.data;
         const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
         if (!data || typeof data !== 'object') return;
+
+        // Detect player errors and trigger instant failover
+        const rawString = typeof raw === 'string' ? raw : JSON.stringify(raw);
+        if (
+          rawString.includes('MEDIA_ERR_SRC_NOT_SUPPORTED') ||
+          rawString.includes('MEDIA_ERR_NETWORK') ||
+          rawString.includes('html5_video:4') ||
+          rawString.includes('224003')
+        ) {
+          if (autoRotate) {
+            handleNextServer();
+            return;
+          }
+        }
 
         const duration = Number(data.duration || data.totalDuration || data.length);
         const currentTime = Number(data.currentTime || data.time || data.progress || data.seconds);
@@ -161,30 +262,33 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
           setDetectedDuration(Math.round(duration));
         }
         if (!isNaN(currentTime) && currentTime >= 0) {
-          setPlaybackSeconds(Math.round(currentTime));
+          const sec = Math.round(currentTime);
+          setPlaybackSeconds(sec);
+          playbackSecondsRef.current = sec;
+          setIsLoading(false); // Live video is moving
         }
       } catch (_) {}
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [autoRotate]);
 
   // Reset loading state and countdown when server, media, or episode changes
   useEffect(() => {
     setIsLoading(true);
     setShowSkip(false);
-    setFailoverCountdown(7);
+    setFailoverCountdown(FAILOVER_TIMEOUT);
 
-    // Show manual reveal / force play after 3 seconds
+    // Show manual reveal / force play after 2.5 seconds
     const skipTimer = setTimeout(() => {
       setShowSkip(true);
-    }, 3000);
+    }, 2500);
 
     // Safety timeout: automatically dismiss overlay after 5 seconds if iframe loaded or stalled
     const safetyTimer = setTimeout(() => {
       setIsLoading(false);
-    }, 5200);
+    }, 5000);
 
     return () => {
       clearTimeout(skipTimer);
@@ -192,8 +296,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     };
   }, [media.id, season, episode, serverIndex]);
 
-  // ── Intelligent Auto-Switch Watchdog (Runs ONLY while stream is connecting / loading) ──
-  // CRITICAL: Once the stream has loaded (isLoading === false), stop auto-switching so user is never interrupted
+  // ── Node Rotator Watchdog: 5-second countdown to switch to next node if stalled ──
   useEffect(() => {
     if (!autoRotate || !isLoading) return;
 
@@ -215,7 +318,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
           toast.info(`Auto-switching to Node ${target.name}...`, {
             duration: 2500,
           });
-          return 7;
+          return FAILOVER_TIMEOUT;
         }
         return prev - 1;
       });
@@ -229,7 +332,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     setServerIndex(index);
     persistServerChoice(index);
     setIsLoading(true);
-    setFailoverCountdown(7);
+    setFailoverCountdown(FAILOVER_TIMEOUT);
     // Explicit manual selection pauses auto-rotate so user's choice is respected
     setAutoRotate(false);
     toast.success(`Connected to Node ${STREAM_SERVERS[index].name}`);
@@ -240,60 +343,34 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
     handleSelectServer(nextIdx);
   };
 
-  // Record playback session and track active progress in user history
+  // Periodic watch progress recording + flush on unmount / window unload
   useEffect(() => {
     if (!isLoggedIn) return;
 
-    // Check if resuming from previous history
-    const existing = user?.watchHistory?.find((h) => Number(h.mediaId) === Number(media.id));
-    const isSameEp = existing && (!isTv || (existing.season === season && existing.episode === episode));
-    const initialElapsed = isSameEp && existing.progressSeconds > 0 ? existing.progressSeconds : 15;
-    setPlaybackSeconds(initialElapsed);
+    // Flush immediately when tab is refreshed or closed
+    const handleBeforeUnload = () => {
+      flushWatchHistory(true);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
-    const initialPct = Math.min(99, Math.max(1, Math.round((initialElapsed / detectedDuration) * 100)));
-    const updated = updateWatchHistory({
-      mediaId: media.id,
-      mediaType: isTv ? 'tv' : 'movie',
-      title,
-      posterPath: media.poster_path ? `https://image.tmdb.org/t/p/w500${media.poster_path}` : null,
-      backdropPath: backdropUrl || null,
-      season: isTv ? (season || 1) : 1,
-      episode: isTv ? (episode || 1) : 1,
-      episodeTitle: episodeTitle || undefined,
-      progressSeconds: initialElapsed,
-      durationSeconds: detectedDuration,
-      progressPercent: initialPct,
-    });
-    if (onUpdateUser) onUpdateUser(updated);
-
-    // Increment watching progress every 15 seconds while actively streaming
+    // Periodic watch progress sync every 10 seconds
     const progressTimer = setInterval(() => {
       if (isLoading) return;
+      flushWatchHistory(false);
+    }, 10000);
 
-      setPlaybackSeconds((prev) => {
-        const next = Math.min(detectedDuration, prev + 15);
-        const nextPct = Math.min(99, Math.max(1, Math.round((next / detectedDuration) * 100)));
-
-        const syncUpdate = updateWatchHistory({
-          mediaId: media.id,
-          mediaType: isTv ? 'tv' : 'movie',
-          title,
-          posterPath: media.poster_path ? `https://image.tmdb.org/t/p/w500${media.poster_path}` : null,
-          backdropPath: backdropUrl || null,
-          season: isTv ? (season || 1) : 1,
-          episode: isTv ? (episode || 1) : 1,
-          episodeTitle: episodeTitle || undefined,
-          progressSeconds: next,
-          durationSeconds: detectedDuration,
-          progressPercent: nextPct,
-        });
-        if (onUpdateUser) onUpdateUser(syncUpdate);
-        return next;
-      });
-    }, 15000);
-
-    return () => clearInterval(progressTimer);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      clearInterval(progressTimer);
+      // Synchronous immediate flush on player close
+      flushWatchHistory(true);
+    };
   }, [media.id, season, episode, isLoggedIn, isTv, title, media.poster_path, backdropUrl, detectedDuration, episodeTitle]);
+
+  const handleClosePlayer = () => {
+    flushWatchHistory(true);
+    onClose();
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-[#050806] text-white flex flex-col overflow-hidden select-none">
@@ -301,8 +378,8 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
       <header className="w-full px-3 sm:px-8 py-3 flex items-center justify-between bg-black/75 backdrop-blur-md border-b border-emerald-500/15 z-20 shrink-0">
         <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <button
-            onClick={onClose}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition cursor-pointer text-xs font-bold shrink-0"
+            onClick={handleClosePlayer}
+            className="flex items-center gap-1.5 px-3 py-1.5 min-h-[40px] rounded-xl bg-zinc-900/80 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 transition cursor-pointer text-xs font-bold shrink-0"
           >
             <ArrowLeft className="w-4 h-4" />
             <span className="hidden xs:inline">Back</span>
@@ -340,7 +417,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
             <button
               type="button"
               onClick={() => setIsEpisodesModalOpen(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-zinc-800 hover:border-emerald-500/50 transition-all cursor-pointer shadow-sm group"
+              className="flex items-center gap-2 px-3 py-1.5 min-h-[40px] rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-white border border-zinc-800 hover:border-emerald-500/50 transition-all cursor-pointer shadow-sm group"
               title="Select season and episode"
             >
               <div className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform flex items-center justify-center">
@@ -376,14 +453,45 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
 
         {/* Video Iframe Embed */}
         <iframe
+          ref={iframeRef}
           key={`stream-${currentServer.id}-${media.id}-${isTv ? `${season}-${episode}` : 'movie'}`}
           src={streamUrl}
           title={title}
           allowFullScreen
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
-          onLoad={() => setIsLoading(false)}
+          onLoad={() => {
+            setIsLoading(false);
+            if (initialResumeSeconds > 10 && iframeRef.current?.contentWindow) {
+              try {
+                iframeRef.current.contentWindow.postMessage({ type: 'seek', time: initialResumeSeconds }, '*');
+                iframeRef.current.contentWindow.postMessage({ type: 'setCurrentTime', value: initialResumeSeconds }, '*');
+              } catch {}
+            }
+          }}
           className="relative z-10 w-full h-full max-w-[1920px] border-0"
         />
+
+        {/* Connecting / Loading Overlay with Skip Button */}
+        {isLoading && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/80 backdrop-blur-md transition-opacity duration-300">
+            <div className="w-12 h-12 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin mb-4 shadow-[0_0_20px_rgba(0,223,130,0.3)]" />
+            <h2 className="text-sm sm:text-base font-black tracking-wider text-emerald-400 font-mono">
+              CONNECTING TO NODE {currentServer.name.toUpperCase()}...
+            </h2>
+            <p className="text-xs text-zinc-400 mt-1 font-mono text-center max-w-sm px-4">
+              {autoRotate ? `Auto-switching in ${failoverCountdown}s if stream stalls...` : 'Connecting to mirror...'}
+            </p>
+            {showSkip && (
+              <button
+                type="button"
+                onClick={() => setIsLoading(false)}
+                className="mt-5 px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-700 text-xs font-mono cursor-pointer transition"
+              >
+                Reveal Player
+              </button>
+            )}
+          </div>
+        )}
       </main>
 
       {/* ── Permanently Visible Bottom Server Dock (Works on Mobile Portrait & Landscape) ── */}
@@ -411,7 +519,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
               ) : (
                 <button
                   type="button"
-                  onClick={() => { setAutoRotate(true); setFailoverCountdown(7); }}
+                  onClick={() => { setAutoRotate(true); setFailoverCountdown(FAILOVER_TIMEOUT); }}
                   className="text-[10px] font-mono text-zinc-400 bg-zinc-900 border border-zinc-700 px-1.5 py-0.5 rounded-md flex items-center gap-1 cursor-pointer hover:text-white"
                   title="Click to resume auto-rotation while connecting"
                 >
@@ -435,7 +543,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
                 <button
                   key={srv.id}
                   onClick={() => handleSelectServer(idx)}
-                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 min-h-[38px] rounded-xl text-xs transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isActive
                       ? 'bg-emerald-500/25 text-[#00df82] border border-emerald-400 font-black shadow-[0_0_12px_rgba(0,223,130,0.35)] scale-[1.02]'
                       : wasStalled
@@ -461,7 +569,7 @@ export const WatchPlayer: React.FC<WatchPlayerProps> = ({
           <button
             onClick={handleNextServer}
             title={`Next Server (${nextServer.name})`}
-            className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-emerald-400 text-xs font-bold transition cursor-pointer shrink-0"
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 min-h-[38px] rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-emerald-400 text-xs font-bold transition cursor-pointer shrink-0"
           >
             <RotateCw className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Next Server</span>

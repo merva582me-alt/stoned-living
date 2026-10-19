@@ -1,54 +1,86 @@
-# Implementation Plan - Horizontal Navigation Buttons for Genre & Sports Filters
+# Revised Implementation Plan: Lunatic16 streamed-pk-resolver Cloudflare Worker & Universal Ad-Stripped Player
 
-Add horizontal navigation arrow buttons (`<` and `>`) flanking both ends of the filter pill bars across the **Movies**, **TV Shows / Series**, and **Live Sports Arena** tabs, enabling fast and comfortable browsing with smooth scrolling and dynamic edge-aware disabling.
-
-## User Decisions Summary
-- **Positioning**: Flanking both ends of the filter bar (Left arrow on the left, Right arrow on the right).
-- **Limit Behavior**: Dim and disable (`opacity-30 cursor-not-allowed pointer-events-none`) when the scroll container reaches the start or end boundary.
+This plan incorporates the exact architecture of **`Lunatic16/streamed-pk-resolver`** and **`Lunatic16/ppv-hls-proxy`**, tailored to run as a **dedicated Cloudflare Worker** with complete CORS, manifest rewriting, and segment proxying. It also updates the frontend player so that **live sports automatically play raw HLS streams with 100% of ads stripped** across all devices (phones, tablets, and computers).
 
 ---
 
-## Proposed Changes
+## 1. Specification Alignment with `Lunatic16/streamed-pk-resolver`
 
-### 1. Reusable Scroll Controller Hook / Helper
-We will implement horizontal scroll control with state tracking:
-- `canScrollLeft`: boolean indicating if scroll position is > 0.
-- `canScrollRight`: boolean indicating if `scrollLeft + clientWidth < scrollWidth - 2`.
-- `scroll(direction: 'left' | 'right')`: smoothly scrolls the container by ~260px–320px (a chunk of 2-3 pills).
-- Event listeners for `scroll` and window `resize` with passive observers to keep buttons updated in real-time as users scroll with mouse, trackpad, touch, or click.
-
-### 2. Movies Tab (`src/components/MoviesView.tsx`)
-- Wrap the genre pills track with a flanking navigation row:
-  - **Left Button**: `<ChevronLeft />` button positioned at the left edge of the genre track.
-  - **Scroll Track**: Centered horizontally scrollable track with `no-scrollbar` and `scroll-smooth`.
-  - **Right Button**: `<ChevronRight />` button positioned at the right edge of the genre track (before Advance Filter).
-- Visual Styling:
-  - Rounded-full 32px or 36px circular button matching the app's aesthetic: `bg-zinc-900 hover:bg-zinc-800 text-zinc-300 hover:text-white border border-zinc-800 hover:border-emerald-500/40`.
-  - Disabled state: `opacity-25 cursor-default pointer-events-none` when at boundary.
-
-### 3. TV Shows Tab (`src/components/TvView.tsx`)
-- Mirror the flanking navigation layout around the TV genre pills track:
-  - Left `<ChevronLeft />` button on the left flank.
-  - Right `<ChevronRight />` button on the right flank before the Advance Filter button.
-  - Dynamic scroll state updating on mount, scroll, and resize.
-
-### 4. Live Sports Arena Tab (`src/components/SportsView.tsx`)
-- Wrap the sports category pill bar (`All Sports`, `Basketball`, `Football`, etc.) with flanking navigation buttons:
-  - Left `<ChevronLeft />` button on the left flank.
-  - Horizontally scrollable sports category track.
-  - Right `<ChevronRight />` button on the right flank.
-  - Matches the exact visual polish, border, and hover glow effects.
+### How `Lunatic16/streamed-pk-resolver` Operates
+1. **Stream Resolution API**:
+   * Accepts queries by source & stream ID (`/api/stream/:source/:id` or `/api/resolve?url=...`).
+   * Fetches upstream metadata from the `streamed.pk` public API with domain failover chains (`streamed.pk`, `streamed.st`, `streami.su`).
+   * Parses embed pages, extracting direct CDN `.m3u8` master playlists.
+2. **Manifest Rewriting Engine (`/hls/manifest.m3u8`)**:
+   * Upstream HLS playlists contain relative or absolute URLs to media segments (`.ts`, `.m4s`, `.aac`, encryption keys) hosted on CDN domains that block foreign browser origins.
+   * The resolver rewrites each playlist line, repointing sub-variants and segment URIs through the proxy:
+     `${workerOrigin}/hls/segment?url=${encodeURIComponent(segmentUrl)}&headers=${encodedHeaders}`
+   * Emits `Content-Type: application/vnd.apple.mpegurl` and sets `Access-Control-Allow-Origin: *`.
+3. **Segment Proxy (`/hls/segment`)**:
+   * Forwards HTTP byte-range requests (`Range` header) and injects required upstream `Referer` and `User-Agent` headers.
+   * Returns video chunks with permissive CORS headers so `hls.js` and mobile Safari play uninterrupted.
+4. **Ad-Stripping Guarantee**:
+   * The browser player connects exclusively to raw video manifests and media chunks.
+   * Zero third-party HTML pages, zero `window.open` scripts, zero invisible `<a>` click-hijack layers, and zero overlay iframes are ever loaded by the client.
 
 ---
 
-## Verification Plan
+## 2. Dedicated Cloudflare Worker Script (`workers/streamed-pk-resolver-worker.js`)
 
-### Automated Checks
-- Run `lint_applet` to check for missing imports or TypeScript issues.
-- Run `compile_applet` to ensure full build success.
+We will generate a complete, production-grade Cloudflare Worker script that you can deploy with zero external dependencies:
 
-### Functional Verification
-- Test scrolling to the right: confirm left button enables and right button scrolls smoothly.
-- Test scrolling all the way to the end: confirm right button dims and disables.
-- Test scrolling back to start: confirm left button dims and disables.
-- Verify across Movies, TV Shows, and Sports tabs in both desktop and mobile viewports.
+* **Endpoint `/api/resolve`**:
+  * Resolves a `streamed.pk` match/stream into an ad-stripped, proxied `.m3u8` URL.
+  * Formats response: `{ success: true, streamUrl: "${workerOrigin}/hls/manifest.m3u8?url=...", source: "..." }`.
+* **Endpoint `/hls/manifest.m3u8`**:
+  * Proxies and rewrites master and variant `.m3u8` playlists.
+* **Endpoint `/hls/segment`**:
+  * Proxies video chunks (`.ts`, `.m4s`) with HTTP `Range` streaming support.
+* **CORS Preflight**:
+  * Responds to `OPTIONS` on all routes with `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: *`.
+* **Fallback Embed Cleaner**:
+  * Includes the `HTMLRewriter` rule set to neutralize inline popup scripts and container divs if an embed fallback is requested.
+
+---
+
+## 3. Frontend Player & Universal Device Optimization
+
+### A. Automatic Ad-Stripping Playback
+* When a user opens any match in the **Live Sports Arena**, the player automatically attempts to resolve the direct HLS stream via the Cloudflare Worker.
+* If resolved, it immediately launches the raw HLS stream inside the custom HTML5 player—no ads, no popups.
+* If a feed is offline or pending kickoff, it displays a friendly status with one-tap switching to other active feeds.
+
+### B. Mobile, Tablet, and Desktop Compatibility
+1. **iOS Safari (iPhone & iPad)**:
+   * Uses native HLS playback with `playsInline`, `webkit-playsinline`, and `x5-playsinline`.
+   * Implements `video.webkitEnterFullscreen()` fallback where the standard container Fullscreen API is blocked on iOS.
+2. **Android & Desktop (Chrome, Firefox, Edge, Safari)**:
+   * Uses `hls.js` with worker thread acceleration, low-latency live edge tracking, and automatic network error recovery (`hls.startLoad()`).
+3. **Responsive Touch UI**:
+   * Minimum 44px tap targets for mobile usability.
+   * Single tap toggles the sleek dark control overlay without interfering with play/pause.
+   * Volume slider with mute memory.
+   * Adaptive quality selector (`Auto`, `1080p`, `720p`, `480p`).
+   * Live edge synchronization badge (`LIVE`).
+
+### C. In-App Cloudflare Worker Setup Modal
+* The in-player **Resolver** settings modal will include:
+  * A dedicated **Cloudflare Worker** tab.
+  * 1-click **Copy Cloudflare Worker Code** button with the complete script.
+  * A simple input to paste your Cloudflare Worker URL (e.g., `https://my-sports-resolver.workers.dev`).
+  * Live connectivity tester.
+  * Setup instructions for the free Cloudflare dashboard (Workers & Pages > Create Worker > Paste > Deploy).
+
+---
+
+## 4. Verification Plan
+
+1. **Compilation & TypeScript Lint**:
+   * Run `npm run lint` (`tsc --noEmit`) to verify zero syntax or typing errors.
+   * Run `compile_applet` to confirm Vite production build succeeds.
+2. **Device Responsiveness Testing**:
+   * Verify layout, buttons, and video surface across phone, tablet, and desktop viewports.
+   * Confirm touch interactions on mobile do not cause jumpy scrolling or overlay overlap.
+3. **Failover & Feed Switching Testing**:
+   * Verify Feed 1, Feed 2, Feed 3, and Refresh buttons operate smoothly.
+   * Verify fallback behavior when a stream is not yet live.

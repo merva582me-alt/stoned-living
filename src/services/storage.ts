@@ -85,7 +85,7 @@ export function loadUserProfile(): UserProfile {
   return DEFAULT_USER;
 }
 
-type ProfileSyncListener = (profile: UserProfile) => void;
+type ProfileSyncListener = (profile: UserProfile, immediate?: boolean) => void;
 let profileSyncListener: ProfileSyncListener | null = null;
 
 export function registerProfileSyncListener(listener: ProfileSyncListener) {
@@ -114,7 +114,7 @@ export function isUserLoggedIn(): boolean {
   return Boolean(profile.id && profile.id !== 'guest_user');
 }
 
-export function saveUserProfile(user: UserProfile, syncToCloud: boolean = true) {
+export function saveUserProfile(user: UserProfile, syncToCloud: boolean = true, immediate: boolean = false) {
   try {
     const cleanUser: UserProfile = {
       ...user,
@@ -126,7 +126,7 @@ export function saveUserProfile(user: UserProfile, syncToCloud: boolean = true) 
     }
     if (syncToCloud && profileSyncListener) {
       try {
-        profileSyncListener(cleanUser);
+        profileSyncListener(cleanUser, immediate);
       } catch (err) {
         console.warn('Profile sync listener error:', err);
       }
@@ -254,7 +254,7 @@ export function mergeWatchHistories(
   return deduplicateWatchHistory([...remote, ...local]);
 }
 
-export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedAt'>): UserProfile {
+export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedAt'>, immediate: boolean = false): UserProfile {
   const profile = loadUserProfile();
   // Do not track any playback progress until user is logged in
   if (!profile.id || profile.id === 'guest_user') {
@@ -289,7 +289,7 @@ export function updateWatchHistory(item: Omit<WatchHistoryItem, 'id' | 'updatedA
 
   // Keep max 50 recent items
   profile.watchHistory = history.slice(0, 50);
-  saveUserProfile(profile);
+  saveUserProfile(profile, true, immediate);
   return profile;
 }
 

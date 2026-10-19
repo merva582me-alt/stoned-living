@@ -122,9 +122,9 @@ export default function App() {
 
   // Register background Firestore sync for any watchlist/history/favorite updates
   useEffect(() => {
-    registerProfileSyncListener((updated) => {
-      if (auth.currentUser) {
-        saveProfileToFirestore(updated);
+    registerProfileSyncListener((updated, immediate) => {
+      if (auth.currentUser || (updated.id && updated.id !== 'guest_user')) {
+        saveProfileToFirestore(updated, Boolean(immediate));
       }
     });
   }, []);

@@ -312,4 +312,15 @@ export interface SportCategory {
   name: string;
 }
 
+export interface ResolvedStreamInfo {
+  success: boolean;
+  streamUrl: string;
+  backupUrl?: string;
+  isDirectHls: boolean;
+  source: string;
+  streamNo?: number;
+  headers?: Record<string, string>;
+  error?: string;
+}
+
 

@@ -279,15 +279,15 @@ export async function saveProfileToFirestore(userProfile: UserProfile, immediate
       };
       const sanitized = sanitizeForFirestore(rawData);
 
-      // Deduplicate payload to prevent redundant Firestore writes
+      // Deduplicate payload to prevent redundant Firestore writes unless immediate is requested
       const comparisonPayload = JSON.stringify({ ...sanitized, updatedAt: '' });
-      if (comparisonPayload === lastSavedProfilePayload) {
+      if (!immediate && comparisonPayload === lastSavedProfilePayload) {
         return;
       }
-      lastSavedProfilePayload = comparisonPayload;
 
       const userRef = doc(db, 'users', uid);
       await setDoc(userRef, sanitized, { merge: true });
+      lastSavedProfilePayload = comparisonPayload;
     } catch (err: any) {
       if (
         err?.code === 'resource-exhausted' || 
@@ -310,7 +310,7 @@ export async function saveProfileToFirestore(userProfile: UserProfile, immediate
   if (immediate) {
     await performSave();
   } else {
-    debounceProfileSaveTimer = setTimeout(performSave, 1200);
+    debounceProfileSaveTimer = setTimeout(performSave, 400);
   }
 }
 
