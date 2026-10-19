@@ -8,7 +8,6 @@ import {
   Maximize,
   Minimize,
   Settings,
-  ShieldCheck,
   RotateCw,
   AlertTriangle,
 } from 'lucide-react';
@@ -384,17 +383,6 @@ export const HlsSportsVideoPlayer: React.FC<HlsSportsVideoPlayerProps> = ({
         className="w-full h-full object-contain cursor-pointer"
         poster={posterUrl || undefined}
       />
-
-      {/* Zero Ads Verified Badge (Top Left Overlay) */}
-      <div
-        className={`absolute top-3 left-3 sm:top-4 sm:left-4 z-20 transition-opacity duration-300 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-emerald-500/35 text-emerald-400 text-[10px] sm:text-xs font-mono font-semibold shadow-lg ${
-          showControls ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-        <span className="hidden xs:inline">Ad-Stripped HLS Stream</span>
-        <span className="xs:hidden">HLS Direct</span>
-      </div>
 
       {/* Buffering Spinner */}
       {isBuffering && !playbackError && (

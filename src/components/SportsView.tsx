@@ -12,6 +12,7 @@ import {
   Filter,
   AlertCircle,
   Loader2,
+  Tv,
 } from 'lucide-react';
 import { APIMatch, SportCategory } from '../types';
 import {
@@ -20,6 +21,8 @@ import {
   fetchSportsCategories,
   getTeamBadgeUrl,
   getMatchPosterUrl,
+  is247TvChannel,
+  isNflRedzone,
 } from '../services/sportsApi';
 import { SportsWatchPlayer } from './SportsWatchPlayer';
 
@@ -93,15 +96,32 @@ export const SportsView: React.FC<SportsViewProps> = ({ onSelectMatch }) => {
     [selectedSport, searchQuery]
   );
 
+  const tvChannels = useMemo(() => {
+    // Combine 24/7 channels from both live and today feeds, deduplicate by id
+    const combined = [...liveMatches, ...todayMatches].filter(is247TvChannel);
+    const seen = new Set<string>();
+    const unique: APIMatch[] = [];
+    for (const ch of combined) {
+      if (!seen.has(ch.id)) {
+        seen.add(ch.id);
+        unique.push(ch);
+      }
+    }
+    return matchesFilter(unique);
+  }, [liveMatches, todayMatches, matchesFilter]);
+
   const filteredLiveMatches = useMemo(
-    () => matchesFilter(liveMatches),
+    () => matchesFilter(liveMatches.filter((m) => !is247TvChannel(m) && !isNflRedzone(m))),
     [liveMatches, matchesFilter]
   );
 
   const filteredUpcomingMatches = useMemo(() => {
-    // Exclude matches that are already in liveMatches
+    // Exclude matches that are already in liveMatches, 24/7 TV channels, and RedZone
     const upcoming = todayMatches.filter(
-      (m) => !liveMatches.some((lm) => lm.id === m.id)
+      (m) =>
+        !is247TvChannel(m) &&
+        !isNflRedzone(m) &&
+        !liveMatches.some((lm) => lm.id === m.id)
     );
     return matchesFilter(upcoming);
   }, [todayMatches, liveMatches, matchesFilter]);
@@ -339,6 +359,100 @@ export const SportsView: React.FC<SportsViewProps> = ({ onSelectMatch }) => {
                 </div>
               )}
             </section>
+
+            {/* ── 24/7 LIVE SPORTS TV CHANNELS ── */}
+            {tvChannels.length > 0 && (
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center text-emerald-400">
+                      <Tv className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                          24/7 Live Sports TV Channels
+                        </h2>
+                        <span className="text-xs font-mono text-zinc-400 font-normal">
+                          ({tvChannels.length})
+                        </span>
+                      </div>
+                      <p className="text-[11px] sm:text-xs text-zinc-400 mt-0.5">
+                        Continuous 24/7 live television broadcasts, studio coverage, and global sports networks.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                  {tvChannels.map((channel) => {
+                    const posterUrl = getMatchPosterUrl(channel.poster);
+                    const streamCount = channel.sources?.length || 1;
+
+                    return (
+                      <div
+                        key={channel.id}
+                        onClick={() => handleSelectMatch(channel)}
+                        className="group relative bg-[#090e0b] hover:bg-[#0c1410] border border-zinc-800/80 hover:border-emerald-500/50 rounded-2xl p-4 transition-all duration-300 cursor-pointer shadow-lg hover:shadow-[0_0_25px_rgba(0,223,130,0.18)] flex flex-col justify-between overflow-hidden"
+                      >
+                        {/* Channel Header: Category & 24/7 LIVE Badge */}
+                        <div className="flex items-center justify-between gap-2 mb-3 z-10">
+                          <span className="text-[10px] font-mono uppercase tracking-wider text-emerald-400/90 font-semibold px-2 py-0.5 rounded-md bg-emerald-950/40 border border-emerald-500/20">
+                            {channel.category}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 text-[#00df82] border border-[#00df82]/40 text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_10px_rgba(0,223,130,0.2)]">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#00df82] animate-pulse" />
+                            <span>24/7 LIVE</span>
+                          </span>
+                        </div>
+
+                        {/* Network Logo & Brand Visual */}
+                        <div className="relative py-2 flex items-center justify-center my-auto">
+                          {posterUrl ? (
+                            <div className="w-full h-28 sm:h-32 rounded-xl overflow-hidden bg-black/60 border border-zinc-800/80 flex items-center justify-center p-2.5 group-hover:border-emerald-500/30 transition-colors">
+                              <img
+                                src={posterUrl}
+                                alt={channel.title}
+                                className="w-full h-full object-contain"
+                                loading="lazy"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-full h-28 sm:h-32 rounded-xl bg-zinc-900/60 border border-zinc-800/80 flex items-center justify-center">
+                              <Tv className="w-10 h-10 text-zinc-600" />
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Channel Name & Stream Count */}
+                        <div className="mt-3 pt-3 border-t border-zinc-900 z-10 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-sm font-bold text-white group-hover:text-emerald-400 transition-colors truncate">
+                              {channel.title}
+                            </h3>
+                            <span className="text-[10px] font-mono text-zinc-500">
+                              {streamCount} broadcast source{streamCount === 1 ? '' : 's'}
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSelectMatch(channel);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 min-h-[38px] rounded-xl bg-emerald-500 text-black text-xs font-bold group-hover:bg-[#00df82] transition-colors shadow-[0_0_12px_rgba(0,223,130,0.3)] shrink-0 cursor-pointer"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-black" />
+                            <span>Watch</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* ── 2. TODAY'S SCHEDULED MATCHES ── */}
             <section className="space-y-4">

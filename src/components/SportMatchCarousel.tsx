@@ -209,7 +209,13 @@ export const SportMatchCarousel: React.FC<SportMatchCarouselProps> = ({
     });
   };
 
-  if (!loading && !matches.length) return null;
+  const validMatches = matches.filter(
+    (m) =>
+      !/redzone/i.test(m.title) &&
+      !/sky sports golf|tennis channel|rally\s*(tv|channel)|nhl network|nfl network|fox league|fox cricket|willow cricket/i.test(m.title)
+  );
+
+  if (!loading && !validMatches.length) return null;
 
   return (
     <section className="relative my-8 group/carousel [content-visibility:auto] [contain-intrinsic-size:1px_280px]">
@@ -218,8 +224,8 @@ export const SportMatchCarousel: React.FC<SportMatchCarouselProps> = ({
           <div className="flex items-center gap-2">
             {Icon && <Icon className="w-5 h-5 text-emerald-400 shrink-0" />}
             <h2 className="text-lg sm:text-xl md:text-2xl font-black text-white tracking-tight">{title}</h2>
-            {!loading && matches.length > 0 && (
-              <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800/80 px-2 py-0.5 rounded-full">{matches.length}</span>
+            {!loading && validMatches.length > 0 && (
+              <span className="text-[10px] font-mono text-zinc-500 bg-zinc-800/80 px-2 py-0.5 rounded-full">{validMatches.length}</span>
             )}
           </div>
           {subtitle && <p className="text-xs text-emerald-500/80 font-medium mt-0.5">{subtitle}</p>}
@@ -265,7 +271,7 @@ export const SportMatchCarousel: React.FC<SportMatchCarouselProps> = ({
           ? Array.from({ length: 6 }).map((_, idx) => (
               <div key={idx} className={`${cardWidth} aspect-[4/3] rounded-2xl bg-[#0c130e] border border-emerald-950 animate-pulse`} />
             ))
-          : matches.map((match) => (
+          : validMatches.map((match) => (
               <div
                 key={match.id}
                 className={cardWidth}

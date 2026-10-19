@@ -21,11 +21,70 @@ async function safeFetch<T>(endpoint: string): Promise<T | null> {
 }
 
 /**
+ * Checks if a match is "NFL vs RedZone" or syndicated RedZone content to exclude
+ */
+export function isNflRedzone(match: APIMatch): boolean {
+  if (!match) return false;
+  const title = (match.title || '').trim().toLowerCase();
+  if (
+    title === 'nfl vs redzone' ||
+    title.includes('nfl vs redzone') ||
+    title === 'redzone' ||
+    title.includes('nfl redzone')
+  ) {
+    return true;
+  }
+  const home = (match.teams?.home?.name || '').toLowerCase();
+  const away = (match.teams?.away?.name || '').toLowerCase();
+  if (home.includes('redzone') || away.includes('redzone')) {
+    return true;
+  }
+  return false;
+}
+
+const KNOWN_247_CHANNEL_PATTERNS = [
+  /sky sports golf/i,
+  /tennis channel/i,
+  /rally\s*(tv|channel)/i,
+  /nhl network/i,
+  /nfl network/i,
+  /fox league/i,
+  /fox cricket/i,
+  /willow cricket/i,
+];
+
+/**
+ * Identifies continuous 24/7 sports television broadcast networks
+ */
+export function is247TvChannel(match: APIMatch): boolean {
+  if (!match) return false;
+  const title = (match.title || '').trim();
+
+  // 1. Explicit match against verified 24/7 broadcast television networks
+  if (KNOWN_247_CHANNEL_PATTERNS.some((pattern) => pattern.test(title))) {
+    return true;
+  }
+
+  // 2. Continuous feeds without head-to-head opponents that are network feeds
+  const hasOpponents = Boolean(match.teams?.home?.name && match.teams?.away?.name);
+  if (!hasOpponents) {
+    if (
+      /\b(channel|network|sky sports|fox league|fox cricket|willow cricket)\b/i.test(title) &&
+      !/championship|grand prix|session|day \d+|round \d+|stage \d+|freeway 500/i.test(title)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Fetch all currently live matches across sports
  */
 export async function fetchLiveMatches(): Promise<APIMatch[]> {
   const data = await safeFetch<APIMatch[]>('/api/matches/live');
-  return Array.isArray(data) ? data : [];
+  return (Array.isArray(data) ? data : []).filter((m) => !isNflRedzone(m));
 }
 
 /**
@@ -33,7 +92,7 @@ export async function fetchLiveMatches(): Promise<APIMatch[]> {
  */
 export async function fetchTodayMatches(): Promise<APIMatch[]> {
   const data = await safeFetch<APIMatch[]>('/api/matches/all-today');
-  return Array.isArray(data) ? data : [];
+  return (Array.isArray(data) ? data : []).filter((m) => !isNflRedzone(m));
 }
 
 /**
@@ -66,7 +125,7 @@ export async function fetchMatchesBySport(sportId: string): Promise<APIMatch[]> 
     return fetchTodayMatches();
   }
   const data = await safeFetch<APIMatch[]>(`/api/matches/${encodeURIComponent(sportId)}`);
-  return Array.isArray(data) ? data : [];
+  return (Array.isArray(data) ? data : []).filter((m) => !isNflRedzone(m));
 }
 
 export async function fetchStreams(source: string, sourceId: string): Promise<StreamedStream[]> {

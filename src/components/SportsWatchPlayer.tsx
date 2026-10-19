@@ -6,9 +6,6 @@ import {
   AlertCircle,
   RefreshCw,
   RotateCw,
-  ShieldCheck,
-  Settings,
-  Layers,
 } from 'lucide-react';
 import { APIMatch, StreamedStream, ResolvedStreamInfo } from '../types';
 import {
@@ -18,7 +15,6 @@ import {
 } from '../services/sportsApi';
 import { resolveSportStream } from '../services/sportsStreamResolver';
 import { HlsSportsVideoPlayer } from './HlsSportsVideoPlayer';
-import { ResolverConfigModal } from './ResolverConfigModal';
 import { toast } from 'sonner';
 
 interface SportsWatchPlayerProps {
@@ -41,7 +37,6 @@ export const SportsWatchPlayer: React.FC<SportsWatchPlayerProps> = ({
   const [resolvedStream, setResolvedStream] = useState<ResolvedStreamInfo | null>(null);
   const [isResolvingHls, setIsResolvingHls] = useState(false);
   const [playerMode, setPlayerMode] = useState<'hls' | 'embed'>('hls');
-  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
 
   const homeBadge = getTeamBadgeUrl(match.teams?.home?.badge);
   const awayBadge = getTeamBadgeUrl(match.teams?.away?.badge);
@@ -223,58 +218,6 @@ export const SportsWatchPlayer: React.FC<SportsWatchPlayerProps> = ({
               </span>
             </h1>
           </div>
-        </div>
-
-        {/* Right Status Controls & Resolver Settings */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-          {/* Ad-Stripped HLS vs Embed Indicator */}
-          {resolvedStream?.isDirectHls && playerMode === 'hls' ? (
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-950/60 border border-emerald-500/35 text-emerald-400 text-xs font-mono shadow-[0_0_10px_rgba(16,185,129,0.2)]"
-              title="Streaming direct HLS feed with 100% of ads and popups stripped"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline font-semibold">Ad-Stripped HLS</span>
-              <span className="sm:hidden font-semibold">HLS Direct</span>
-            </div>
-          ) : (
-            <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-zinc-900 border border-zinc-800 text-zinc-400 text-xs font-mono"
-              title="Playing broadcast mirror via embed"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-              <span className="hidden sm:inline">Embed Mirror</span>
-              <span className="sm:hidden">Embed</span>
-            </div>
-          )}
-
-          {/* Switch Mode Toggle (if HLS stream is available) */}
-          {resolvedStream?.isDirectHls && (
-            <button
-              onClick={() => {
-                const nextMode = playerMode === 'hls' ? 'embed' : 'hls';
-                setPlayerMode(nextMode);
-                toast.info(`Switched to ${nextMode === 'hls' ? 'Ad-Free HLS' : 'Embed Mirror'}`);
-              }}
-              title={playerMode === 'hls' ? 'Switch to embed player' : 'Switch to ad-stripped HLS player'}
-              className="flex items-center gap-1 px-2.5 py-1 min-h-[32px] rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-zinc-300 text-xs font-mono transition cursor-pointer"
-            >
-              <Layers className="w-3 h-3 text-emerald-400" />
-              <span className="hidden md:inline">
-                {playerMode === 'hls' ? 'Use Embed' : 'Use HLS'}
-              </span>
-            </button>
-          )}
-
-          {/* Stream Resolver Microservice Configuration Modal Trigger */}
-          <button
-            onClick={() => setIsConfigModalOpen(true)}
-            title="Configure streamed-pk-resolver microservice"
-            className="flex items-center gap-1 px-2.5 py-1.5 min-h-[32px] rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-emerald-500/40 text-zinc-300 hover:text-emerald-400 text-xs font-mono transition cursor-pointer"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span className="hidden lg:inline">Resolver</span>
-          </button>
         </div>
       </header>
 
@@ -464,17 +407,6 @@ export const SportsWatchPlayer: React.FC<SportsWatchPlayerProps> = ({
           </div>
         </div>
       </footer>
-
-      {/* Stream Resolver Configuration Modal */}
-      <ResolverConfigModal
-        isOpen={isConfigModalOpen}
-        onClose={() => setIsConfigModalOpen(false)}
-        onSaved={() => {
-          if (activeStream) {
-            resolveCurrentStream(activeStream, true);
-          }
-        }}
-      />
     </div>
   );
 };
