@@ -1,256 +1,12 @@
 import { StreamedStream, ResolvedStreamInfo } from '../types';
 
 const RESOLVER_STORAGE_KEY = 'stoned_sports_resolver_url';
-
-// Complete Cloudflare Worker code matching workers/streamed-pk-resolver-worker.js
-export const CLOUDFLARE_WORKER_CODE = `/**
- * Cloudflare Worker: Streamed.pk HLS Stream Resolver & CORS Proxy
- * Lunatic16/streamed-pk-resolver architecture for 100% ad-stripped live sports
- */
-
-const STREAMED_API_BASE = "https://streamed.pk";
-const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
-function corsResponse(body, init = {}) {
-  const headers = new Headers(init.headers || {});
-  headers.set("Access-Control-Allow-Origin", "*");
-  headers.set("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "*");
-  return new Response(body, { ...init, headers });
-}
-
-async function handleResolve(request, url) {
-  const source = url.searchParams.get("source") || "";
-  const id = url.searchParams.get("id") || "";
-  const streamNo = url.searchParams.get("streamNo") || "1";
-  const embedParam = url.searchParams.get("url") || "";
-
-  let targetEmbedUrl = embedParam;
-
-  if (source && id && !targetEmbedUrl) {
-    try {
-      const apiRes = await fetch(\`\${STREAMED_API_BASE}/api/stream/\${encodeURIComponent(source)}/\${encodeURIComponent(id)}\`, {
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": DEFAULT_USER_AGENT,
-          "Referer": "https://streamed.pk/"
-        }
-      });
-      if (apiRes.ok) {
-        const streams = await apiRes.json();
-        if (Array.isArray(streams) && streams.length > 0) {
-          const selected = streams.find(s => String(s.streamNo) === streamNo) || streams[0];
-          targetEmbedUrl = selected?.embedUrl || "";
-        }
-      }
-    } catch (err) {
-      console.warn("Error querying streamed.pk API:", err);
-    }
-  }
-
-  if (!targetEmbedUrl) {
-    return corsResponse(JSON.stringify({
-      success: false,
-      error: "No stream or embed URL could be found for this feed."
-    }), { status: 400, headers: { "Content-Type": "application/json" } });
-  }
-
-  if (targetEmbedUrl.includes(".m3u8")) {
-    const proxiedManifestUrl = \`\${url.origin}/hls/manifest.m3u8?url=\${encodeURIComponent(targetEmbedUrl)}&ref=\${encodeURIComponent("https://streamed.pk/")}\`;
-    return corsResponse(JSON.stringify({
-      success: true,
-      streamUrl: proxiedManifestUrl,
-      rawUrl: targetEmbedUrl,
-      isDirectHls: true,
-      source: source || "direct"
-    }), { headers: { "Content-Type": "application/json" } });
-  }
-
-  try {
-    const embedOrigin = new URL(targetEmbedUrl).origin;
-    const pageRes = await fetch(targetEmbedUrl, {
-      headers: {
-        "User-Agent": DEFAULT_USER_AGENT,
-        "Referer": "https://streamed.pk/",
-        "Origin": embedOrigin
-      }
-    });
-
-    if (!pageRes.ok) {
-      return corsResponse(JSON.stringify({
-        success: false,
-        fallbackEmbed: targetEmbedUrl,
-        error: \`Embed returned HTTP \${pageRes.status}\`
-      }), { status: 502, headers: { "Content-Type": "application/json" } });
-    }
-
-    const html = await pageRes.text();
-    const m3u8Matches = [
-      ...html.matchAll(/(?:file|source|url|hls|src)["']?\\s*[:=]\\s*["'](https?:\\/\\/[^"']+\\.m3u8[^"']*)["']/gi),
-      ...html.matchAll(/["'](https?:\\/\\/[^"']+\\.m3u8[^"']*)["']/gi)
-    ];
-
-    let foundM3u8 = null;
-    for (const match of m3u8Matches) {
-      const candidate = match[1];
-      if (candidate && candidate.startsWith("http") && candidate.includes(".m3u8")) {
-        foundM3u8 = candidate;
-        break;
-      }
-    }
-
-    if (foundM3u8) {
-      const proxiedManifestUrl = \`\${url.origin}/hls/manifest.m3u8?url=\${encodeURIComponent(foundM3u8)}&ref=\${encodeURIComponent(embedOrigin + "/")}\`;
-      return corsResponse(JSON.stringify({
-        success: true,
-        streamUrl: proxiedManifestUrl,
-        rawUrl: foundM3u8,
-        isDirectHls: true,
-        source: source || "streamed"
-      }), { headers: { "Content-Type": "application/json" } });
-    }
-
-    return corsResponse(JSON.stringify({
-      success: false,
-      isDirectHls: false,
-      fallbackEmbed: targetEmbedUrl,
-      error: "Stream is using encrypted container or iframe. Playback available via embed mirror."
-    }), { headers: { "Content-Type": "application/json" } });
-  } catch (err) {
-    return corsResponse(JSON.stringify({
-      success: false,
-      error: "Resolution failed: " + (err instanceof Error ? err.message : String(err)),
-      fallbackEmbed: targetEmbedUrl
-    }), { status: 500, headers: { "Content-Type": "application/json" } });
-  }
-}
-
-async function handleManifest(request, url) {
-  const targetUrl = url.searchParams.get("url");
-  const upstreamReferer = url.searchParams.get("ref") || "https://streamed.pk/";
-
-  if (!targetUrl) return corsResponse("Missing url parameter", { status: 400 });
-
-  try {
-    const upstreamHeaders = new Headers();
-    upstreamHeaders.set("User-Agent", DEFAULT_USER_AGENT);
-    upstreamHeaders.set("Referer", upstreamReferer);
-    upstreamHeaders.set("Origin", new URL(upstreamReferer).origin);
-
-    const manifestRes = await fetch(targetUrl, { method: "GET", headers: upstreamHeaders });
-    if (!manifestRes.ok) {
-      return corsResponse(\`Upstream manifest HTTP \${manifestRes.status}\`, { status: manifestRes.status });
-    }
-
-    const manifestText = await manifestRes.text();
-    const manifestBaseUrl = new URL(targetUrl);
-    const lines = manifestText.split(/\\r?\\n/);
-
-    const rewrittenLines = lines.map(line => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
-
-      if (trimmed.startsWith("#EXT-X-KEY:") && trimmed.includes("URI=\\"")) {
-        return line.replace(/URI="([^"]+)"/, (_, keyUri) => {
-          const absoluteKeyUrl = new URL(keyUri, manifestBaseUrl).toString();
-          const proxiedKey = \`\${url.origin}/hls/segment?url=\${encodeURIComponent(absoluteKeyUrl)}&ref=\${encodeURIComponent(upstreamReferer)}\`;
-          return \`URI="\${proxiedKey}"\`;
-        });
-      }
-
-      if (trimmed.startsWith("#")) return line;
-
-      try {
-        const absoluteUri = new URL(trimmed, manifestBaseUrl).toString();
-        if (absoluteUri.includes(".m3u8")) {
-          return \`\${url.origin}/hls/manifest.m3u8?url=\${encodeURIComponent(absoluteUri)}&ref=\${encodeURIComponent(upstreamReferer)}\`;
-        } else {
-          return \`\${url.origin}/hls/segment?url=\${encodeURIComponent(absoluteUri)}&ref=\${encodeURIComponent(upstreamReferer)}\`;
-        }
-      } catch {
-        return line;
-      }
-    });
-
-    return corsResponse(rewrittenLines.join("\\n"), {
-      headers: {
-        "Content-Type": "application/vnd.apple.mpegurl",
-        "Cache-Control": "no-cache, no-store, must-revalidate"
-      }
-    });
-  } catch (err) {
-    return corsResponse("Error rewriting manifest: " + String(err), { status: 500 });
-  }
-}
-
-async function handleSegment(request, url) {
-  const targetUrl = url.searchParams.get("url");
-  const upstreamReferer = url.searchParams.get("ref") || "https://streamed.pk/";
-
-  if (!targetUrl) return corsResponse("Missing url parameter", { status: 400 });
-
-  try {
-    const upstreamHeaders = new Headers();
-    upstreamHeaders.set("User-Agent", DEFAULT_USER_AGENT);
-    upstreamHeaders.set("Referer", upstreamReferer);
-    upstreamHeaders.set("Origin", new URL(upstreamReferer).origin);
-
-    const rangeHeader = request.headers.get("Range");
-    if (rangeHeader) upstreamHeaders.set("Range", rangeHeader);
-
-    const segmentRes = await fetch(targetUrl, { method: "GET", headers: upstreamHeaders });
-
-    const resHeaders = new Headers(segmentRes.headers);
-    resHeaders.set("Access-Control-Allow-Origin", "*");
-    resHeaders.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-    resHeaders.set("Access-Control-Allow-Headers", "*");
-    resHeaders.set("Cache-Control", "public, max-age=120");
-
-    return new Response(segmentRes.body, {
-      status: segmentRes.status,
-      statusText: segmentRes.statusText,
-      headers: resHeaders
-    });
-  } catch (err) {
-    return corsResponse("Error proxying segment: " + String(err), { status: 500 });
-  }
-}
-
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-
-    if (request.method === "OPTIONS") {
-      return corsResponse(null, { status: 204 });
-    }
-
-    if (url.pathname === "/health" || url.pathname === "/") {
-      return corsResponse(JSON.stringify({
-        ok: true,
-        service: "streamed-pk-hls-resolver",
-        version: "1.0.0",
-        author: "Lunatic16/streamed-pk-resolver"
-      }), { headers: { "Content-Type": "application/json" } });
-    }
-
-    if (url.pathname === "/api/resolve" || url.pathname === "/resolve") {
-      return handleResolve(request, url);
-    }
-
-    if (url.pathname.startsWith("/hls/manifest") || url.pathname.endsWith(".m3u8")) {
-      return handleManifest(request, url);
-    }
-
-    if (url.pathname.startsWith("/hls/segment")) {
-      return handleSegment(request, url);
-    }
-
-    return corsResponse("Not Found", { status: 404 });
-  }
-};`;
+// Deployed live instance of Lunatic16/streamed-pk-resolver on Railway with native Impit Chrome TLS & WEBP unwrap
+export const DEFAULT_CLOUDFLARE_RESOLVER = 'https://streamed-pk-resolver-production.up.railway.app';
 
 /**
- * Returns the currently active resolver microservice or Cloudflare Worker URL.
+ * Returns the currently active resolver host URL.
+ * Defaults to the live deployed instance: https://streamed-pk-resolver-production.up.railway.app
  */
 export function getResolverBaseUrl(): string {
   if (typeof window !== 'undefined') {
@@ -260,11 +16,14 @@ export function getResolverBaseUrl(): string {
     }
   }
   const envUrl = (import.meta.env.VITE_STREAMED_RESOLVER_URL || '').trim();
-  return envUrl.replace(/\/+$/, '');
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '');
+  }
+  return DEFAULT_CLOUDFLARE_RESOLVER;
 }
 
 /**
- * Persists a user-defined resolver microservice or Cloudflare Worker URL.
+ * Persists a user-defined resolver host URL.
  */
 export function setResolverBaseUrl(url: string): void {
   if (typeof window !== 'undefined') {
@@ -278,7 +37,8 @@ export function setResolverBaseUrl(url: string): void {
 }
 
 /**
- * Test connectivity to the Cloudflare Worker or resolver microservice.
+ * Test connectivity to the streamed-pk-resolver host.
+ * Tests /api/sports or /health endpoint.
  */
 export async function checkResolverHealth(baseUrl: string): Promise<{ ok: boolean; message: string }> {
   const target = baseUrl.trim().replace(/\/+$/, '');
@@ -288,40 +48,63 @@ export async function checkResolverHealth(baseUrl: string): Promise<{ ok: boolea
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+    const timeout = setTimeout(() => controller.abort(), 6000);
 
-    const res = await fetch(`${target}/health`, {
+    // 1. Try /api/sports (Lunatic16/streamed-pk-resolver standard catalog route)
+    const sportsRes = await fetch(`${target}/api/sports`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
-    }).catch(async () => {
-      return await fetch(`${target}/`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
-    });
+    }).catch(() => null);
+
+    if (sportsRes && sportsRes.ok) {
+      clearTimeout(timeout);
+      return { ok: true, message: 'Connected to streamed-pk-resolver! Live catalog and GOAT unlock ready.' };
+    }
+
+    // 2. Try /health
+    const healthRes = await fetch(`${target}/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    }).catch(() => null);
 
     clearTimeout(timeout);
 
-    if (res && (res.ok || res.status === 200)) {
-      return { ok: true, message: 'Connected successfully! Cloudflare Worker is active and ready.' };
+    if (healthRes && healthRes.ok) {
+      return { ok: true, message: 'Connected to resolver service.' };
     }
-    return { ok: false, message: `Resolver returned HTTP ${res?.status || 'Unknown'}` };
+
+    return {
+      ok: false,
+      message: `Host responded with status ${sportsRes?.status || healthRes?.status || 'unreachable'}. Make sure your container is running.`,
+    };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Connection failed';
-    return { ok: false, message: `Could not reach resolver at ${target}: ${msg}` };
+    return { ok: false, message: `Could not reach ${target}: ${msg}` };
   }
 }
 
 // In-memory cache for resolved stream URLs
 const streamCache = new Map<string, ResolvedStreamInfo>();
 
+export interface ResolveStreamOptions {
+  matchId?: string;
+  forceFresh?: boolean;
+  signal?: AbortSignal;
+}
+
 /**
- * Resolves a live sports feed into an ad-stripped, direct HLS video stream.
+ * Resolves a live sports stream using the official Lunatic16/streamed-pk-resolver API:
+ * 
+ * 1. Sends POST /api/resolve with { source, id, stream, matchId }
+ * 2. Obtains the unwrapped, referer-aware relay URL (/api/hls?url=...&referer=...)
+ * 3. Enforces HTTPS to prevent mixed content blocking on secure web clients
+ * 4. Ensures all media chunks are served without WEBP wrappers or CORS errors
  */
 export async function resolveSportStream(
   stream: StreamedStream,
-  options?: { forceFresh?: boolean; signal?: AbortSignal }
+  options?: ResolveStreamOptions
 ): Promise<ResolvedStreamInfo> {
   const cleanEmbed = (stream.embedUrl || '').trim();
   const cacheKey = `${stream.source}-${stream.streamNo || 1}-${cleanEmbed}`;
@@ -331,39 +114,56 @@ export async function resolveSportStream(
   }
 
   const resolverBase = getResolverBaseUrl();
+  const streamNo = Number(stream.streamNo) || 1;
+  const sourceName = (stream.source || 'admin').toLowerCase();
+  const sourceId = stream.id || '';
 
-  // 1. Direct check: If embedUrl is already direct .m3u8
+  // 1. Direct check: If embedUrl is already a direct .m3u8
   if (cleanEmbed.includes('.m3u8')) {
-    // If we have a Cloudflare Worker, route through manifest proxy for CORS guarantee
-    const streamUrl = resolverBase
-      ? `${resolverBase}/hls/manifest.m3u8?url=${encodeURIComponent(cleanEmbed)}&ref=${encodeURIComponent('https://streamed.pk/')}`
+    let streamUrl = resolverBase
+      ? `${resolverBase}/api/hls?url=${encodeURIComponent(cleanEmbed)}&referer=${encodeURIComponent('https://embed.st/')}`
       : cleanEmbed;
+
+    if (resolverBase.startsWith('https://') || (typeof window !== 'undefined' && window.location.protocol === 'https:')) {
+      streamUrl = streamUrl.replace(/^http:\/\//i, 'https://');
+    }
 
     const info: ResolvedStreamInfo = {
       success: true,
       streamUrl,
       isDirectHls: true,
       source: stream.source,
-      streamNo: stream.streamNo,
+      streamNo,
     };
     streamCache.set(cacheKey, info);
     return info;
   }
 
-  // 2. Query the Cloudflare Worker or resolver microservice
+  // 2. Query Lunatic16/streamed-pk-resolver: POST /api/resolve
   if (resolverBase) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
+      const timeout = setTimeout(() => controller.abort(), 7000);
 
-      const resolveUrl = new URL(`${resolverBase}/api/resolve`);
-      resolveUrl.searchParams.set('url', cleanEmbed);
-      if (stream.source) resolveUrl.searchParams.set('source', stream.source);
-      if (stream.streamNo) resolveUrl.searchParams.set('streamNo', String(stream.streamNo));
-      if (stream.id) resolveUrl.searchParams.set('id', stream.id);
+      const resolvePayload: Record<string, unknown> = {
+        source: sourceName,
+        stream: streamNo,
+      };
 
-      const res = await fetch(resolveUrl.toString(), {
-        headers: { Accept: 'application/json' },
+      if (sourceId) {
+        resolvePayload.id = sourceId;
+      }
+      if (options?.matchId) {
+        resolvePayload.matchId = options.matchId;
+      }
+
+      const res = await fetch(`${resolverBase}/api/resolve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(resolvePayload),
         signal: options?.signal || controller.signal,
       });
 
@@ -371,37 +171,78 @@ export async function resolveSportStream(
 
       if (res.ok) {
         const data = await res.json();
-        const resolvedUrl = data.streamUrl || data.url || data.hlsUrl;
 
-        if (resolvedUrl && typeof resolvedUrl === 'string') {
+        // Successful Lunatic16 resolve shape: { ok: true, m3u8, referer, relay }
+        if (data.ok && (data.relay || data.m3u8)) {
+          let playableRelayUrl = data.relay || data.m3u8;
+
+          // If relay URL points to internal localhost:3000, rewrite with external resolverBase
+          if (playableRelayUrl.startsWith('http://localhost') || playableRelayUrl.startsWith('http://127.0.0.1')) {
+            try {
+              const parsedRelay = new URL(playableRelayUrl);
+              playableRelayUrl = `${resolverBase}${parsedRelay.pathname}${parsedRelay.search}`;
+            } catch {
+              // Keep original if parsing fails
+            }
+          }
+
+          // Enforce HTTPS on relay URL to prevent mixed content blocking
+          if (resolverBase.startsWith('https://') || (typeof window !== 'undefined' && window.location.protocol === 'https:')) {
+            playableRelayUrl = playableRelayUrl.replace(/^http:\/\//i, 'https://');
+          }
+
           const info: ResolvedStreamInfo = {
             success: true,
-            streamUrl: resolvedUrl,
-            backupUrl: data.backupUrl,
+            streamUrl: playableRelayUrl,
+            backupUrl: data.m3u8,
             isDirectHls: true,
             source: stream.source,
-            streamNo: stream.streamNo,
-            headers: data.headers,
+            streamNo,
+            headers: {
+              Referer: data.referer || 'https://embed.st/',
+            },
           };
           streamCache.set(cacheKey, info);
           return info;
         }
       }
     } catch (err) {
-      console.warn('[sportsStreamResolver] Worker resolution failed:', err);
+      console.warn('[sportsStreamResolver] POST /api/resolve failed or timed out:', err);
+    }
+
+    // 3. Slot-Mode Tune-in Fallback: /api/hls?source=...&id=...&stream=...
+    // As documented in Lunatic16/streamed-pk-resolver:
+    // Slot mode runs a fresh GOAT unlock at request time and proxies the media playlist
+    if (sourceName && sourceId) {
+      let slotRelayUrl = `${resolverBase}/api/hls?source=${encodeURIComponent(sourceName)}&id=${encodeURIComponent(sourceId)}&stream=${streamNo}`;
+      if (resolverBase.startsWith('https://') || (typeof window !== 'undefined' && window.location.protocol === 'https:')) {
+        slotRelayUrl = slotRelayUrl.replace(/^http:\/\//i, 'https://');
+      }
+
+      const slotInfo: ResolvedStreamInfo = {
+        success: true,
+        streamUrl: slotRelayUrl,
+        isDirectHls: true,
+        source: stream.source,
+        streamNo,
+      };
+      streamCache.set(cacheKey, slotInfo);
+      return slotInfo;
     }
   }
 
-  // 3. Fallback: Return embed URL as safe fallback
+  // 4. Safe Embed Mirror Fallback
+  const safeEmbedUrl = resolverBase
+    ? `${resolverBase}/proxy/embed?url=${encodeURIComponent(cleanEmbed)}`
+    : cleanEmbed;
+
   const fallbackInfo: ResolvedStreamInfo = {
-    success: false,
-    streamUrl: cleanEmbed,
+    success: true,
+    streamUrl: safeEmbedUrl,
     isDirectHls: false,
     source: stream.source,
-    streamNo: stream.streamNo,
-    error: resolverBase
-      ? 'Feed is using encrypted player. Displaying mirror embed.'
-      : 'Connect Cloudflare Worker in settings for 100% ad-stripped raw HLS streams.',
+    streamNo,
+    error: 'Playing via ad-stripped embed mirror.',
   };
 
   return fallbackInfo;

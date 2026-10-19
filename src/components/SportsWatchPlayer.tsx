@@ -99,7 +99,7 @@ export const SportsWatchPlayer: React.FC<SportsWatchPlayerProps> = ({
 
     setIsResolvingHls(true);
     try {
-      const res = await resolveSportStream(stream, { forceFresh });
+      const res = await resolveSportStream(stream, { matchId: match.id, forceFresh });
       setResolvedStream(res);
 
       if (res.isDirectHls && res.streamUrl) {
@@ -114,7 +114,7 @@ export const SportsWatchPlayer: React.FC<SportsWatchPlayerProps> = ({
     } finally {
       setIsResolvingHls(false);
     }
-  }, []);
+  }, [match.id]);
 
   useEffect(() => {
     if (activeStream) {
@@ -303,10 +303,10 @@ export const SportsWatchPlayer: React.FC<SportsWatchPlayerProps> = ({
               onSwitchToEmbed={() => setPlayerMode('embed')}
             />
           ) : (
-            /* Fallback Embed Player */
+            /* Fallback Embed Player (routed through Cloudflare Ad-Stripping Proxy) */
             <iframe
-              key={`stream-${activeStream.source}-${activeStream.streamNo || activeStreamIndex}-${activeStream.embedUrl}`}
-              src={activeStream.embedUrl}
+              key={`stream-${activeStream.source}-${activeStream.streamNo || activeStreamIndex}-${resolvedStream?.streamUrl || activeStream.embedUrl}`}
+              src={resolvedStream?.streamUrl || activeStream.embedUrl}
               title={match.title}
               allowFullScreen
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"

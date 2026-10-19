@@ -1,86 +1,86 @@
-# Revised Implementation Plan: Lunatic16 streamed-pk-resolver Cloudflare Worker & Universal Ad-Stripped Player
+# Implementation Plan: Lunatic16/streamed-pk-resolver Cloud Container & Buffer-Tuned HLS Player
 
-This plan incorporates the exact architecture of **`Lunatic16/streamed-pk-resolver`** and **`Lunatic16/ppv-hls-proxy`**, tailored to run as a **dedicated Cloudflare Worker** with complete CORS, manifest rewriting, and segment proxying. It also updates the frontend player so that **live sports automatically play raw HLS streams with 100% of ads stripped** across all devices (phones, tablets, and computers).
-
----
-
-## 1. Specification Alignment with `Lunatic16/streamed-pk-resolver`
-
-### How `Lunatic16/streamed-pk-resolver` Operates
-1. **Stream Resolution API**:
-   * Accepts queries by source & stream ID (`/api/stream/:source/:id` or `/api/resolve?url=...`).
-   * Fetches upstream metadata from the `streamed.pk` public API with domain failover chains (`streamed.pk`, `streamed.st`, `streami.su`).
-   * Parses embed pages, extracting direct CDN `.m3u8` master playlists.
-2. **Manifest Rewriting Engine (`/hls/manifest.m3u8`)**:
-   * Upstream HLS playlists contain relative or absolute URLs to media segments (`.ts`, `.m4s`, `.aac`, encryption keys) hosted on CDN domains that block foreign browser origins.
-   * The resolver rewrites each playlist line, repointing sub-variants and segment URIs through the proxy:
-     `${workerOrigin}/hls/segment?url=${encodeURIComponent(segmentUrl)}&headers=${encodedHeaders}`
-   * Emits `Content-Type: application/vnd.apple.mpegurl` and sets `Access-Control-Allow-Origin: *`.
-3. **Segment Proxy (`/hls/segment`)**:
-   * Forwards HTTP byte-range requests (`Range` header) and injects required upstream `Referer` and `User-Agent` headers.
-   * Returns video chunks with permissive CORS headers so `hls.js` and mobile Safari play uninterrupted.
-4. **Ad-Stripping Guarantee**:
-   * The browser player connects exclusively to raw video manifests and media chunks.
-   * Zero third-party HTML pages, zero `window.open` scripts, zero invisible `<a>` click-hijack layers, and zero overlay iframes are ever loaded by the client.
+This plan aligns the frontend sports player with the exact API and streaming specifications of **`Lunatic16/streamed-pk-resolver`**, incorporates the official **`hls.js` buffer tuning** (`maxBufferSize: 0`, `maxBufferLength: 10`, `liveSyncDurationCount: 7`), and provides cloud container deployment instructions with **Cloudflare** for SSL/CDN edge acceleration.
 
 ---
 
-## 2. Dedicated Cloudflare Worker Script (`workers/streamed-pk-resolver-worker.js`)
+## 1. Protocol Alignment with `Lunatic16/streamed-pk-resolver`
 
-We will generate a complete, production-grade Cloudflare Worker script that you can deploy with zero external dependencies:
+### Why the Local/Container Relay is Essential
+As detailed in the project README:
+1. **Chrome TLS Fingerprinting (`Impit`)**: Upstream CDNs check the browser's TLS signature (`chrome151`). Generic HTTP fetch receives an instant `403`. The resolver runs `Impit` to pass CDN checks.
+2. **GOAT Handshake & `lock.wasm`**: The resolver posts a protobuf body to `embed.st/fetch`, reads the `goat` header, and unlocks the stream key using `lock.wasm` in worker threads.
+3. **WEBP → MPEG-TS Bitstream Unwrapping**: Upstream CDNs package MPEG-TS video within RIFF/WEBP EXIF wrappers. The resolver's `/api/hls` endpoint unwraps the WEBP container on the fly and streams raw MPEG-TS to `hls.js`.
 
-* **Endpoint `/api/resolve`**:
-  * Resolves a `streamed.pk` match/stream into an ad-stripped, proxied `.m3u8` URL.
-  * Formats response: `{ success: true, streamUrl: "${workerOrigin}/hls/manifest.m3u8?url=...", source: "..." }`.
-* **Endpoint `/hls/manifest.m3u8`**:
-  * Proxies and rewrites master and variant `.m3u8` playlists.
-* **Endpoint `/hls/segment`**:
-  * Proxies video chunks (`.ts`, `.m4s`) with HTTP `Range` streaming support.
-* **CORS Preflight**:
-  * Responds to `OPTIONS` on all routes with `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: *`.
-* **Fallback Embed Cleaner**:
-  * Includes the `HTMLRewriter` rule set to neutralize inline popup scripts and container divs if an embed fallback is requested.
-
----
-
-## 3. Frontend Player & Universal Device Optimization
-
-### A. Automatic Ad-Stripping Playback
-* When a user opens any match in the **Live Sports Arena**, the player automatically attempts to resolve the direct HLS stream via the Cloudflare Worker.
-* If resolved, it immediately launches the raw HLS stream inside the custom HTML5 player—no ads, no popups.
-* If a feed is offline or pending kickoff, it displays a friendly status with one-tap switching to other active feeds.
-
-### B. Mobile, Tablet, and Desktop Compatibility
-1. **iOS Safari (iPhone & iPad)**:
-   * Uses native HLS playback with `playsInline`, `webkit-playsinline`, and `x5-playsinline`.
-   * Implements `video.webkitEnterFullscreen()` fallback where the standard container Fullscreen API is blocked on iOS.
-2. **Android & Desktop (Chrome, Firefox, Edge, Safari)**:
-   * Uses `hls.js` with worker thread acceleration, low-latency live edge tracking, and automatic network error recovery (`hls.startLoad()`).
-3. **Responsive Touch UI**:
-   * Minimum 44px tap targets for mobile usability.
-   * Single tap toggles the sleek dark control overlay without interfering with play/pause.
-   * Volume slider with mute memory.
-   * Adaptive quality selector (`Auto`, `1080p`, `720p`, `480p`).
-   * Live edge synchronization badge (`LIVE`).
-
-### C. In-App Cloudflare Worker Setup Modal
-* The in-player **Resolver** settings modal will include:
-  * A dedicated **Cloudflare Worker** tab.
-  * 1-click **Copy Cloudflare Worker Code** button with the complete script.
-  * A simple input to paste your Cloudflare Worker URL (e.g., `https://my-sports-resolver.workers.dev`).
-  * Live connectivity tester.
-  * Setup instructions for the free Cloudflare dashboard (Workers & Pages > Create Worker > Paste > Deploy).
+### Exact API Integration
+* **Resolve Request**:
+  `POST ${resolverUrl}/api/resolve`
+  ```json
+  {
+    "source": "admin",
+    "id": "ppv-monterrey-vs-pachuca",
+    "stream": 1,
+    "matchId": "monterrey-vs-pachuca-2487559"
+  }
+  ```
+* **Resolve Response**:
+  ```json
+  {
+    "ok": true,
+    "m3u8": "https://lb....strmd.st/.../high/mono.m3u8",
+    "referer": "https://embed.st/",
+    "relay": "https://your-resolver.domain.com/api/hls?url=...&referer=https%3A%2F%2Fembed.st%2F"
+  }
+  ```
+* **Slot Mode Stream**:
+  `${resolverUrl}/api/hls?source=${source}&id=${id}&stream=${streamNo}`
+  The player can also tune into streams directly via slot mode so that expired stream tokens heal automatically upon re-tuning.
 
 ---
 
-## 4. Verification Plan
+## 2. Official `hls.js` Buffer Tuning
 
-1. **Compilation & TypeScript Lint**:
-   * Run `npm run lint` (`tsc --noEmit`) to verify zero syntax or typing errors.
-   * Run `compile_applet` to confirm Vite production build succeeds.
-2. **Device Responsiveness Testing**:
-   * Verify layout, buttons, and video surface across phone, tablet, and desktop viewports.
-   * Confirm touch interactions on mobile do not cause jumpy scrolling or overlay overlap.
-3. **Failover & Feed Switching Testing**:
-   * Verify Feed 1, Feed 2, Feed 3, and Refresh buttons operate smoothly.
-   * Verify fallback behavior when a stream is not yet live.
+To match the official embed player and prevent buffering stalls:
+* `maxBufferSize: 0` (prevents buffering whole segments, streams immediately)
+* `maxBufferLength: 10` (keeps the buffer lean and synced with live action)
+* `liveSyncDurationCount: 7` (maintains optimal 7-segment distance from live edge for zero stutter)
+* `lowLatencyMode: true`
+* `enableWorker: true`
+
+---
+
+## 3. Cloud Container Deployment with Cloudflare
+
+Deploying `streamed-pk-resolver` as a cloud container with Cloudflare:
+
+### Option A: Railway / Render / Koyeb (Easiest Cloud Container)
+1. Fork or point directly to `https://github.com/Lunatic16/streamed-pk-resolver`.
+2. Deploy with Dockerfile (auto-detected).
+3. Set environment variable: `PORT=3000`.
+4. In Cloudflare DNS, add a `CNAME` (e.g., `sports.yourdomain.com`) pointing to the Railway/Render service with Cloudflare Proxy enabled (**Orange Cloud** for free SSL & DDoS protection).
+
+### Option B: Cloudflare Tunnel + Docker (Zero Open Ports)
+```bash
+# Run the resolver container
+docker run -d --name streamed-pk-resolver -p 3000:3000 lunatic16/streamed-pk-resolver
+
+# Connect via free Cloudflare Tunnel
+cloudflared tunnel run --url http://localhost:3000
+```
+
+---
+
+## 4. Frontend Implementation Steps
+
+1. **Update `src/services/sportsStreamResolver.ts`**:
+   * Send the exact `POST /api/resolve` payload (`source`, `id`, `stream`, `matchId`).
+   * Support both the `relay` URL returned by `POST /api/resolve` and the slot-based `/api/hls?source=...&id=...&stream=...` fallback.
+   * Provide a clean connectivity tester for `GET /api/sports` or `POST /api/resolve`.
+2. **Update `src/components/HlsSportsVideoPlayer.tsx`**:
+   * Apply official embed buffer tuning (`maxBufferSize: 0`, `maxBufferLength: 10`, `liveSyncDurationCount: 7`).
+   * Add retry recovery on segment stall.
+3. **Update `src/components/ResolverConfigModal.tsx`**:
+   * Add a dedicated **Cloud Container Guide** with Railway, Docker, and Cloudflare setup instructions.
+   * Add test connection tool to verify `POST /api/resolve` against the user's host.
+4. **Verification**:
+   * Run `npm run lint` and `compile_applet`.

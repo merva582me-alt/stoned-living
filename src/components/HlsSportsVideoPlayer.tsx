@@ -27,6 +27,31 @@ interface QualityLevel {
   bitrate?: number;
 }
 
+// Custom Hls.js loader that automatically enforces https: on playlist manifests and fragment URLs
+// to prevent mixed content blocking when running behind Railway / Cloudflare / HTTPS proxies
+class HttpsEnforcingLoader extends Hls.DefaultConfig.loader {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  load(context: any, config: any, callbacks: any) {
+    if (context && typeof context.url === 'string') {
+      if (typeof window !== 'undefined' && window.location.protocol === 'https:' && context.url.startsWith('http://')) {
+        context.url = context.url.replace(/^http:\/\//i, 'https://');
+      }
+    }
+
+    const originalSuccess = callbacks.onSuccess;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    callbacks.onSuccess = function (response: any, stats: any, ctx: any, networkDetails: any) {
+      if (typeof response?.data === 'string') {
+        response.data = response.data.replace(/http:\/\/streamed-pk-resolver-production\.up\.railway\.app/gi, 'https://streamed-pk-resolver-production.up.railway.app');
+        response.data = response.data.replace(/http:\/\/localhost:3000/gi, 'https://streamed-pk-resolver-production.up.railway.app');
+      }
+      return originalSuccess.call(this, response, stats, ctx, networkDetails);
+    };
+
+    super.load(context, config, callbacks);
+  }
+}
+
 export const HlsSportsVideoPlayer: React.FC<HlsSportsVideoPlayerProps> = ({
   streamUrl,
   title,
@@ -83,9 +108,16 @@ export const HlsSportsVideoPlayer: React.FC<HlsSportsVideoPlayerProps> = ({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        backBufferLength: 60,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        maxBufferSize: 0,
+        maxBufferLength: 10,
+        liveSyncDurationCount: 7,
+        liveMaxLatencyDurationCount: 12,
+        backBufferLength: 30,
+        loader: HttpsEnforcingLoader,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fLoader: HttpsEnforcingLoader as any,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pLoader: HttpsEnforcingLoader as any,
         xhrSetup: (xhr) => {
           xhr.withCredentials = false;
         },

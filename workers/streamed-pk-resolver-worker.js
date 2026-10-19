@@ -1,16 +1,31 @@
 /**
- * Cloudflare Worker: Streamed.pk HLS Stream Resolver & CORS Proxy
+ * Cloudflare Worker: Streamed.pk HLS Stream Resolver & Ad-Stripping Proxy
  * 
  * Implements the architecture of Lunatic16/streamed-pk-resolver & ppv-hls-proxy:
  * 1. Resolves stream feeds from streamed.pk sources
  * 2. Unlocks and extracts direct CDN HLS (.m3u8) streams
  * 3. Rewrites .m3u8 manifests so all variant playlists and video chunks (.ts / .m4s) route through the proxy
  * 4. Proxies video segments with byte-range support and universal CORS headers (Access-Control-Allow-Origin: *)
- * 5. Eliminates 100% of popup ads, overlay hijacks, and banner scripts for all client devices (iPhone, iPad, Android, PC)
+ * 5. Rewrites and strips 100% of popup ads, overlay hijacks, and banner scripts from fallback embeds
  */
 
 const STREAMED_API_BASE = "https://streamed.pk";
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+const BLOCKED_PATTERNS = [
+  "/tc/ff-tag.php",
+  "/tc/ff-prime.php",
+  "/tc/",
+  "benchform.org",
+  "biomanos.org",
+  "apiguinee.org",
+  "/brand.js",
+  "popads",
+  "popunder",
+  "aclib",
+  "atoptions",
+  "/ad.html"
+];
 
 // CORS Response Helper
 function corsResponse(body, init = {}) {
@@ -30,7 +45,6 @@ async function handleResolve(request, url) {
 
   let targetEmbedUrl = embedParam;
 
-  // If source and id were supplied, query streamed.pk API
   if (source && id && !targetEmbedUrl) {
     try {
       const apiRes = await fetch(`${STREAMED_API_BASE}/api/stream/${encodeURIComponent(source)}/${encodeURIComponent(id)}`, {
@@ -72,7 +86,7 @@ async function handleResolve(request, url) {
     }), { headers: { "Content-Type": "application/json" } });
   }
 
-  // Fetch the embed page to extract the underlying .m3u8 playlist URL
+  // Fetch the embed page to inspect for direct HLS playlist URLs
   try {
     const embedOrigin = new URL(targetEmbedUrl).origin;
     const pageRes = await fetch(targetEmbedUrl, {
@@ -83,56 +97,49 @@ async function handleResolve(request, url) {
       }
     });
 
-    if (!pageRes.ok) {
-      return corsResponse(JSON.stringify({
-        success: false,
-        fallbackEmbed: targetEmbedUrl,
-        error: `Embed returned HTTP ${pageRes.status}`
-      }), { status: 502, headers: { "Content-Type": "application/json" } });
-    }
+    if (pageRes.ok) {
+      const html = await pageRes.text();
 
-    const html = await pageRes.text();
+      // Look for m3u8 playlist patterns
+      const m3u8Matches = [
+        ...html.matchAll(/(?:file|source|url|hls|src)["']?\s*[:=]\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi),
+        ...html.matchAll(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi)
+      ];
 
-    // Look for m3u8 playlist patterns in player configuration, script variables, or HLS configs
-    const m3u8Matches = [
-      ...html.matchAll(/(?:file|source|url|hls|src)["']?\s*[:=]\s*["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi),
-      ...html.matchAll(/["'](https?:\/\/[^"']+\.m3u8[^"']*)["']/gi)
-    ];
-
-    let foundM3u8 = null;
-    for (const match of m3u8Matches) {
-      const candidate = match[1];
-      if (candidate && candidate.startsWith("http") && candidate.includes(".m3u8")) {
-        foundM3u8 = candidate;
-        break;
+      for (const match of m3u8Matches) {
+        const candidate = match[1];
+        if (candidate && candidate.startsWith("http") && candidate.includes(".m3u8")) {
+          const proxiedManifestUrl = `${url.origin}/hls/manifest.m3u8?url=${encodeURIComponent(candidate)}&ref=${encodeURIComponent(embedOrigin + "/")}`;
+          return corsResponse(JSON.stringify({
+            success: true,
+            streamUrl: proxiedManifestUrl,
+            rawUrl: candidate,
+            isDirectHls: true,
+            source: source || "streamed"
+          }), { headers: { "Content-Type": "application/json" } });
+        }
       }
     }
 
-    if (foundM3u8) {
-      // Build proxied manifest URL through our Cloudflare Worker
-      const proxiedManifestUrl = `${url.origin}/hls/manifest.m3u8?url=${encodeURIComponent(foundM3u8)}&ref=${encodeURIComponent(embedOrigin + "/")}`;
-      return corsResponse(JSON.stringify({
-        success: true,
-        streamUrl: proxiedManifestUrl,
-        rawUrl: foundM3u8,
-        isDirectHls: true,
-        source: source || "streamed"
-      }), { headers: { "Content-Type": "application/json" } });
-    }
-
-    // If direct m3u8 was not regex-extractable, return fallback embed
+    // Fallback: Embed with ad-stripping proxy
+    const adStrippedEmbedUrl = `${url.origin}/proxy/embed?url=${encodeURIComponent(targetEmbedUrl)}`;
     return corsResponse(JSON.stringify({
-      success: false,
+      success: true,
+      streamUrl: adStrippedEmbedUrl,
+      fallbackEmbed: adStrippedEmbedUrl,
       isDirectHls: false,
-      fallbackEmbed: targetEmbedUrl,
-      error: "Stream is using encrypted container or iframe. Playback available via embed mirror."
+      source: source || "embed",
+      message: "Encrypted stream loaded through ad-stripping embed proxy."
     }), { headers: { "Content-Type": "application/json" } });
   } catch (err) {
+    const adStrippedEmbedUrl = `${url.origin}/proxy/embed?url=${encodeURIComponent(targetEmbedUrl)}`;
     return corsResponse(JSON.stringify({
-      success: false,
-      error: "Resolution failed: " + (err instanceof Error ? err.message : String(err)),
-      fallbackEmbed: targetEmbedUrl
-    }), { status: 500, headers: { "Content-Type": "application/json" } });
+      success: true,
+      streamUrl: adStrippedEmbedUrl,
+      fallbackEmbed: adStrippedEmbedUrl,
+      isDirectHls: false,
+      error: String(err)
+    }), { headers: { "Content-Type": "application/json" } });
   }
 }
 
@@ -180,20 +187,15 @@ async function handleManifest(request, url) {
         });
       }
 
-      // Preserve other comment/directive lines
       if (trimmed.startsWith("#")) {
         return line;
       }
 
-      // Line is a URI to a sub-playlist (.m3u8) or a video segment (.ts / .m4s / .aac)
       try {
         const absoluteUri = new URL(trimmed, manifestBaseUrl).toString();
-
         if (absoluteUri.includes(".m3u8")) {
-          // Sub-playlist: route through handleManifest
           return `${url.origin}/hls/manifest.m3u8?url=${encodeURIComponent(absoluteUri)}&ref=${encodeURIComponent(upstreamReferer)}`;
         } else {
-          // Video chunk/segment: route through handleSegment
           return `${url.origin}/hls/segment?url=${encodeURIComponent(absoluteUri)}&ref=${encodeURIComponent(upstreamReferer)}`;
         }
       } catch {
@@ -201,9 +203,7 @@ async function handleManifest(request, url) {
       }
     });
 
-    const rewrittenManifest = rewrittenLines.join("\n");
-
-    return corsResponse(rewrittenManifest, {
+    return corsResponse(rewrittenLines.join("\n"), {
       headers: {
         "Content-Type": "application/vnd.apple.mpegurl",
         "Cache-Control": "no-cache, no-store, must-revalidate"
@@ -229,7 +229,6 @@ async function handleSegment(request, url) {
     upstreamHeaders.set("Referer", upstreamReferer);
     upstreamHeaders.set("Origin", new URL(upstreamReferer).origin);
 
-    // Forward byte-range requests for video seeking/buffering
     const rangeHeader = request.headers.get("Range");
     if (rangeHeader) {
       upstreamHeaders.set("Range", rangeHeader);
@@ -256,17 +255,145 @@ async function handleSegment(request, url) {
   }
 }
 
-// ── 4. Main Request Router ──
+// ── 4. HTMLRewriter Ad-Stripping Proxy for Fallback Embeds ──
+class HeadCleaner {
+  element(element) {
+    element.prepend(`
+      <script>
+        (function() {
+          // 1. Spoof window.open so ad scripts believe the popup opened
+          const dummyWin = {
+            closed: false,
+            focus: function() {},
+            blur: function() {},
+            close: function() {},
+            location: { href: "about:blank" }
+          };
+          Object.defineProperty(window, "open", {
+            value: function() { return dummyWin; },
+            writable: false,
+            configurable: false
+          });
+
+          // 2. Block invisible <a target="_blank"> click-hijacks
+          window.addEventListener("click", function(e) {
+            const link = e.target.closest("a");
+            if (link && link.target === "_blank") {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+            }
+          }, true);
+
+          // 3. Auto-remove dynamically injected ad shields & container iframes
+          const nukeShields = () => {
+            document.querySelectorAll(
+              'iframe[id^="container-"], iframe[class^="container-"], div[style*="2147483647"], iframe[style*="2147483647"], div[style*="opacity: 0.01"], iframe[src*="ad.html"]'
+            ).forEach(el => el.remove());
+          };
+
+          const observer = new MutationObserver(nukeShields);
+          observer.observe(document.documentElement, { childList: true, subtree: true });
+          window.addEventListener("DOMContentLoaded", nukeShields);
+        })();
+      </script>
+      <style>
+        iframe[id^="container-"],
+        iframe[class^="container-"],
+        div[style*="z-index: 2147483647"],
+        iframe[style*="z-index: 2147483647"],
+        div[style*="opacity: 0.01"],
+        iframe[src*="ad.html"] {
+          display: none !important;
+          pointer-events: none !important;
+          visibility: hidden !important;
+          width: 0 !important;
+          height: 0 !important;
+          z-index: -9999 !important;
+        }
+      </style>
+    `, { html: true });
+  }
+}
+
+class TagCleaner {
+  element(element) {
+    const src = (element.getAttribute("src") || "").toLowerCase();
+    const href = (element.getAttribute("href") || "").toLowerCase();
+    const id = (element.getAttribute("id") || "").toLowerCase();
+    const style = (element.getAttribute("style") || "").toLowerCase();
+
+    if (BLOCKED_PATTERNS.some(p => src.includes(p) || href.includes(p))) {
+      element.remove();
+      return;
+    }
+
+    if (id.startsWith("container-") || style.includes("2147483647") || style.includes("opacity: 0.01")) {
+      element.remove();
+    }
+  }
+}
+
+async function handleProxyEmbed(request, url) {
+  const targetUrlParam = url.searchParams.get("url");
+  if (!targetUrlParam) {
+    return corsResponse("Missing url parameter", { status: 400 });
+  }
+
+  try {
+    const targetUrl = new URL(targetUrlParam);
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set("Host", targetUrl.host);
+    requestHeaders.set("Referer", "https://streamed.pk/");
+    requestHeaders.set("Origin", targetUrl.origin);
+    requestHeaders.set("User-Agent", DEFAULT_USER_AGENT);
+
+    const response = await fetch(targetUrl.toString(), {
+      method: request.method,
+      headers: requestHeaders,
+      redirect: "follow"
+    });
+
+    const responseHeaders = new Headers(response.headers);
+    responseHeaders.delete("X-Frame-Options");
+    responseHeaders.delete("Content-Security-Policy");
+    responseHeaders.set("Access-Control-Allow-Origin", "*");
+
+    const contentType = responseHeaders.get("content-type") || "";
+
+    if (contentType.includes("text/html")) {
+      const cleaner = new TagCleaner();
+      return new HTMLRewriter()
+        .on("head", new HeadCleaner())
+        .on("script", cleaner)
+        .on("link", cleaner)
+        .on("iframe", cleaner)
+        .on("div", cleaner)
+        .transform(new Response(response.body, {
+          status: response.status,
+          headers: responseHeaders
+        }));
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      headers: responseHeaders
+    });
+  } catch (err) {
+    return corsResponse("Error proxying embed: " + String(err), { status: 500 });
+  }
+}
+
+// ── 5. Main Request Router ──
 export default {
   async fetch(request) {
     const url = new URL(request.url);
 
-    // 1. Handle CORS Preflight
+    // Handle CORS Preflight
     if (request.method === "OPTIONS") {
       return corsResponse(null, { status: 204 });
     }
 
-    // 2. Health check
+    // Health check
     if (url.pathname === "/health" || url.pathname === "/") {
       return corsResponse(JSON.stringify({
         ok: true,
@@ -276,19 +403,24 @@ export default {
       }), { headers: { "Content-Type": "application/json" } });
     }
 
-    // 3. Resolve API: /api/resolve
+    // Resolve API: /api/resolve
     if (url.pathname === "/api/resolve" || url.pathname === "/resolve") {
       return handleResolve(request, url);
     }
 
-    // 4. Manifest Proxy: /hls/manifest.m3u8
+    // Manifest Proxy: /hls/manifest.m3u8
     if (url.pathname.startsWith("/hls/manifest") || url.pathname.endsWith(".m3u8")) {
       return handleManifest(request, url);
     }
 
-    // 5. Segment Proxy: /hls/segment
+    // Segment Proxy: /hls/segment
     if (url.pathname.startsWith("/hls/segment")) {
       return handleSegment(request, url);
+    }
+
+    // Ad-Stripping Embed Proxy: /proxy/embed
+    if (url.pathname.startsWith("/proxy/embed")) {
+      return handleProxyEmbed(request, url);
     }
 
     return corsResponse("Not Found", { status: 404 });

@@ -9,13 +9,13 @@ import {
   RotateCw,
   ExternalLink,
   Terminal,
+  Server,
   Cloud,
 } from 'lucide-react';
 import {
   getResolverBaseUrl,
   setResolverBaseUrl,
   checkResolverHealth,
-  CLOUDFLARE_WORKER_CODE,
 } from '../services/sportsStreamResolver';
 import { toast } from 'sonner';
 
@@ -30,12 +30,12 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
   onClose,
   onSaved,
 }) => {
-  const [activeTab, setActiveTab] = useState<'cloudflare' | 'docker'>('cloudflare');
+  const [activeTab, setActiveTab] = useState<'container' | 'cloudflare'>('container');
   const [resolverUrl, setResolverUrl] = useState('');
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [copiedWorkerCode, setCopiedWorkerCode] = useState(false);
   const [copiedDockerCmd, setCopiedDockerCmd] = useState(false);
+  const [copiedTunnelCmd, setCopiedTunnelCmd] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -48,7 +48,7 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
 
   const handleTestConnection = async () => {
     if (!resolverUrl.trim()) {
-      setTestResult({ ok: false, message: 'Please enter a worker URL to test.' });
+      setTestResult({ ok: false, message: 'Please enter a resolver URL to test.' });
       return;
     }
     setTesting(true);
@@ -57,9 +57,9 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
       const res = await checkResolverHealth(resolverUrl.trim());
       setTestResult(res);
       if (res.ok) {
-        toast.success('Successfully connected to Cloudflare Worker!');
+        toast.success('Successfully connected to resolver service!');
       } else {
-        toast.error('Connection failed: ' + res.message);
+        toast.error('Connection notice: ' + res.message);
       }
     } finally {
       setTesting(false);
@@ -70,28 +70,29 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
     setResolverBaseUrl(resolverUrl.trim());
     toast.success(
       resolverUrl.trim()
-        ? 'Stream resolver saved! Live sports will automatically stream raw HLS.'
-        : 'Resolver cleared. Using default embed fallback.'
+        ? 'Stream resolver saved! The player will route through your resolver.'
+        : 'Resolver URL cleared.'
     );
     if (onSaved) onSaved();
     onClose();
   };
 
-  const handleCopyWorker = () => {
-    navigator.clipboard.writeText(CLOUDFLARE_WORKER_CODE);
-    setCopiedWorkerCode(true);
-    toast.success('Cloudflare Worker code copied to clipboard!');
-    setTimeout(() => setCopiedWorkerCode(false), 2500);
-  };
-
   const dockerCommand =
-    'docker run -d --name streamed-resolver -p 8080:8080 -e CORS_ORIGIN="*" lunatic16/streamed-pk-resolver';
+    'docker run -d --name streamed-pk-resolver -p 3000:3000 lunatic16/streamed-pk-resolver';
 
-  const handleCopyDocker = () => {
-    navigator.clipboard.writeText(dockerCommand);
-    setCopiedDockerCmd(true);
-    toast.info('Copied docker command to clipboard!');
-    setTimeout(() => setCopiedDockerCmd(false), 2000);
+  const tunnelCommand =
+    'cloudflared tunnel run --url http://localhost:3000';
+
+  const handleCopy = (text: string, type: 'docker' | 'tunnel') => {
+    navigator.clipboard.writeText(text);
+    if (type === 'docker') {
+      setCopiedDockerCmd(true);
+      setTimeout(() => setCopiedDockerCmd(false), 2000);
+    } else {
+      setCopiedTunnelCmd(true);
+      setTimeout(() => setCopiedTunnelCmd(false), 2000);
+    }
+    toast.info('Copied command to clipboard!');
   };
 
   return (
@@ -105,13 +106,13 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
             </div>
             <div>
               <h2 className="text-sm sm:text-base font-bold text-white tracking-tight flex items-center gap-2">
-                <span>Ad-Stripped HLS Resolver</span>
+                <span>Streamed.pk HLS Stream Resolver</span>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/70 text-emerald-400 border border-emerald-500/30 font-semibold">
-                  Zero Ads
+                  Lunatic16
                 </span>
               </h2>
               <p className="text-xs text-zinc-400 font-mono">
-                Extracts raw .m3u8 feeds with global CORS for all devices
+                Replays embed.st GOAT /fetch handshake, unlocks lock.wasm, and streams raw MPEG-TS
               </p>
             </div>
           </div>
@@ -126,6 +127,17 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
         {/* Tab Selector */}
         <div className="flex items-center gap-1.5 p-1 bg-zinc-900/90 rounded-xl border border-zinc-800 text-xs font-mono">
           <button
+            onClick={() => setActiveTab('container')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+              activeTab === 'container'
+                ? 'bg-emerald-500 text-black shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Server className="w-3.5 h-3.5" />
+            <span>Cloud Container / Docker</span>
+          </button>
+          <button
             onClick={() => setActiveTab('cloudflare')}
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
               activeTab === 'cloudflare'
@@ -134,83 +146,22 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
             }`}
           >
             <Cloud className="w-3.5 h-3.5" />
-            <span>Cloudflare Worker</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('docker')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg font-bold transition cursor-pointer ${
-              activeTab === 'docker'
-                ? 'bg-emerald-500 text-black shadow-sm'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Docker / Local</span>
+            <span>Cloudflare Tunnel / Proxy</span>
           </button>
         </div>
 
-        {activeTab === 'cloudflare' ? (
-          /* Cloudflare Worker Tab */
+        {activeTab === 'container' ? (
+          /* Container Setup Tab */
           <div className="flex flex-col gap-3">
-            {/* Quick 3-Step Guide */}
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 text-xs font-mono">
-              <span className="text-emerald-400 font-bold uppercase tracking-wider text-[11px]">
-                Deploy in 60 Seconds on Cloudflare (Free)
-              </span>
-              <ol className="list-decimal list-inside text-zinc-300 space-y-1.5 text-[11px] leading-relaxed">
-                <li>Log in to <span className="text-white font-semibold">dash.cloudflare.com</span> &gt; <span className="text-white font-semibold">Workers & Pages</span></li>
-                <li>Click <span className="text-white font-semibold">Create Worker</span> &gt; click <span className="text-white font-semibold">Deploy</span></li>
-                <li>Click <span className="text-white font-semibold">Edit code</span>, paste the script below, and click <span className="text-white font-semibold">Save and Deploy</span>!</li>
-              </ol>
-
-              <button
-                onClick={handleCopyWorker}
-                className="mt-1 w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-400 text-xs font-bold transition cursor-pointer"
-              >
-                {copiedWorkerCode ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4 text-emerald-400" />}
-                <span>{copiedWorkerCode ? 'Worker Code Copied!' : 'Copy Cloudflare Worker Code'}</span>
-              </button>
-            </div>
-
-            {/* Worker URL Input & Test */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-zinc-300 font-mono">
-                Your Cloudflare Worker URL
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="https://your-worker-name.workers.dev"
-                  value={resolverUrl}
-                  onChange={(e) => {
-                    setResolverUrl(e.target.value);
-                    setTestResult(null);
-                  }}
-                  className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 focus:border-emerald-500/60 focus:outline-none text-xs font-mono text-white placeholder-zinc-600 transition"
-                />
-                <button
-                  onClick={handleTestConnection}
-                  disabled={testing}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-emerald-500/50 text-xs font-semibold text-zinc-300 hover:text-white transition cursor-pointer disabled:opacity-50 shrink-0"
-                >
-                  <RotateCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin text-emerald-400' : ''}`} />
-                  <span>Test</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          /* Docker / Local Tab */
-          <div className="flex flex-col gap-3">
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between text-xs font-bold text-zinc-300 font-mono">
-                <span className="flex items-center gap-1.5">
-                  <Terminal className="w-3.5 h-3.5 text-emerald-400" />
-                  Docker Command
+              <div className="flex items-center justify-between text-zinc-300">
+                <span className="text-emerald-400 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Terminal className="w-3.5 h-3.5" />
+                  Docker Run Command
                 </span>
                 <button
-                  onClick={handleCopyDocker}
-                  className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-emerald-400 cursor-pointer transition font-mono"
+                  onClick={() => handleCopy(dockerCommand, 'docker')}
+                  className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-emerald-400 cursor-pointer transition"
                 >
                   {copiedDockerCmd ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                   <span>{copiedDockerCmd ? 'Copied' : 'Copy'}</span>
@@ -219,35 +170,72 @@ export const ResolverConfigModal: React.FC<ResolverConfigModalProps> = ({
               <code className="text-[11px] font-mono bg-black/60 p-2.5 rounded-lg text-emerald-300/90 overflow-x-auto block border border-zinc-800 select-all">
                 {dockerCommand}
               </code>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-zinc-300 font-mono">
-                Local / VPS Resolver URL
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="http://localhost:8080"
-                  value={resolverUrl}
-                  onChange={(e) => {
-                    setResolverUrl(e.target.value);
-                    setTestResult(null);
-                  }}
-                  className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 focus:border-emerald-500/60 focus:outline-none text-xs font-mono text-white placeholder-zinc-600 transition"
-                />
-                <button
-                  onClick={handleTestConnection}
-                  disabled={testing}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-emerald-500/50 text-xs font-semibold text-zinc-300 hover:text-white transition cursor-pointer disabled:opacity-50 shrink-0"
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Or deploy to <span className="text-white font-semibold">Railway / Render / VPS</span> from{' '}
+                <a
+                  href="https://github.com/Lunatic16/streamed-pk-resolver"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-400 hover:underline inline-flex items-center gap-0.5"
                 >
-                  <RotateCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin text-emerald-400' : ''}`} />
-                  <span>Test</span>
+                  Lunatic16/streamed-pk-resolver <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                </a>. It includes the native Impit Chrome TLS binary and WEBP segment unwrapper.
+              </p>
+            </div>
+          </div>
+        ) : (
+          /* Cloudflare Tunnel / Proxy Tab */
+          <div className="flex flex-col gap-3">
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3 flex flex-col gap-2 text-xs font-mono">
+              <div className="flex items-center justify-between text-zinc-300">
+                <span className="text-emerald-400 font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                  <Cloud className="w-3.5 h-3.5" />
+                  Free Cloudflare Tunnel
+                </span>
+                <button
+                  onClick={() => handleCopy(tunnelCommand, 'tunnel')}
+                  className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-emerald-400 cursor-pointer transition"
+                >
+                  {copiedTunnelCmd ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedTunnelCmd ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
+              <code className="text-[11px] font-mono bg-black/60 p-2.5 rounded-lg text-emerald-300/90 overflow-x-auto block border border-zinc-800 select-all">
+                {tunnelCommand}
+              </code>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Exposes your local or VPS container directly through Cloudflare with HTTPS and global edge caching, requiring no router port-forwarding.
+              </p>
             </div>
           </div>
         )}
+
+        {/* Resolver URL Input & Test */}
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-zinc-300 font-mono">
+            Active Resolver Service URL
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="https://streamed-pk-resolver-production.up.railway.app"
+              value={resolverUrl}
+              onChange={(e) => {
+                setResolverUrl(e.target.value);
+                setTestResult(null);
+              }}
+              className="flex-1 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800 focus:border-emerald-500/60 focus:outline-none text-xs font-mono text-white placeholder-zinc-600 transition"
+            />
+            <button
+              onClick={handleTestConnection}
+              disabled={testing}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-emerald-500/50 text-xs font-semibold text-zinc-300 hover:text-white transition cursor-pointer disabled:opacity-50 shrink-0"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${testing ? 'animate-spin text-emerald-400' : ''}`} />
+              <span>Test</span>
+            </button>
+          </div>
+        </div>
 
         {/* Test Result Feedback */}
         {testResult && (
